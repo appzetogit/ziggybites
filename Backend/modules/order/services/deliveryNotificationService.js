@@ -1,6 +1,7 @@
 import Order from "../models/Order.js";
 import Delivery from "../../delivery/models/Delivery.js";
 import Restaurant from "../../restaurant/models/Restaurant.js";
+import { getActiveAssignedOrderCount } from "../../delivery/services/batchAssignmentService.js";
 import mongoose from "mongoose";
 
 // Dynamic import to avoid circular dependency
@@ -131,7 +132,7 @@ export async function notifyDeliveryBoyNewOrder(order, deliveryPartnerId) {
     // Get delivery partner details
     const deliveryPartner = await Delivery.findById(deliveryPartnerId)
       .select(
-        "name phone availability.currentLocation availability.isOnline status isActive",
+        "name phone availability.currentLocation availability.isOnline status isActive assignedOrders route",
       )
       .lean();
 
@@ -298,6 +299,19 @@ export async function notifyDeliveryBoyNewOrder(order, deliveryPartnerId) {
         : "Calculating...",
       deliveryDistanceRaw: deliveryDistance || 0, // Raw distance number for calculations
       estimatedEarnings,
+      activeAssignedOrderCount: getActiveAssignedOrderCount(deliveryPartner),
+      nextDeliveryLocation: deliveryPartner?.route?.[0]
+        ? {
+            orderId:
+              deliveryPartner.route[0].orderId?.toString?.() ||
+              deliveryPartner.route[0].orderId,
+            orderCode: deliveryPartner.route[0].orderCode,
+            latitude: deliveryPartner.route[0].latitude,
+            longitude: deliveryPartner.route[0].longitude,
+            status: deliveryPartner.route[0].status,
+            sequence: deliveryPartner.route[0].sequence,
+          }
+        : null,
     };
 
     // Get delivery namespace
@@ -430,6 +444,14 @@ export async function notifyMultipleDeliveryBoys(
 
     const deliveryNamespace = io.of("/delivery");
     let notifiedCount = 0;
+    const deliveryPartners = await Delivery.find({
+      _id: { $in: deliveryPartnerIds },
+    })
+      .select("assignedOrders route")
+      .lean();
+    const deliveryPartnerMap = new Map(
+      deliveryPartners.map((partner) => [partner._id.toString(), partner]),
+    );
 
     // Populate userId if needed
     let orderWithUser = order;
@@ -662,6 +684,25 @@ export async function notifyMultipleDeliveryBoys(
     for (const deliveryPartnerId of deliveryPartnerIds) {
       try {
         const normalizedId = deliveryPartnerId?.toString() || deliveryPartnerId;
+        const deliveryPartner =
+          deliveryPartnerMap.get(normalizedId) ||
+          deliveryPartnerMap.get(deliveryPartnerId?.toString?.());
+        const personalizedNotification = {
+          ...orderNotification,
+          activeAssignedOrderCount: getActiveAssignedOrderCount(deliveryPartner),
+          nextDeliveryLocation: deliveryPartner?.route?.[0]
+            ? {
+                orderId:
+                  deliveryPartner.route[0].orderId?.toString?.() ||
+                  deliveryPartner.route[0].orderId,
+                orderCode: deliveryPartner.route[0].orderCode,
+                latitude: deliveryPartner.route[0].latitude,
+                longitude: deliveryPartner.route[0].longitude,
+                status: deliveryPartner.route[0].status,
+                sequence: deliveryPartner.route[0].sequence,
+              }
+            : null,
+        };
         const roomVariations = [
           `delivery:${normalizedId}`,
           `delivery:${deliveryPartnerId}`,
@@ -678,7 +719,7 @@ export async function notifyMultipleDeliveryBoys(
           if (sockets.length > 0) {
             deliveryNamespace
               .to(room)
-              .emit("new_order_available", orderNotification);
+              .emit("new_order_available", personalizedNotification);
             deliveryNamespace.to(room).emit("play_notification_sound", {
               type: "new_order_available",
               orderId: order.orderId,
@@ -701,7 +742,10 @@ export async function notifyMultipleDeliveryBoys(
           roomVariations.forEach((room) => {
             deliveryNamespace
               .to(room)
-              .emit("new_order_available", orderNotification);
+              .emit(
+                "new_order_available",
+                redactPII(personalizedNotification),
+              );
           });
           notifiedCount++;
         }
@@ -906,3 +950,4 @@ async function calculateEstimatedEarnings(deliveryDistance) {
     };
   }
 }
+

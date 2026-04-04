@@ -921,8 +921,12 @@ export default function PageNavbar({
     }
   })()
 
-  const mainLocationName = locationDisplay.main
-  const subLocationName = locationDisplay.sub
+  const shortMainLocation =
+    (location?.area && !String(location.area).match(/^\d+(\.\d+)?\s*,\s*\d+(\.\d+)?$/) ? String(location.area).trim() : "") ||
+    (location?.city ? String(location.city).trim() : "") ||
+    "Select location"
+  const mainLocationName = shortMainLocation || locationDisplay.main
+  const subLocationName = ""
 
   const handleLocationClick = () => {
     // Open location selector overlay
@@ -958,10 +962,10 @@ export default function PageNavbar({
               <div className="flex flex-col items-start min-w-0">
                 <div className="flex items-center gap-1.5">
 
-                  <span className={`text-md sm:text-lg font-bold ${textColorClass} whitespace-nowrap ${textColor === "white" ? "drop-shadow-lg" : ""}`}>
+                  <span className="text-md sm:text-lg font-bold text-black whitespace-nowrap">
                     {mainLocationName}
                   </span>
-                  <ChevronDown className={`h-4 w-4 sm:h-5 sm:w-5 ${textColorClass} flex-shrink-0 ${textColor === "white" ? "drop-shadow-lg" : ""}`} strokeWidth={2.5} />
+                  <ChevronDown className="h-4 w-4 sm:h-5 sm:w-5 text-black flex-shrink-0" strokeWidth={2.5} />
                 </div>
                 {/* Show sub location (city, state) in second line */}
                 {subLocationName && (
@@ -1046,4 +1050,3 @@ export default function PageNavbar({
     </nav>
   )
 }
-

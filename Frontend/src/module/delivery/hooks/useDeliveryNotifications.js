@@ -18,6 +18,12 @@ export const useDeliveryNotifications = () => {
   const [orderReady, setOrderReady] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
   const [deliveryPartnerId, setDeliveryPartnerId] = useState(null);
+  const [deliveryBatchState, setDeliveryBatchState] = useState({
+    activeAssignedOrderCount: 0,
+    assignedOrders: [],
+    route: [],
+    nextDeliveryLocation: null,
+  });
 
   // Step 3: All callbacks before effects (unconditional)
   // Track user interaction for autoplay policy
@@ -130,6 +136,14 @@ export const useDeliveryNotifications = () => {
         if (response.data?.success && response.data.data) {
           const deliveryPartner = response.data.data.user || response.data.data.deliveryPartner;
           if (deliveryPartner) {
+            setDeliveryBatchState({
+              activeAssignedOrderCount: Array.isArray(deliveryPartner.assignedOrders)
+                ? deliveryPartner.assignedOrders.length
+                : 0,
+              assignedOrders: deliveryPartner.assignedOrders || [],
+              route: deliveryPartner.route || [],
+              nextDeliveryLocation: deliveryPartner.route?.[0] || null,
+            });
             const id = deliveryPartner.id?.toString() || 
                       deliveryPartner._id?.toString() || 
                       deliveryPartner.deliveryId;
@@ -315,6 +329,13 @@ export const useDeliveryNotifications = () => {
     socketRef.current.on('new_order', (orderData) => {
       console.log('📦 New order received via socket:', orderData);
       setNewOrder(orderData);
+      setDeliveryBatchState((prev) => ({
+        ...prev,
+        activeAssignedOrderCount:
+          orderData?.activeAssignedOrderCount ?? prev.activeAssignedOrderCount,
+        nextDeliveryLocation:
+          orderData?.nextDeliveryLocation ?? prev.nextDeliveryLocation,
+      }));
       playNotificationSound();
     });
 
@@ -324,12 +345,40 @@ export const useDeliveryNotifications = () => {
       console.log('📦 Notification phase:', orderData.phase || 'unknown');
       // Treat it the same as new_order for now - delivery boy can accept it
       setNewOrder(orderData);
+      setDeliveryBatchState((prev) => ({
+        ...prev,
+        activeAssignedOrderCount:
+          orderData?.activeAssignedOrderCount ?? prev.activeAssignedOrderCount,
+        nextDeliveryLocation:
+          orderData?.nextDeliveryLocation ?? prev.nextDeliveryLocation,
+      }));
       playNotificationSound();
     });
 
     socketRef.current.on('play_notification_sound', (data) => {
       console.log('🔔 Sound notification:', data);
       playNotificationSound();
+    });
+
+    socketRef.current.on('delivery_batch_update', (batchData) => {
+      console.log('ðŸšš Delivery batch updated via socket:', batchData);
+      setDeliveryBatchState({
+        activeAssignedOrderCount: batchData?.activeAssignedOrderCount || 0,
+        assignedOrders: batchData?.assignedOrders || [],
+        route: batchData?.route || [],
+        nextDeliveryLocation: batchData?.nextDeliveryLocation || null,
+      });
+      setNewOrder((prev) =>
+        prev
+          ? {
+              ...prev,
+              activeAssignedOrderCount:
+                batchData?.activeAssignedOrderCount ?? prev.activeAssignedOrderCount,
+              nextDeliveryLocation:
+                batchData?.nextDeliveryLocation ?? prev.nextDeliveryLocation,
+            }
+          : prev,
+      );
     });
 
     socketRef.current.on('order_ready', (orderData) => {
@@ -355,12 +404,60 @@ export const useDeliveryNotifications = () => {
     setOrderReady(null);
   };
 
+  const injectDemoOrder = useCallback((overrides = {}) => {
+    const now = Date.now();
+    const demoOrder = {
+      orderId: `DEMO-${now}`,
+      orderMongoId: `demo-${now}`,
+      status: 'preparing',
+      restaurantName: 'Demo Kitchen',
+      restaurantAddress: 'Demo Kitchen, Vijay Nagar, Indore',
+      restaurantLocation: {
+        latitude: 22.7533,
+        longitude: 75.8937,
+        address: 'Demo Kitchen, Vijay Nagar, Indore',
+        formattedAddress: 'Demo Kitchen, Vijay Nagar, Indore',
+      },
+      customerName: 'Demo Customer',
+      customerPhone: '9999999999',
+      customerLocation: {
+        latitude: 22.7196,
+        longitude: 75.8577,
+        address: 'Scheme No. 54, Indore',
+      },
+      items: [
+        {
+          name: 'Special Veg Thali',
+          quantity: 5,
+          price: 120,
+        },
+      ],
+      total: 600,
+      deliveryFee: 60,
+      estimatedEarnings: 60,
+      deliveryDistance: '4.20 km',
+      pickupDistance: '1.10 km',
+      paymentMethod: 'cash',
+      message: 'Demo order: 5 Special Veg Thali',
+      timestamp: new Date().toISOString(),
+      activeAssignedOrderCount: deliveryBatchState?.activeAssignedOrderCount || 0,
+      nextDeliveryLocation: deliveryBatchState?.nextDeliveryLocation || null,
+      ...overrides,
+    };
+
+    setNewOrder(demoOrder);
+    playNotificationSound();
+    return demoOrder;
+  }, [deliveryBatchState, playNotificationSound]);
+
   return {
     newOrder,
     clearNewOrder,
     orderReady,
     clearOrderReady,
     isConnected,
-    playNotificationSound
+    playNotificationSound,
+    deliveryBatchState,
+    injectDemoOrder,
   };
 };

@@ -389,7 +389,15 @@ export default function DeliveryHome() {
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(() => getUnreadDeliveryNotificationCount())
   
   // Delivery notifications hook
-  const { newOrder, clearNewOrder, orderReady, clearOrderReady, isConnected } = useDeliveryNotifications()
+  const {
+    newOrder,
+    clearNewOrder,
+    orderReady,
+    clearOrderReady,
+    isConnected,
+    deliveryBatchState,
+    injectDemoOrder,
+  } = useDeliveryNotifications()
   
   // Default location - will be set from saved location or GPS, not hardcoded
   const [riderLocation, setRiderLocation] = useState(null) // Will be set from GPS or saved location
@@ -2209,6 +2217,110 @@ export default function DeliveryHome() {
             orderStatus: newOrder?.status
           })
 
+          const isDemoOrder =
+            String(orderId).startsWith('demo-') ||
+            String(orderId).startsWith('DEMO-')
+
+          if (isDemoOrder) {
+            const restaurantInfo = {
+              ...(selectedRestaurant || {}),
+              id: selectedRestaurant?.id || orderId,
+              orderId: selectedRestaurant?.orderId || newOrder?.orderId || `DEMO-${Date.now()}`,
+              name: selectedRestaurant?.name || newOrder?.restaurantName || 'Demo Kitchen',
+              address:
+                selectedRestaurant?.address ||
+                newOrder?.restaurantLocation?.address ||
+                newOrder?.restaurantAddress ||
+                'Demo Kitchen Address',
+              lat:
+                selectedRestaurant?.lat ??
+                newOrder?.restaurantLocation?.latitude ??
+                currentLocation[0],
+              lng:
+                selectedRestaurant?.lng ??
+                newOrder?.restaurantLocation?.longitude ??
+                currentLocation[1],
+              distance:
+                selectedRestaurant?.distance ||
+                selectedRestaurant?.pickupDistance ||
+                newOrder?.pickupDistance ||
+                '1.00 km',
+              pickupDistance:
+                selectedRestaurant?.pickupDistance ||
+                newOrder?.pickupDistance ||
+                '1.00 km',
+              dropDistance:
+                selectedRestaurant?.dropDistance ||
+                newOrder?.deliveryDistance ||
+                '4.00 km',
+              timeAway:
+                selectedRestaurant?.timeAway ||
+                calculateTimeAway(
+                  selectedRestaurant?.pickupDistance ||
+                    newOrder?.pickupDistance ||
+                    '1.00 km',
+                ),
+              estimatedEarnings:
+                selectedRestaurant?.estimatedEarnings ||
+                newOrder?.estimatedEarnings ||
+                newOrder?.deliveryFee ||
+                0,
+              deliveryFee:
+                selectedRestaurant?.deliveryFee ||
+                newOrder?.deliveryFee ||
+                0,
+              amount:
+                selectedRestaurant?.amount ||
+                newOrder?.deliveryFee ||
+                0,
+              customerName:
+                selectedRestaurant?.customerName ||
+                newOrder?.customerName ||
+                'Demo Customer',
+              customerAddress:
+                selectedRestaurant?.customerAddress ||
+                newOrder?.customerLocation?.address ||
+                'Demo Customer Address',
+              customerLat:
+                selectedRestaurant?.customerLat ??
+                newOrder?.customerLocation?.latitude,
+              customerLng:
+                selectedRestaurant?.customerLng ??
+                newOrder?.customerLocation?.longitude,
+              items: selectedRestaurant?.items || newOrder?.items || [],
+              total: selectedRestaurant?.total || newOrder?.total || 0,
+              paymentMethod:
+                selectedRestaurant?.paymentMethod ||
+                newOrder?.paymentMethod ||
+                'cash',
+              orderStatus: 'ready',
+              status: 'ready',
+              deliveryState: {
+                ...(selectedRestaurant?.deliveryState || {}),
+                currentPhase: 'en_route_to_pickup',
+                status: 'accepted',
+              },
+              deliveryPhase: 'en_route_to_pickup',
+              isDemoOrder: true,
+            }
+
+            setSelectedRestaurant(restaurantInfo)
+            setRoutePolyline([
+              currentLocation,
+              [restaurantInfo.lat, restaurantInfo.lng],
+            ])
+            setShowNewOrderPopup(false)
+            acceptedOrderIdsRef.current.add(orderId)
+            clearNewOrder()
+            setShowRoutePath(true)
+            setShowDirectionsMap(false)
+            setTimeout(() => {
+              setShowreachedPickupPopup(true)
+            }, 300)
+            toast.success('Demo order accepted')
+            return
+          }
+
           // Call backend API to accept order
           // Backend expects currentLat and currentLng
           const response = await deliveryAPI.acceptOrder(orderId, {
@@ -3045,6 +3157,10 @@ export default function DeliveryHome() {
         const orderStatus = selectedRestaurant?.orderStatus || selectedRestaurant?.status || ''
         const deliveryPhase = selectedRestaurant?.deliveryPhase || selectedRestaurant?.deliveryState?.currentPhase || ''
         const deliveryStateStatus = selectedRestaurant?.deliveryState?.status || ''
+        const isDemoOrder =
+          String(orderId || '').startsWith('DEMO-') ||
+          String(orderId || '').startsWith('demo-') ||
+          selectedRestaurant?.isDemoOrder
         
         const isDelivered = orderStatus === 'delivered' || 
                             deliveryPhase === 'completed' || 
@@ -3087,6 +3203,28 @@ export default function DeliveryHome() {
         }
         
         if (orderId) {
+          if (isDemoOrder) {
+            setSelectedRestaurant(prev => ({
+              ...prev,
+              deliveryState: {
+                ...(prev?.deliveryState || {}),
+                currentPhase: 'at_pickup',
+                status: 'reached_pickup'
+              },
+              deliveryPhase: 'at_pickup'
+            }))
+            setShowreachedPickupPopup(false)
+            setTimeout(() => {
+              setShowOrderIdConfirmationPopup(true)
+            }, 300)
+            toast.success('Demo pickup confirmed!')
+            setTimeout(() => {
+              setreachedPickupButtonProgress(0)
+              setreachedPickupIsAnimatingToComplete(false)
+            }, 500)
+            return
+          }
+
           try {
             // Call backend API to confirm reached pickup and save status in database
             console.log('📦 Confirming reached pickup for order:', orderId)
@@ -3248,6 +3386,10 @@ export default function DeliveryHome() {
                              newOrder?._id ||
                              selectedRestaurant?.orderId || 
                              newOrder?.orderId
+        const isDemoOrder =
+          String(orderIdForApi || '').startsWith('DEMO-') ||
+          String(orderIdForApi || '').startsWith('demo-') ||
+          selectedRestaurant?.isDemoOrder
         
         console.log('🔍 Order ID lookup for reached drop:', {
           selectedRestaurantId: selectedRestaurant?.id,
@@ -3258,6 +3400,11 @@ export default function DeliveryHome() {
         })
         
         if (orderIdForApi) {
+          if (isDemoOrder) {
+            console.log('✅ Demo reached drop confirmed locally')
+            return
+          }
+
           try {
             // Call backend API to confirm reached drop (in background, don't block popup)
             // Use MongoDB _id for API call to avoid ObjectId casting errors
@@ -3549,6 +3696,10 @@ export default function DeliveryHome() {
         // Get order ID from selectedRestaurant
         const orderId = selectedRestaurant?.id || selectedRestaurant?.orderId
         const confirmedOrderId = selectedRestaurant?.orderId
+        const isDemoOrder =
+          String(orderId || '').startsWith('DEMO-') ||
+          String(orderId || '').startsWith('demo-') ||
+          selectedRestaurant?.isDemoOrder
         
         // CRITICAL: Check if order is already delivered/completed - don't call API
         const orderStatus = selectedRestaurant?.orderStatus || selectedRestaurant?.status || ''
@@ -3628,6 +3779,43 @@ export default function DeliveryHome() {
         }
 
         try {
+          if (isDemoOrder) {
+            const customerLat =
+              selectedRestaurant?.customerLat ??
+              22.7196
+            const customerLng =
+              selectedRestaurant?.customerLng ??
+              75.8577
+
+            setSelectedRestaurant(prev => ({
+              ...prev,
+              orderStatus: 'out_for_delivery',
+              status: 'out_for_delivery',
+              deliveryPhase: 'en_route_to_delivery',
+              customerLat,
+              customerLng,
+              deliveryState: {
+                ...(prev?.deliveryState || {}),
+                currentPhase: 'en_route_to_delivery',
+                status: 'order_confirmed',
+                orderIdConfirmedAt: new Date().toISOString(),
+              }
+            }))
+            setRoutePolyline([
+              currentLocation,
+              [customerLat, customerLng],
+            ])
+            setShowRoutePath(true)
+            setShowOrderIdConfirmationPopup(false)
+            setShowReachedDropPopup(true)
+            toast.success('Demo order picked up successfully!')
+            setTimeout(() => {
+              setOrderIdConfirmButtonProgress(0)
+              setOrderIdConfirmIsAnimatingToComplete(false)
+            }, 500)
+            return
+          }
+
           // Prefer string orderId (ORD-xxx) for URL; backend accepts both _id and orderId
           const orderIdForApi = selectedRestaurant?.orderId || selectedRestaurant?.id
           const confirmedOrderIdForApi = selectedRestaurant?.orderId || (orderIdForApi && String(orderIdForApi).startsWith('ORD-') ? orderIdForApi : undefined)
@@ -3982,6 +4170,10 @@ export default function DeliveryHome() {
               newOrder?._id ||
               selectedRestaurant?.orderId ||
               newOrder?.orderId
+            const isDemoOrder =
+              String(orderIdForApi || '').startsWith('DEMO-') ||
+              String(orderIdForApi || '').startsWith('demo-') ||
+              selectedRestaurant?.isDemoOrder
 
             if (!orderIdForApi) {
               console.error("❌ Order ID not available for completeDelivery", {
@@ -3995,6 +4187,34 @@ export default function DeliveryHome() {
             console.log("📝 Completing delivery directly from swipe:", {
               orderId: orderIdForApi,
             })
+
+            if (isDemoOrder) {
+              const earningsSource =
+                selectedRestaurant?.amount ||
+                selectedRestaurant?.estimatedEarnings ||
+                newOrder?.deliveryFee ||
+                0
+              const earnings =
+                typeof earningsSource === 'object'
+                  ? Number(earningsSource?.totalEarning) || 0
+                  : Number(earningsSource) || 0
+
+              setOrderEarnings(earnings)
+              setSelectedRestaurant(prev => prev ? {
+                ...prev,
+                orderStatus: 'delivered',
+                status: 'delivered',
+                deliveryPhase: 'completed',
+                deliveryState: {
+                  ...(prev.deliveryState || {}),
+                  currentPhase: 'completed',
+                  status: 'delivered'
+                }
+              } : prev)
+              setShowPaymentPage(true)
+              toast.success('Demo delivery completed')
+              return
+            }
 
             const response = await deliveryAPI.completeDelivery(
               orderIdForApi,
@@ -7408,6 +7628,113 @@ export default function DeliveryHome() {
   const deliveryStateStatus = useMemo(() => {
     return selectedRestaurant?.deliveryState?.status ?? null
   }, [selectedRestaurant?.deliveryState?.status])
+
+  const activeBatchRoute = useMemo(() => {
+    const routeStops = deliveryBatchState?.route || []
+    if (!routeStops.length) {
+      return null
+    }
+
+    const selectedKeys = [
+      selectedRestaurant?.orderId,
+      selectedRestaurant?.id,
+    ]
+      .filter(Boolean)
+      .map((value) => String(value))
+
+    const currentStop =
+      routeStops.find((stop) => {
+        const stopKeys = [
+          stop?.orderCode,
+          stop?.orderId,
+        ]
+          .filter(Boolean)
+          .map((value) => String(value))
+
+        return stopKeys.some((key) => selectedKeys.includes(key))
+      }) || routeStops[0]
+
+    const currentStopKey =
+      currentStop?.orderId?.toString?.() ||
+      currentStop?.orderId ||
+      currentStop?.orderCode
+
+    const remainingStops = routeStops.filter((stop) => {
+      const stopKey =
+        stop?.orderId?.toString?.() ||
+        stop?.orderId ||
+        stop?.orderCode
+
+      return String(stopKey) !== String(currentStopKey)
+    })
+
+    return {
+      totalActive: deliveryBatchState?.activeAssignedOrderCount || routeStops.length,
+      currentStop,
+      remainingStops,
+    }
+  }, [deliveryBatchState, selectedRestaurant?.id, selectedRestaurant?.orderId])
+
+  const renderBatchRoutePanel = (extraClassName = "mb-4") => {
+    if (!activeBatchRoute?.currentStop) {
+      return null
+    }
+
+    const { totalActive, currentStop, remainingStops } = activeBatchRoute
+
+    return (
+      <div className={`${extraClassName} rounded-2xl border border-gray-200 bg-gray-50 p-4`}>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500">
+              Delivery sequence
+            </p>
+            <p className="mt-1 text-sm font-semibold text-gray-900">
+              {totalActive} active {totalActive === 1 ? "delivery" : "deliveries"}
+            </p>
+          </div>
+          <div className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-gray-700 shadow-sm">
+            {remainingStops.length} remaining
+          </div>
+        </div>
+
+        <div className="mt-3 rounded-xl border border-green-100 bg-white px-3 py-3">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-green-700">
+            Current stop
+          </p>
+          <p className="mt-1 text-sm font-semibold text-gray-900">
+            {currentStop?.orderCode || "Current order"}
+          </p>
+          <p className="mt-1 text-xs text-gray-600">
+            Sequence #{currentStop?.sequence || 1}
+          </p>
+        </div>
+
+        {remainingStops.length > 0 && (
+          <div className="mt-3 space-y-2">
+            {remainingStops.slice(0, 3).map((stop) => (
+              <div
+                key={`${stop?.orderId || stop?.orderCode}-${stop?.sequence}`}
+                className="flex items-center justify-between rounded-xl bg-white px-3 py-2.5"
+              >
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">
+                    {stop?.orderCode || "Upcoming stop"}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    Stop #{stop?.sequence || "-"}
+                  </p>
+                </div>
+                <span className="text-xs font-medium text-gray-500">
+                  {stop?.status || "assigned"}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
   
   useEffect(() => {
     // CRITICAL: If payment page is showing, delivery is completed - do NOT show reached drop popup
@@ -8332,6 +8659,47 @@ export default function DeliveryHome() {
         onEmergencyClick={() => setShowEmergencyPopup(true)}
         onHelpClick={() => setShowHelpPopup(true)}
       />
+
+      {import.meta.env.DEV && !selectedRestaurant && (
+        <div className="fixed right-4 top-20 z-[95]">
+          <button
+            type="button"
+            onClick={() =>
+              injectDemoOrder({
+                restaurantName: 'Royal Thali House',
+                restaurantAddress: 'Palasia Square, Indore',
+                restaurantLocation: {
+                  latitude: 22.7252,
+                  longitude: 75.8839,
+                  address: 'Palasia Square, Indore',
+                  formattedAddress: 'Palasia Square, Indore',
+                },
+                customerLocation: {
+                  latitude: 22.7196,
+                  longitude: 75.8577,
+                  address: 'Scheme No. 54, Indore',
+                },
+                items: [
+                  {
+                    name: 'Family Veg Thali',
+                    quantity: 5,
+                    price: 129,
+                  },
+                ],
+                total: 645,
+                deliveryFee: 65,
+                estimatedEarnings: 65,
+                pickupDistance: '1.30 km',
+                deliveryDistance: '4.80 km',
+                message: 'Demo order: 5 Family Veg Thali',
+              })
+            }
+            className="rounded-full bg-red-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg transition-transform active:scale-95"
+          >
+            Demo 5 Thali Order
+          </button>
+        </div>
+      )}
 
       {/* Carousel - Only show if there are slides */}
       {carouselSlides.length > 0 && (
@@ -9470,6 +9838,51 @@ export default function DeliveryHome() {
                     </p>
                   </div>
 
+                  {Array.isArray(newOrder?.items) && newOrder.items.length > 0 && (
+                    <div className="mb-4 rounded-2xl border border-orange-100 bg-orange-50 px-4 py-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-orange-700">
+                        Order items
+                      </p>
+                      <div className="mt-2 space-y-1.5">
+                        {newOrder.items.slice(0, 3).map((item, index) => (
+                          <p key={`${item?.name || 'item'}-${index}`} className="text-sm font-semibold text-gray-900">
+                            {item?.quantity || 1} x {item?.name || 'Item'}
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {(() => {
+                    const activeAssignedOrderCount =
+                      newOrder?.activeAssignedOrderCount ??
+                      deliveryBatchState?.activeAssignedOrderCount ??
+                      0
+                    const nextDeliveryLocation =
+                      newOrder?.nextDeliveryLocation ??
+                      deliveryBatchState?.nextDeliveryLocation
+
+                    if (!activeAssignedOrderCount) {
+                      return null
+                    }
+
+                    return (
+                      <div className="mb-4 rounded-2xl border border-green-100 bg-green-50 px-4 py-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-green-700">
+                          Active deliveries
+                        </p>
+                        <p className="mt-1 text-sm font-semibold text-gray-900">
+                          You already have {activeAssignedOrderCount} active {activeAssignedOrderCount === 1 ? 'delivery' : 'deliveries'}
+                        </p>
+                        {nextDeliveryLocation?.orderCode && (
+                          <p className="mt-1 text-xs text-gray-600">
+                            Next stop in current route: {nextDeliveryLocation.orderCode}
+                          </p>
+                        )}
+                      </div>
+                    )
+                  })()}
+
                   {/* Pickup Details */}
                   <div className="bg-gray-50 rounded-xl p-4 mb-6">
                     <div className="mb-3">
@@ -9757,6 +10170,8 @@ export default function DeliveryHome() {
               Order ID: {selectedRestaurant?.orderId || 'ORD1234567890'}
             </p>
           </div>
+
+          {renderBatchRoutePanel("mb-6")}
 
           {/* Action Buttons */}
           <div className="flex gap-3 mb-6">
@@ -10224,6 +10639,8 @@ export default function DeliveryHome() {
                 </p>
               )}
             </div>
+
+            {renderBatchRoutePanel("mb-4")}
 
             {/* Start Navigation Button */}
             <button

@@ -7,6 +7,10 @@ import {
 } from "../services/subscriptionScheduleService.js";
 
 const MEAL_KEYS = ["breakfast", "lunch", "snacks", "dinner"];
+const DEFAULT_NOTIFICATION_SETTINGS = {
+  mealReminderEnabled: true,
+  mealReminderLeadMinutes: 120,
+};
 
 function defaultMealSlotTimesObject() {
   return {
@@ -14,6 +18,20 @@ function defaultMealSlotTimesObject() {
     lunch: { ...DEFAULT_MEAL_SLOT_RANGES.lunch },
     snacks: { ...DEFAULT_MEAL_SLOT_RANGES.snacks },
     dinner: { ...DEFAULT_MEAL_SLOT_RANGES.dinner },
+  };
+}
+
+function normalizeNotificationSettings(raw) {
+  const input = raw && typeof raw === "object" ? raw : {};
+  const enabled = input.mealReminderEnabled !== false;
+  const leadRaw = Number(input.mealReminderLeadMinutes);
+  const leadMinutes = Number.isFinite(leadRaw)
+    ? Math.min(Math.max(Math.round(leadRaw), 15), 360)
+    : DEFAULT_NOTIFICATION_SETTINGS.mealReminderLeadMinutes;
+
+  return {
+    mealReminderEnabled: enabled,
+    mealReminderLeadMinutes: leadMinutes,
   };
 }
 
@@ -69,6 +87,10 @@ const subscriptionSettingsSchema = new mongoose.Schema(
       default: "Asia/Kolkata",
       trim: true,
     },
+    notificationSettings: {
+      type: mongoose.Schema.Types.Mixed,
+      default: () => ({ ...DEFAULT_NOTIFICATION_SETTINGS }),
+    },
   },
   { timestamps: true }
 );
@@ -80,6 +102,7 @@ subscriptionSettingsSchema.statics.getSettings = async function () {
       deliveryChargesPerDay: 30,
       mealSlotTimes: defaultMealSlotTimesObject(),
       mealSlotTimezone: "Asia/Kolkata",
+      notificationSettings: { ...DEFAULT_NOTIFICATION_SETTINGS },
     });
     return settings;
   }
@@ -92,6 +115,16 @@ subscriptionSettingsSchema.statics.getSettings = async function () {
   }
   if (!settings.mealSlotTimezone) {
     settings.mealSlotTimezone = "Asia/Kolkata";
+    saveNeeded = true;
+  }
+  const notificationSettings = normalizeNotificationSettings(settings.notificationSettings);
+  if (
+    !settings.notificationSettings ||
+    settings.notificationSettings.mealReminderEnabled !== notificationSettings.mealReminderEnabled ||
+    Number(settings.notificationSettings.mealReminderLeadMinutes) !== notificationSettings.mealReminderLeadMinutes
+  ) {
+    settings.notificationSettings = notificationSettings;
+    settings.markModified("notificationSettings");
     saveNeeded = true;
   }
   if (saveNeeded) await settings.save();

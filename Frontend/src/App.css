@@ -40,3 +40,18 @@
 .read-the-docs {
   color: #888;
 }
+
+.rating-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 10px;
+  border: 1px solid #111;
+  background-color: #fff;
+  color: #111;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.07);
+}

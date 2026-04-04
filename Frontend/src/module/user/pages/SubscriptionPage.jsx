@@ -23,7 +23,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from "@/components/ui/dialog"
 import api, { userAPI } from "@/lib/api"
 import SubscriptionPauseDialog from "@/module/user/components/SubscriptionPauseDialog.jsx"
@@ -91,7 +90,6 @@ export default function SubscriptionPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [showMandatePrompt, setShowMandatePrompt] = useState(false)
-  const [mandateSaving, setMandateSaving] = useState(false)
   const [cancelSaving, setCancelSaving] = useState(false)
   const [resumeSaving, setResumeSaving] = useState(false)
   const [showPauseDialog, setShowPauseDialog] = useState(false)
@@ -206,10 +204,6 @@ export default function SubscriptionPage() {
 
   useEffect(() => {
     if (!location.state?.requireMealsFirst) return
-    toast.info("Choose your meals first", {
-      description:
-        "Add at least one item from Breakfast, Lunch, Evening Snacks, and Dinner. Then you can view plans and pay.",
-    })
     const { requireMealsFirst: _skip, ...rest } = location.state || {}
     navigate(location.pathname, { replace: true, state: Object.keys(rest).length ? rest : undefined })
   }, [location.state, location.pathname, navigate])
@@ -264,18 +258,6 @@ export default function SubscriptionPage() {
     }
   }
 
-  const handleMandateChoice = async (enabled) => {
-    setMandateSaving(true)
-    try {
-      await api.post("/subscription/set-autopay-mandate", { enabled })
-      setShowMandatePrompt(false)
-    } catch (e) {
-      setError(e?.response?.data?.message || e.message)
-    } finally {
-      setMandateSaving(false)
-    }
-  }
-
   const handleToggleAutoPay = async (checked) => {
     try {
       await api.post("/subscription/toggle-autopay", { enabled: checked })
@@ -289,12 +271,29 @@ export default function SubscriptionPage() {
     setCancelSaving(true)
     try {
       const res = await api.post("/subscription/cancel")
+      const payload = res?.data?.data || {}
       setError(null)
-      setDashboard(null)
-      setPurchasedPlans([])
-      alert(res?.data?.message || "Subscription cancelled.")
+      if (payload.eligibleForImmediateRefund) {
+        setDashboard(null)
+        setPurchasedPlans([])
+        setActiveSubscriptions([])
+        const used = Number(payload.usedAmount || 0).toLocaleString("en-IN")
+        const refunded = Number(payload.refundedAmount || 0).toLocaleString("en-IN")
+        toast.success(`Subscription cancelled. Used ₹${used}; refunded ₹${refunded} to wallet.`)
+        navigate("/subscription/plans")
+      } else {
+        setDashboard((d) =>
+          d
+            ? { ...d, cancellationRequestedAt: new Date().toISOString(), autoPayEnabled: false }
+            : d,
+        )
+        const used = Number(payload.usedAmount || 0).toLocaleString("en-IN")
+        toast.success((res?.data?.message || "Renewal cancelled.") + ` Used amount: ₹${used}.`)
+      }
     } catch (e) {
-      setError(e?.response?.data?.message || e.message)
+      const msg = e?.response?.data?.message || e.message || "Failed to cancel subscription"
+      setError(msg)
+      toast.error(msg)
     } finally {
       setCancelSaving(false)
     }
@@ -682,23 +681,33 @@ export default function SubscriptionPage() {
         onAfterPause={refreshMealSubscriptions}
       />
 
-      {/* Mandate prompt – after first purchase */}
+      {/* Payment success popup - shown right after purchase */}
       <Dialog open={showMandatePrompt} onOpenChange={setShowMandatePrompt}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Keep your service active?</DialogTitle>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Allow auto-payment for future renewals. On expiry day, we will automatically extend your plan. You can disable this anytime in settings.
-            </p>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => handleMandateChoice(false)} disabled={mandateSaving}>
-              No thanks
-            </Button>
-            <Button onClick={() => handleMandateChoice(true)} disabled={mandateSaving}>
-              {mandateSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Enable auto-pay"}
-            </Button>
-          </DialogFooter>
+        <DialogContent className="sm:max-w-md rounded-3xl p-0 overflow-hidden border-0">
+          <div className="bg-gradient-to-b from-emerald-50 to-white dark:from-emerald-950/30 dark:to-gray-900 p-6">
+            <div className="mx-auto mb-4 h-14 w-14 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-200/60">
+              <Check className="h-7 w-7" strokeWidth={3} />
+            </div>
+            <DialogHeader>
+              <DialogTitle className="text-center text-2xl font-black text-gray-900 dark:text-white">Payment Successful</DialogTitle>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Your subscription plan is active now. You can manage auto-pay anytime from subscription settings.
+              </p>
+            </DialogHeader>
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <Button variant="outline" onClick={() => setShowMandatePrompt(false)}>
+                Done
+              </Button>
+              <Button
+                onClick={() => {
+                  setShowMandatePrompt(false)
+                  navigate("/subscription/manage")
+                }}
+              >
+                Manage plan
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 

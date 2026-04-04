@@ -12,6 +12,11 @@ import DeliveryBoyCommission from "../../admin/models/DeliveryBoyCommission.js";
 import RestaurantWallet from "../../restaurant/models/RestaurantWallet.js";
 import RestaurantCommission from "../../admin/models/RestaurantCommission.js";
 import AdminCommission from "../../admin/models/AdminCommission.js";
+import {
+  syncAssignedOrderForDelivery,
+  updateAssignedOrderStatusForDelivery,
+  removeDeliveredOrderFromBatch,
+} from "../services/batchAssignmentService.js";
 import { calculateRoute } from "../../order/services/routeCalculationService.js";
 import {
   upsertActiveOrder,
@@ -993,6 +998,22 @@ export const acceptOrder = asyncHandler(async (req, res) => {
         /* ignore */
       }
     }
+
+    try {
+      await syncAssignedOrderForDelivery(delivery._id, updatedOrder, {
+        status: "accepted",
+        currentLocation:
+          typeof currentLat === "number" && typeof currentLng === "number"
+            ? { latitude: currentLat, longitude: currentLng }
+            : null,
+      });
+    } catch (batchSyncError) {
+      console.error(
+        "Error syncing assigned orders after accept:",
+        batchSyncError,
+      );
+    }
+
     const orderWithPayment = { ...updatedOrder, paymentMethod };
 
     return successResponse(res, 200, "Order accepted successfully", {
@@ -1559,6 +1580,22 @@ export const confirmOrderId = asyncHandler(async (req, res) => {
       `📍 Route to delivery calculated: ${routeData.distance.toFixed(2)} km, ${routeData.duration.toFixed(1)} mins`,
     );
 
+    try {
+      await updateAssignedOrderStatusForDelivery(
+        delivery._id,
+        orderMongoId,
+        "picked_up",
+        typeof deliveryLat === "number" && typeof deliveryLng === "number"
+          ? { latitude: deliveryLat, longitude: deliveryLng }
+          : null,
+      );
+    } catch (batchSyncError) {
+      console.error(
+        "Error updating assigned order status after pickup:",
+        batchSyncError,
+      );
+    }
+
     // Send response first, then handle socket notification asynchronously
     const responseData = {
       order: updatedOrder,
@@ -2074,6 +2111,14 @@ export const completeDelivery = asyncHandler(async (req, res) => {
       order.orderId ||
       orderMongoId?.toString() ||
       orderId;
+    try {
+      await removeDeliveredOrderFromBatch(delivery._id, orderMongoId);
+    } catch (batchSyncError) {
+      console.error(
+        "Error removing delivered order from assigned orders:",
+        batchSyncError,
+      );
+    }
     console.log(
       `✅ Order ${orderIdForLog} marked as delivered by delivery partner ${delivery._id}`,
     );

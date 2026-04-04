@@ -1,5 +1,15 @@
 // src/context/cart-context.jsx
 import { createContext, useContext, useEffect, useMemo, useState } from "react"
+import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { ArrowRightLeft, Store } from "lucide-react"
 
 // Default cart context value to prevent errors during initial render
 const defaultCartContext = {
@@ -28,6 +38,14 @@ const defaultCartContext = {
   cleanCartForRestaurant: () => {
     console.warn('CartProvider not available - cleanCartForRestaurant called');
   },
+  replacementRequest: null,
+  confirmCartReplacement: () => {},
+  cancelCartReplacement: () => {},
+}
+
+const normalizeRestaurantName = (name) => {
+  if (!name) return ""
+  return name.trim().toLowerCase()
 }
 
 const CartContext = createContext(defaultCartContext)
@@ -48,6 +66,7 @@ export function CartProvider({ children }) {
   const [lastAddEvent, setLastAddEvent] = useState(null)
   // Track last remove event for animation
   const [lastRemoveEvent, setLastRemoveEvent] = useState(null)
+  const [replacementRequest, setReplacementRequest] = useState(null)
 
   // Persist to localStorage whenever cart changes
   useEffect(() => {
@@ -72,54 +91,65 @@ export function CartProvider({ children }) {
     return () => window.removeEventListener("userAuthChanged", onAuthChanged)
   }, [])
 
-  const addToCart = (item, sourcePosition = null) => {
-    setCart((prev) => {
-      // CRITICAL: Validate restaurant consistency
-      // If cart already has items, ensure new item belongs to the same restaurant
-      if (prev.length > 0) {
-        const firstItemRestaurantId = prev[0]?.restaurantId;
-        const firstItemRestaurantName = prev[0]?.restaurant;
-        const newItemRestaurantId = item?.restaurantId;
-        const newItemRestaurantName = item?.restaurant;
-        
-        // Normalize restaurant names for comparison (trim and case-insensitive)
-        const normalizeName = (name) => name ? name.trim().toLowerCase() : '';
-        const firstRestaurantNameNormalized = normalizeName(firstItemRestaurantName);
-        const newRestaurantNameNormalized = normalizeName(newItemRestaurantName);
-        
-        // Check restaurant name first (more reliable than IDs which can have different formats)
-        // If names match, allow it even if IDs differ (same restaurant, different ID format)
-        if (firstRestaurantNameNormalized && newRestaurantNameNormalized) {
-          if (firstRestaurantNameNormalized !== newRestaurantNameNormalized) {
-            console.error('❌ Cannot add item: Restaurant name mismatch!', {
-              cartRestaurantId: firstItemRestaurantId,
-              cartRestaurantName: firstItemRestaurantName,
-              newItemRestaurantId: newItemRestaurantId,
-              newItemRestaurantName: newItemRestaurantName
-            });
-            throw new Error(`Cart already contains items from "${firstItemRestaurantName}". Please clear cart or complete order first.`);
-          }
-          // Names match - allow it (even if IDs differ, it's the same restaurant)
-        } else if (firstItemRestaurantId && newItemRestaurantId) {
-          // If names are not available, fallback to ID comparison
-          if (firstItemRestaurantId !== newItemRestaurantId) {
-            console.error('❌ Cannot add item: Cart contains items from different restaurant!', {
-              cartRestaurantId: firstItemRestaurantId,
-              cartRestaurantName: firstItemRestaurantName,
-              newItemRestaurantId: newItemRestaurantId,
-              newItemRestaurantName: newItemRestaurantName
-            });
-            throw new Error(`Cart already contains items from "${firstItemRestaurantName || 'another restaurant'}". Please clear cart or complete order first.`);
-          }
+  const detectRestaurantConflict = (item) => {
+    if (!item) return null
+    if (cart.length === 0) return null
+
+    const firstItem = cart[0]
+    const existingNameNormalized = normalizeRestaurantName(firstItem?.restaurant)
+    const newNameNormalized = normalizeRestaurantName(item?.restaurant)
+
+    if (existingNameNormalized && newNameNormalized) {
+      if (existingNameNormalized !== newNameNormalized) {
+        return {
+          message: `Cart already contains items from "${firstItem?.restaurant || "another restaurant"}". Replacing will remove those items.`,
+          existingRestaurantId: firstItem?.restaurantId,
+          existingRestaurantName: firstItem?.restaurant,
+          newRestaurantId: item?.restaurantId,
+          newRestaurantName: item?.restaurant,
         }
       }
-      
-      // Same line = same item id + same variant (both no variant or same variationId)
-      const lineKey = (i) => (i.selectedVariation?.variationId ? `${i.id}_${i.selectedVariation.variationId}` : i.id)
-      const itemLineKey = lineKey(item)
+      return null
+    }
+
+    const firstRestaurantId = firstItem?.restaurantId
+    const newRestaurantId = item?.restaurantId
+    if (firstRestaurantId && newRestaurantId && String(firstRestaurantId) !== String(newRestaurantId)) {
+      return {
+        message: `Cart already contains items from "${firstItem?.restaurant || "another restaurant"}". Replacing will remove those items.`,
+        existingRestaurantId: firstRestaurantId,
+        existingRestaurantName: firstItem?.restaurant,
+        newRestaurantId,
+        newRestaurantName: item?.restaurant,
+      }
+    }
+
+    return null
+  }
+
+  const addToCart = (item, sourcePosition = null) => {
+    if (!item.restaurantId && !item.restaurant) {
+      console.error('✘ Cannot add item: Missing restaurant information!', item);
+      throw new Error('Item is missing restaurant information. Please refresh the page.');
+    }
+
+    const conflict = detectRestaurantConflict(item)
+    if (conflict) {
+      console.warn('⚠️ Cart conflict detected:', conflict)
+      setReplacementRequest({
+        ...conflict,
+        newItem: { ...item },
+        sourcePosition,
+      })
+      return
+    }
+
+    const lineKey = (i) => (i.selectedVariation?.variationId ? `${i.id}_${i.selectedVariation.variationId}` : i.id)
+    const itemLineKey = lineKey(item)
+
+    setCart((prev) => {
       const existing = prev.find((i) => lineKey(i) === itemLineKey)
       if (existing) {
-        // Set last add event for animation when incrementing existing item
         if (sourcePosition) {
           setLastAddEvent({
             product: {
@@ -129,23 +159,14 @@ export function CartProvider({ children }) {
             },
             sourcePosition,
           })
-          // Clear after animation completes (increased delay)
           setTimeout(() => setLastAddEvent(null), 1500)
         }
         return prev.map((i) =>
           lineKey(i) === itemLineKey ? { ...i, quantity: i.quantity + 1 } : i
         )
       }
-      
-      // Validate item has required restaurant info
-      if (!item.restaurantId && !item.restaurant) {
-        console.error('❌ Cannot add item: Missing restaurant information!', item);
-        throw new Error('Item is missing restaurant information. Please refresh the page.');
-      }
-      
+
       const newItem = { ...item, quantity: 1 }
-      
-      // Set last add event for animation if sourcePosition is provided
       if (sourcePosition) {
         setLastAddEvent({
           product: {
@@ -155,14 +176,12 @@ export function CartProvider({ children }) {
           },
           sourcePosition,
         })
-        // Clear after animation completes (increased delay to allow full animation)
         setTimeout(() => setLastAddEvent(null), 1500)
       }
-      
+
       return [...prev, newItem]
     })
   }
-
   const removeFromCart = (itemId, sourcePosition = null, productInfo = null, variationId = null) => {
     setCart((prev) => {
       const lineKey = (i) => (i.selectedVariation?.variationId ? `${i.id}_${i.selectedVariation.variationId}` : i.id)
@@ -221,6 +240,35 @@ export function CartProvider({ children }) {
       }
       return prev.map((i) => (lineKey(i) === targetKey ? { ...i, quantity } : i))
     })
+  }
+
+
+  const cancelCartReplacement = () => {
+    setReplacementRequest(null)
+  }
+
+  const confirmCartReplacement = () => {
+    if (!replacementRequest) return
+
+    const replacementItem = {
+      ...replacementRequest.newItem,
+      quantity: replacementRequest.newItem?.quantity || 1,
+    }
+
+    setReplacementRequest(null)
+    setCart([replacementItem])
+
+    if (replacementRequest.sourcePosition) {
+      setLastAddEvent({
+        product: {
+          id: replacementItem.id,
+          name: replacementItem.name,
+          imageUrl: replacementItem.image || replacementItem.imageUrl,
+        },
+        sourcePosition: replacementRequest.sourcePosition,
+      })
+      setTimeout(() => setLastAddEvent(null), 1500)
+    }
   }
 
   const getCartCount = () =>
@@ -375,11 +423,89 @@ export function CartProvider({ children }) {
       getCartItem,
       clearCart,
       cleanCartForRestaurant,
+      replacementRequest,
+      confirmCartReplacement,
+      cancelCartReplacement,
     }),
-    [cart, cartForAnimation, lastAddEvent, lastRemoveEvent]
+    [cart, cartForAnimation, lastAddEvent, lastRemoveEvent, replacementRequest]
   )
 
-  return <CartContext.Provider value={value}>{children}</CartContext.Provider>
+  return (
+    <CartContext.Provider value={value}>
+      {children}
+      <CartReplacementDialog
+        request={replacementRequest}
+        onConfirm={confirmCartReplacement}
+        onCancel={cancelCartReplacement}
+      />
+    </CartContext.Provider>
+  )
+}
+
+function CartReplacementDialog({ request, onConfirm, onCancel }) {
+  if (!request) return null
+
+  const existingName = request.existingRestaurantName || "your current cart"
+  const newName = request.newRestaurantName || "this restaurant"
+  const description =
+    request.message ||
+    `Replacing will remove items from ${existingName || "your cart"} and add items from ${newName}.`
+
+  return (
+    <Dialog open={Boolean(request)} onOpenChange={(open) => { if (!open) onCancel() }}>
+      <DialogContent showCloseButton={false} className="w-[calc(100%-28px)] max-w-[340px] rounded-[28px] border-0 p-0 overflow-hidden shadow-[0_24px_60px_rgba(15,23,42,0.2)]">
+        <div className="bg-gradient-to-br from-white via-white to-[#fff6f2] px-5 pb-5 pt-4">
+          <DialogHeader className="text-center">
+            <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-2xl bg-[#fff0ea] text-[#dc2626] shadow-sm">
+              <ArrowRightLeft className="h-5 w-5" />
+            </div>
+            <DialogTitle className="mx-auto max-w-[240px] text-[20px] font-bold leading-6 text-[#1f1722]">
+              Replace cart?
+            </DialogTitle>
+            <DialogDescription className="mx-auto mt-2 max-w-[260px] text-[13px] leading-5 text-[#6b6470]">
+              {description}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="mt-4 rounded-2xl border border-[#f2e4de] bg-white/90 px-4 py-3 text-left shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+            <div className="flex items-start gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#f7f7f8] text-[#1f1722]">
+                <Store className="h-4 w-4" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#9b8f99]">
+                  New restaurant
+                </p>
+                <p className="mt-1 truncate text-sm font-semibold text-[#1f1722]">
+                  {newName}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-3 text-center text-[12px] font-medium text-[#8a7f89]">
+            Current cart: <span className="text-[#1f1722]">{existingName}</span>
+          </div>
+
+          <DialogFooter className="mt-5 flex flex-col gap-2">
+            <Button
+              variant="outline"
+              className="h-11 w-full rounded-2xl border-[#e8d8d1] bg-white text-sm font-semibold text-[#3b2d35] hover:bg-[#fff8f5]"
+              onClick={onCancel}
+            >
+              Keep current cart
+            </Button>
+            <Button
+              className="h-11 w-full rounded-2xl bg-[#dc2626] text-sm font-semibold text-white shadow-[0_12px_24px_rgba(220,38,38,0.22)] hover:bg-[#c21f1f]"
+              onClick={onConfirm}
+            >
+              Replace with new items
+            </Button>
+          </DialogFooter>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
 }
 
 export function useCart() {

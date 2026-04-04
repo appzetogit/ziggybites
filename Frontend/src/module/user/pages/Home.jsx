@@ -58,6 +58,79 @@ const placeholders = [
   "Search \"dosa\""
 ]
 
+const DEMO_FOODS = [
+  {
+    food_id: "demo-food-1",
+    isDemo: true,
+    restaurant_id: "demo-restaurant-1",
+    restaurant_name: "Demo Kitchen",
+    restaurantSlug: "demo-kitchen",
+    food_name: "Paneer Tikka Bowl",
+    price: 179,
+    rating: 4.5,
+    eta: "25-30 mins",
+    distance_km: 1.2,
+    foodType: "Veg",
+    food_image: "https://images.unsplash.com/photo-1565557623262-b51c2513a641?w=800&h=600&fit=crop",
+  },
+  {
+    food_id: "demo-food-2",
+    isDemo: true,
+    restaurant_id: "demo-restaurant-1",
+    restaurant_name: "Demo Kitchen",
+    restaurantSlug: "demo-kitchen",
+    food_name: "Classic Veg Burger",
+    price: 149,
+    rating: 4.3,
+    eta: "20-25 mins",
+    distance_km: 0.9,
+    foodType: "Veg",
+    food_image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=800&h=600&fit=crop",
+  },
+  {
+    food_id: "demo-food-3",
+    isDemo: true,
+    restaurant_id: "demo-restaurant-2",
+    restaurant_name: "Urban Spice",
+    restaurantSlug: "urban-spice",
+    food_name: "Chicken Biryani",
+    price: 229,
+    rating: 4.6,
+    eta: "30-35 mins",
+    distance_km: 2.1,
+    foodType: "Non-Veg",
+    food_image: "https://images.unsplash.com/photo-1701579231305-d84d8af9a3fd?w=800&h=600&fit=crop",
+  },
+  {
+    food_id: "demo-food-4",
+    isDemo: true,
+    restaurant_id: "demo-restaurant-3",
+    restaurant_name: "Pizza Point",
+    restaurantSlug: "pizza-point",
+    food_name: "Farmhouse Pizza",
+    price: 269,
+    rating: 4.4,
+    eta: "25-30 mins",
+    distance_km: 1.8,
+    foodType: "Veg",
+    food_image: "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=800&h=600&fit=crop",
+  },
+  {
+    food_id: "demo-food-5",
+    isDemo: true,
+    restaurant_id: "demo-restaurant-4",
+    restaurant_name: "Healthy Wraps",
+    restaurantSlug: "healthy-wraps",
+    food_name: "Peri Peri Wrap",
+    price: 159,
+    rating: 4.2,
+    eta: "15-20 mins",
+    distance_km: 0.7,
+    foodType: "Veg",
+    food_image: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=800&h=600&fit=crop",
+  },
+]
+
 // Restaurant Image Carousel Component
 const RestaurantImageCarousel = React.memo(({ restaurant, priority = false }) => {
   const images = useMemo(() => restaurant.images || [restaurant.image], [restaurant])
@@ -1115,6 +1188,11 @@ export default function Home() {
     return filtered
   }, [nearbyFoods, activeFilters, sortBy])
 
+  const foodsForDisplay = useMemo(
+    () => (filteredFoods.length > 0 ? filteredFoods : DEMO_FOODS),
+    [filteredFoods],
+  )
+
   // Featured foods removed - will be handled by restaurants data from API
   const filteredFeaturedFoods = useMemo(() => {
     // Return empty array - featured foods will come from API if needed
@@ -1860,7 +1938,7 @@ export default function Home() {
           >
             <div className="flex flex-col gap-0.5 lg:gap-1">
               <h2 className="text-xs sm:text-sm lg:text-base font-semibold text-gray-400 tracking-widest uppercase">
-                {filteredFoods.length} Dishes for You
+                {foodsForDisplay.length} Dishes for You
               </h2>
               <span className="text-base sm:text-lg lg:text-2xl text-gray-500 font-normal">Featured dishes from nearby restaurants</span>
             </div>
@@ -1884,7 +1962,8 @@ export default function Home() {
               )}
             </AnimatePresence>
             <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 lg:gap-5 xl:gap-6 pt-1 sm:pt-1.5 lg:pt-2 items-stretch ${isLoadingFilterResults || loadingFoods ? 'opacity-50' : 'opacity-100'} transition-opacity duration-300`}>
-              {filteredFoods.map((food, index) => {
+              {foodsForDisplay.map((food, index) => {
+                const isDemoFood = Boolean(food.isDemo)
                 const restaurantSlug = food.restaurantSlug || (food.restaurant_name || "").toLowerCase().replace(/\s+/g, "-")
                 const foodImage = food.food_image || food.image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=800&h=600&fit=crop"
                 const cartItem = {
@@ -1907,14 +1986,14 @@ export default function Home() {
                     }}
                   >
                     <div className="h-full group">
-                      <Card className={`overflow-hidden border-0 dark:border-gray-800 bg-white dark:bg-[#1a1a1a] transition-all duration-300 py-0 rounded-2xl sm:rounded-3xl flex flex-col h-full w-full relative shadow-sm hover:shadow-xl hover:-translate-y-1 ${isOutOfService ? "grayscale opacity-75" : ""}`}>
+                      <Card className={`overflow-hidden border-0 dark:border-gray-800 bg-white dark:bg-[#1a1a1a] transition-all duration-300 py-0 rounded-2xl sm:rounded-3xl flex flex-col h-full w-full relative shadow-sm hover:shadow-xl hover:-translate-y-1 ${(isOutOfService && !isDemoFood) ? "grayscale opacity-75" : ""}`}>
                         {/* Food Image */}
                         <Link to={`/food/${food.food_id}`} state={{ food, restaurantId: food.restaurant_id, restaurantSlug }} className="block relative">
                           <div className="relative h-44 sm:h-52 md:h-56 lg:h-60 xl:h-64 w-full overflow-hidden rounded-t-2xl sm:rounded-t-3xl bg-gray-100 dark:bg-gray-800">
                             <OptimizedImage
                               src={foodImage}
                               alt={food.food_name}
-                              className="w-full h-full"
+                              className={`w-full h-full ${isDemoFood ? "saturate-125 contrast-105" : ""}`}
                               sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
                               objectFit="cover"
                               priority={index < 3}
@@ -1926,12 +2005,6 @@ export default function Home() {
                             <span className="inline-flex items-center px-3 py-1.5 rounded-xl bg-white/95 dark:bg-[#1a1a1a]/95 backdrop-blur text-gray-900 dark:text-white font-bold text-sm shadow-lg">
                               ₹{food.price ?? "—"}
                             </span>
-                            {typeof food.rating === "number" && food.rating > 0 && (
-                              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-green-500/95 text-white text-xs font-semibold">
-                                <Star className="h-3.5 w-3.5 fill-white" />
-                                {food.rating.toFixed(1)}
-                              </span>
-                            )}
                           </div>
                           {food.foodType && (
                             <span className={`absolute top-3 left-3 z-10 w-6 h-6 rounded-full border-2 flex items-center justify-center ${isVeg ? "border-green-600 bg-green-600/20" : "border-amber-600 bg-amber-600/20"}`}>
@@ -1952,44 +2025,58 @@ export default function Home() {
                           </Link>
 
                           {/* Meta row: ETA + Nutrition */}
-                          <div className="mt-3 flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
-                              {(food.eta || food.distance_km != null) && (
-                                <>
-                                  {food.eta && (
-                                    <span className="flex items-center gap-1">
-                                      <Clock className="h-3.5 w-3.5" strokeWidth={1.5} />
-                                      {food.eta}
-                                    </span>
-                                  )}
-                                  {food.distance_km != null && (
-                                    <span className="flex items-center gap-1">
-                                      <MapPin className="h-3.5 w-3.5" strokeWidth={1.5} />
-                                      {food.distance_km >= 1 ? `${food.distance_km.toFixed(1)} km` : `${Math.round((food.distance_km || 0) * 1000)} m`}
-                                    </span>
-                                  )}
-                                </>
-                              )}
-                            </div>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.preventDefault()
-                                e.stopPropagation()
-                                setSelectedFoodForNutrition(food)
-                                setShowNutritionModal(true)
-                              }}
-                              className="flex items-center gap-1.5 text-xs font-medium text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 transition-colors shrink-0"
-                            >
-                              <Leaf className="h-3.5 w-3.5" />
-                              <span className="hidden sm:inline">Nutrition</span>
-                            </button>
-                          </div>
+                           <div className="mt-3 flex items-center justify-between gap-2 text-xs text-gray-500 dark:text-gray-400">
+                             <div className="flex items-center gap-1.5">
+                               {(food.eta || food.distance_km != null) && (
+                                 <>
+                                   {food.eta && (
+                                     <span className="flex items-center gap-1">
+                                       <Clock className="h-3.5 w-3.5" strokeWidth={1.5} />
+                                       {food.eta}
+                                     </span>
+                                   )}
+                                   {food.distance_km != null && (
+                                     <span className="flex items-center gap-1">
+                                       <MapPin className="h-3.5 w-3.5" strokeWidth={1.5} />
+                                       {food.distance_km >= 1 ? `${food.distance_km.toFixed(1)} km` : `${Math.round((food.distance_km || 0) * 1000)} m`}
+                                     </span>
+                                   )}
+                                 </>
+                               )}
+                             </div>
+                           </div>
 
-                          {/* Add to Cart */}
-                          <div className="mt-4">
-                            <AddToCartButton item={cartItem} className="w-full !h-11 rounded-xl font-semibold bg-green-600 hover:bg-green-700 text-white border-0" />
-                          </div>
+                           {/* Add to Cart + Nutrition */}
+                          <div className="mt-3 flex items-end gap-2 w-full">
+                            <div className="flex min-w-0 flex-1">
+                              <AddToCartButton
+                                item={cartItem}
+                                className="!h-11 !rounded-xl font-semibold bg-[#DC2626] hover:bg-[#B91C1C] text-white border-0 w-full"
+                              />
+                            </div>
+                            <div className="flex w-[48%] shrink-0 flex-col items-end gap-1.5">
+                              {typeof food.rating === "number" && food.rating > 0 && (
+                                <span className="rating-pill self-end text-xs">
+                                  <Star className="h-3.5 w-3.5 text-black fill-current" />
+                                  {food.rating.toFixed(1)}
+                                </span>
+                              )}
+                              <Button
+                                 type="button"
+                                 variant="outline"
+                                 onClick={(e) => {
+                                   e.preventDefault()
+                                   e.stopPropagation()
+                                  setSelectedFoodForNutrition(food)
+                                  setShowNutritionModal(true)
+                                }}
+                                className="h-11 w-full rounded-xl border-gray-200 text-sm font-semibold text-gray-600 dark:text-gray-200"
+                              >
+                                <Leaf className="h-4 w-4 mr-1" />
+                                Nutrition
+                              </Button>
+                             </div>
+                           </div>
                         </CardContent>
                       </Card>
                     </div>

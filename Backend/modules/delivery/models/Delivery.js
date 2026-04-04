@@ -165,6 +165,58 @@ const metricsSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const assignedOrderSchema = new mongoose.Schema(
+  {
+    orderId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Order",
+    },
+    orderCode: {
+      type: String,
+      trim: true,
+    },
+    latitude: Number,
+    longitude: Number,
+    status: {
+      type: String,
+      enum: [
+        "assigned",
+        "accepted",
+        "picked_up",
+        "en_route_to_delivery",
+        "at_delivery",
+        "delivered",
+        "cancelled",
+      ],
+      default: "assigned",
+    },
+    assignedAt: Date,
+    updatedAt: Date,
+  },
+  { _id: false },
+);
+
+const routeStopSchema = new mongoose.Schema(
+  {
+    orderId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Order",
+    },
+    orderCode: {
+      type: String,
+      trim: true,
+    },
+    latitude: Number,
+    longitude: Number,
+    status: {
+      type: String,
+      default: "assigned",
+    },
+    sequence: Number,
+  },
+  { _id: false },
+);
+
 const deliverySchema = new mongoose.Schema(
   {
     deliveryId: {
@@ -233,6 +285,14 @@ const deliverySchema = new mongoose.Schema(
     earnings: earningsSchema,
     // Metrics
     metrics: metricsSchema,
+    assignedOrders: {
+      type: [assignedOrderSchema],
+      default: [],
+    },
+    route: {
+      type: [routeStopSchema],
+      default: [],
+    },
     // Status
     status: {
       type: String,

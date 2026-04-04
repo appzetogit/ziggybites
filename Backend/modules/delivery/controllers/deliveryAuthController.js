@@ -387,6 +387,8 @@ export const getCurrentDelivery = asyncHandler(async (req, res) => {
       availability: req.delivery.availability,
       metrics: req.delivery.metrics,
       earnings: req.delivery.earnings,
+      assignedOrders: req.delivery.assignedOrders || [],
+      route: req.delivery.route || [],
       wallet: req.delivery.wallet,
       level: req.delivery.level,
       lastLogin: req.delivery.lastLogin,

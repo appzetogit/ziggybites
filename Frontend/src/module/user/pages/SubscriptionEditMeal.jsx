@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react"
-import { Link, useNavigate } from "react-router-dom"
+import { Link, useLocation, useNavigate } from "react-router-dom"
 import { ArrowLeft, Check, PauseCircle, Loader2, UserCircle2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import api from "@/lib/api"
@@ -57,9 +57,11 @@ function normalizeMealSubscription(pref) {
 }
 
 export default function SubscriptionEditMeal() {
+  const location = useLocation()
   const navigate = useNavigate()
   const [displayItems, setDisplayItems] = useState([])
   const [mealSubscription, setMealSubscription] = useState(null)
+  const [bootstrapping, setBootstrapping] = useState(true)
   const [showPauseDialog, setShowPauseDialog] = useState(false)
   const [resumeSaving, setResumeSaving] = useState(false)
 
@@ -75,6 +77,8 @@ export default function SubscriptionEditMeal() {
     } catch {
       setDisplayItems([])
       setMealSubscription(null)
+    } finally {
+      setBootstrapping(false)
     }
   }, [])
 
@@ -104,6 +108,12 @@ export default function SubscriptionEditMeal() {
   const selectedCount = new Set((displayItems || []).map(i => i.mealCategory)).size
   const hasAnyMealSelected = selectedCount > 0
   const stepNumber = Math.min(4, Math.max(1, selectedCount + 1))
+  const shouldRedirectToManage = !bootstrapping && hasMealSub && !location.state?.mealSetupFirst
+
+  useEffect(() => {
+    if (!shouldRedirectToManage) return
+    navigate("/subscription/manage", { replace: true })
+  }, [shouldRedirectToManage, navigate])
 
   const handleResume = async () => {
     const id = mealSubscription?._id ?? mealSubscription?.id
@@ -123,6 +133,14 @@ export default function SubscriptionEditMeal() {
   const handleBack = () => {
     if (isChooseMealsFirstTime && !mealsComplete) return navigate("/")
     navigate("/subscription")
+  }
+
+  if (bootstrapping || shouldRedirectToManage) {
+    return (
+      <div className="min-h-screen bg-[#FDFDFD] dark:bg-gray-950 flex items-center justify-center">
+        <Loader2 className="h-7 w-7 animate-spin text-[#DC2626]" />
+      </div>
+    )
   }
 
   return (

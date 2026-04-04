@@ -2,25 +2,26 @@ import { useState, useEffect, useCallback } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import {
   Loader2,
-  Repeat,
-  Calendar,
-  Check,
+  Package,
   Pencil,
   ChevronRight,
   PauseCircle,
   Truck,
   ArrowLeft,
   MessageCircle,
-  Clock,
   Sunrise,
   Sun,
   Coffee,
   Moon,
-  AlertTriangle
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Switch } from "@/components/ui/switch"
-import api, { userAPI } from "@/lib/api"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import api from "@/lib/api"
 import SubscriptionPauseDialog from "@/module/user/components/SubscriptionPauseDialog.jsx"
 import { toast } from "sonner"
 import AnimatedPage from "@/module/user/components/AnimatedPage"
@@ -39,9 +40,11 @@ export default function SubscriptionManagementPage() {
   const [activeSubscriptions, setActiveSubscriptions] = useState([])
   const [dashboard, setDashboard] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
   const [showPauseDialog, setShowPauseDialog] = useState(false)
   const [cancelSaving, setCancelSaving] = useState(false)
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false)
+  const [cancelPreviewLoading, setCancelPreviewLoading] = useState(false)
+  const [cancelPreview, setCancelPreview] = useState(null)
 
   const primarySubscription =
     activeSubscriptions.find((s) => s.status === "active") || activeSubscriptions[0] || null
@@ -61,7 +64,7 @@ export default function SubscriptionManagementPage() {
          navigate("/subscription")
       }
     } catch (e) {
-      setError(e.message)
+      toast.error(e?.message || "Failed to load subscription management")
     } finally {
       setLoading(false)
     }
@@ -72,26 +75,31 @@ export default function SubscriptionManagementPage() {
   }, [fetchData])
 
   const handleCancel = async () => {
-    if (!confirm("Are you sure you want to cancel your plan? You will lose access at the end of the current cycle.")) return
+    setCancelPreviewLoading(true)
+    try {
+      const res = await api.post("/subscription/cancel", { previewOnly: true })
+      setCancelPreview(res?.data?.data || null)
+      setShowCancelConfirm(true)
+    } catch (e) {
+      toast.error(e?.response?.data?.message || "Could not calculate cancellation amount")
+    } finally {
+      setCancelPreviewLoading(false)
+    }
+  }
+
+  const handleConfirmCancel = async () => {
     setCancelSaving(true)
     try {
-      await api.post("/subscription/cancel")
-      toast.success("Cancellation request submitted.")
+      const res = await api.post("/subscription/cancel")
+      const refunded = Number(res?.data?.data?.refundedAmount || 0).toLocaleString("en-IN")
+      toast.success(`Subscription cancelled. Refund of Rs. ${refunded} will go to your bank/payment source.`)
+      setShowCancelConfirm(false)
+      setCancelPreview(null)
       fetchData()
     } catch (e) {
       toast.error(e?.response?.data?.message || "Could not cancel")
     } finally {
       setCancelSaving(false)
-    }
-  }
-
-  const handleToggleAutoPay = async (checked) => {
-    try {
-      await api.post("/subscription/toggle-autopay", { enabled: checked })
-      setDashboard((d) => (d ? { ...d, autoPayEnabled: checked } : null))
-      toast.success(`Auto-pay ${checked ? "enabled" : "disabled"}`)
-    } catch (e) {
-      toast.error(e?.response?.data?.message || "Error toggling auto-pay")
     }
   }
 
@@ -163,8 +171,8 @@ export default function SubscriptionManagementPage() {
             <section>
                <div className="flex items-center justify-between mb-4 px-2">
                  <h3 className="text-xl font-black text-gray-900 dark:text-white">Meal Choices</h3>
-                 <Link to="/subscription/edit-meal" className="text-xs font-black text-[#DC2626] uppercase tracking-widest hover:underline">
-                   Edit All
+                 <Link to="/subscription/manage" className="text-xs font-black text-[#DC2626] uppercase tracking-widest hover:underline">
+                   Manage
                  </Link>
                </div>
                <div className="grid grid-cols-1 gap-3">
@@ -186,7 +194,7 @@ export default function SubscriptionManagementPage() {
                         </div>
                         <Link 
                           to={`/subscription/browse/${cat.id}`} 
-                          state={{ fromEditMeal: true }}
+                          state={{ fromManage: true }}
                           className="h-10 w-10 rounded-full bg-gray-50 dark:bg-gray-800 flex items-center justify-center text-gray-400 group-hover:text-[#DC2626] group-hover:bg-red-50 transition-colors"
                         >
                           <Pencil className="h-4 w-4" />
@@ -197,34 +205,15 @@ export default function SubscriptionManagementPage() {
                </div>
             </section>
 
-            {/* Auto-pay Settings */}
-            <section className="bg-white dark:bg-gray-900 rounded-[2rem] p-6 border border-gray-100 dark:border-gray-800">
-               <div className="flex items-center justify-between">
-                 <div className="flex items-center gap-4">
-                    <div className="h-10 w-10 rounded-full bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center text-emerald-600">
-                       <Repeat className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-black text-gray-900 dark:text-white">Auto-Renew Plan</p>
-                      <p className="text-[11px] font-bold text-gray-400">Renew using wallet balance</p>
-                    </div>
-                 </div>
-                 <Switch 
-                  checked={!!dashboard?.autoPayEnabled} 
-                  onCheckedChange={handleToggleAutoPay}
-                 />
-               </div>
-            </section>
-
             {/* Danger Zone */}
             <section className="pt-6 border-t border-gray-100 dark:border-gray-800">
                <Button 
                 variant="ghost" 
                 onClick={handleCancel}
-                disabled={cancelSaving || !!dashboard?.cancellationRequestedAt}
+                disabled={cancelPreviewLoading || cancelSaving || !!dashboard?.cancellationRequestedAt}
                 className="w-full h-12 text-red-500 hover:text-red-600 hover:bg-red-50 font-bold text-xs uppercase tracking-widest"
                >
-                 {dashboard?.cancellationRequestedAt ? "Cancellation Pending" : "Cancel Subscription"}
+                 {dashboard?.cancellationRequestedAt ? "Cancellation Pending" : cancelPreviewLoading ? "Calculating..." : "Cancel Subscription"}
                </Button>
                {dashboard?.cancellationRequestedAt && (
                  <p className="text-center text-[10px] text-gray-400 mt-2 italic px-8">
@@ -269,6 +258,39 @@ export default function SubscriptionManagementPage() {
         subscription={primarySubscription}
         onAfterPause={fetchData}
       />
+
+      <Dialog open={showCancelConfirm} onOpenChange={setShowCancelConfirm}>
+        <DialogContent className="sm:max-w-md rounded-3xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-black">Confirm Cancellation</DialogTitle>
+            <p className="text-sm text-gray-500">
+              Refund will be sent automatically to your original payment source/bank account.
+            </p>
+          </DialogHeader>
+          <div className="rounded-2xl border border-gray-200 p-4 bg-gray-50 space-y-2 text-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-gray-600">Total paid</span>
+              <span className="font-semibold text-gray-900">Rs. {Number(cancelPreview?.totalPaid || 0).toLocaleString("en-IN")}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-gray-600">Meals used amount</span>
+              <span className="font-semibold text-gray-900">Rs. {Number(cancelPreview?.usedAmount || 0).toLocaleString("en-IN")}</span>
+            </div>
+            <div className="flex items-center justify-between border-t border-gray-200 pt-2">
+              <span className="font-semibold text-gray-900">Refund amount</span>
+              <span className="font-black text-[#DC2626]">Rs. {Number(cancelPreview?.refundableAmount || 0).toLocaleString("en-IN")}</span>
+            </div>
+          </div>
+          <div className="flex gap-2 pt-2">
+            <Button variant="outline" className="flex-1" onClick={() => setShowCancelConfirm(false)} disabled={cancelSaving}>
+              Close
+            </Button>
+            <Button className="flex-1 bg-[#DC2626] hover:bg-[#B91C1C] text-white" onClick={handleConfirmCancel} disabled={cancelSaving}>
+              {cancelSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : `Confirm Rs. ${Number(cancelPreview?.refundableAmount || 0).toLocaleString("en-IN")}`}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </AnimatedPage>
   )
 }

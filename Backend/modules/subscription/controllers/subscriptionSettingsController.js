@@ -3,6 +3,15 @@ import { normalizeMealSlotRange } from "../services/subscriptionScheduleService.
 
 const MEAL_KEYS = ["breakfast", "lunch", "snacks", "dinner"];
 
+function notificationSettingsDto(settings) {
+  const ns = settings?.notificationSettings || {};
+  const lead = Number(ns.mealReminderLeadMinutes);
+  return {
+    mealReminderEnabled: ns.mealReminderEnabled !== false,
+    mealReminderLeadMinutes: Number.isFinite(lead) ? Math.min(Math.max(Math.round(lead), 15), 360) : 120,
+  };
+}
+
 /**
  * GET /subscription/settings (public - delivery charges + meal delivery windows for UI)
  */
@@ -19,6 +28,7 @@ export const getSubscriptionSettings = async (req, res) => {
         deliveryChargesPerDay: settings.deliveryChargesPerDay ?? 30,
         mealSlotTimes,
         mealSlotTimezone: settings.mealSlotTimezone || "Asia/Kolkata",
+        notificationSettings: notificationSettingsDto(settings),
       },
     });
   } catch (err) {

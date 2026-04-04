@@ -704,6 +704,12 @@ httpServer.listen(PORT, () => {
 
 // Initialize scheduled tasks
 function initializeScheduledTasks() {
+  const subscriptionNotificationInterval = Math.min(
+    Math.max(Number(process.env.SUBSCRIPTION_NOTIFICATION_CRON_MINUTES) || 5, 1),
+    30,
+  );
+  const subscriptionNotificationCron = `*/${subscriptionNotificationInterval} * * * *`;
+
   // Import menu schedule service
   import("./modules/restaurant/services/menuScheduleService.js")
     .then(({ processScheduledAvailability }) => {
@@ -776,7 +782,7 @@ function initializeScheduledTasks() {
   // ZigZagLite: 2-hour-before subscription notification and auto-generated order
   import("./modules/subscription/services/subscriptionNotificationService.js")
     .then(({ processSubscriptionTwoHourNotifications }) => {
-      cron.schedule("*/15 * * * *", async () => {
+      cron.schedule(subscriptionNotificationCron, async () => {
         try {
           const result = await processSubscriptionTwoHourNotifications();
           if (result.processed > 0) {
@@ -787,7 +793,7 @@ function initializeScheduledTasks() {
         }
       });
       console.log(
-        "✅ Subscription 2hr notification scheduler initialized (runs every 15 min)",
+        `✅ Subscription meal reminder scheduler initialized (runs every ${subscriptionNotificationInterval} min)`,
       );
     })
     .catch((error) => {

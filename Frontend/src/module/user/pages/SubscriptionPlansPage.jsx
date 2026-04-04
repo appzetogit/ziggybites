@@ -11,7 +11,6 @@ import { Button } from "@/components/ui/button"
 import api, { userAPI } from "@/lib/api"
 import { readSubscriptionDraftFromStorage } from "@/module/user/utils/subscriptionDraftStorage.js"
 import AnimatedPage from "@/module/user/components/AnimatedPage"
-import { toast } from "sonner"
 
 function hasAnyMealSelection(items) {
   return Array.isArray(items) && items.length > 0
@@ -94,10 +93,6 @@ export default function SubscriptionPlansPage() {
     if (loading) return
     if (hasAnyMealSelection(draftItems)) return
 
-    toast.info("Choose your meals first", {
-      description:
-        "Add at least one meal before choosing a plan.",
-    })
     navigate("/subscription/edit-meal", { replace: true, state: { mealSetupFirst: true } })
   }, [loading, draftItems, navigate])
 

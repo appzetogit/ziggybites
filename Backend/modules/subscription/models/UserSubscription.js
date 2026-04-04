@@ -101,5 +101,6 @@ const userSubscriptionSchema = new mongoose.Schema(
 
 userSubscriptionSchema.index({ nextDeliveryAt: 1, status: 1 });
 userSubscriptionSchema.index({ userId: 1, status: 1 });
+userSubscriptionSchema.index({ status: 1, nextDeliveryAt: 1, endDate: 1, pauseUntil: 1 });
 
 export default mongoose.model("UserSubscription", userSubscriptionSchema);

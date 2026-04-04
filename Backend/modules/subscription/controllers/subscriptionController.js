@@ -22,7 +22,12 @@ import {
   getSkipNextMealPreview,
 } from "../services/subscriptionPauseService.js";
 import { creditWallet } from "../../wallet/services/walletService.js";
-import { createOrder as createRazorpayOrder, verifyPayment as verifyRazorpayPayment, fetchPayment as fetchRazorpayPayment } from "../../payment/services/razorpayService.js";
+import {
+  createOrder as createRazorpayOrder,
+  verifyPayment as verifyRazorpayPayment,
+  fetchPayment as fetchRazorpayPayment,
+  createRefund as createRazorpayRefund,
+} from "../../payment/services/razorpayService.js";
 import { getRazorpayCredentials } from "../../../shared/utils/envService.js";
 import SubscriptionMealAddIntent from "../models/SubscriptionMealAddIntent.js";
 import UserWallet from "../../user/models/UserWallet.js";
@@ -30,19 +35,20 @@ import UserWallet from "../../user/models/UserWallet.js";
 const MEAL_CATEGORY_KEYS = ["breakfast", "lunch", "snacks", "dinner"];
 
 function mealItemsHaveRequiredCategories(items) {
-  if (!Array.isArray(items) || items.length === 0) return false;
-  return MEAL_CATEGORY_KEYS.every((cat) => items.some((i) => i && i.mealCategory === cat));
+  return Array.isArray(items) && items.some((i) => i && (i.itemId || i.id));
 }
 
 function selectedMealsHaveRequiredCategories(selectedMeals, mealTypesEnabled = {}) {
-  const day1 = Array.isArray(selectedMeals) ? selectedMeals[0] : null;
-  if (!day1 || typeof day1 !== "object") return false;
-  for (const cat of MEAL_CATEGORY_KEYS) {
-    if (mealTypesEnabled[cat] === false) continue;
-    const arr = day1[cat];
-    if (!Array.isArray(arr) || arr.length === 0) return false;
+  if (!Array.isArray(selectedMeals) || selectedMeals.length === 0) return false;
+  for (const dayMeals of selectedMeals) {
+    if (!dayMeals || typeof dayMeals !== "object") continue;
+    for (const cat of MEAL_CATEGORY_KEYS) {
+      if (mealTypesEnabled[cat] === false) continue;
+      const arr = dayMeals[cat];
+      if (Array.isArray(arr) && arr.length > 0) return true;
+    }
   }
-  return true;
+  return false;
 }
 
 async function userHasCompleteMealSelectionOnFile(userId) {
@@ -234,6 +240,93 @@ function getRemainingDays(sub) {
   endDay.setHours(0, 0, 0, 0);
   const diff = Math.ceil((endDay - today) / (24 * 60 * 60 * 1000));
   return Math.max(0, diff);
+}
+
+function startOfDayLocal(value) {
+  const d = new Date(value);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function computeCancellationRefundBreakdown(totalPaidPaise, startDate, endDate, now = new Date()) {
+  const dayMs = 24 * 60 * 60 * 1000;
+  const totalPaid = Number(totalPaidPaise) || 0;
+  if (!startDate || !endDate || totalPaid <= 0) {
+    return {
+      totalPlanDays: 0,
+      usedPlanDays: 0,
+      remainingPlanDays: 0,
+      usedAmountPaise: 0,
+      refundablePaise: 0,
+    };
+  }
+
+  const start = startOfDayLocal(startDate);
+  const end = startOfDayLocal(endDate);
+  const today = startOfDayLocal(now);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || Number.isNaN(today.getTime())) {
+    return {
+      totalPlanDays: 0,
+      usedPlanDays: 0,
+      remainingPlanDays: 0,
+      usedAmountPaise: 0,
+      refundablePaise: 0,
+    };
+  }
+
+  const rawTotalDays = Math.ceil((end - start) / dayMs);
+  const totalPlanDays = Math.max(1, rawTotalDays);
+  const rawRemaining = Math.ceil((end - today) / dayMs);
+  const remainingPlanDays = Math.min(totalPlanDays, Math.max(0, rawRemaining));
+  const usedPlanDays = Math.max(0, totalPlanDays - remainingPlanDays);
+  const usedAmountPaise = Math.min(totalPaid, Math.round((totalPaid * usedPlanDays) / totalPlanDays));
+  const refundablePaise = Math.max(0, totalPaid - usedAmountPaise);
+
+  return {
+    totalPlanDays,
+    usedPlanDays,
+    remainingPlanDays,
+    usedAmountPaise,
+    refundablePaise,
+  };
+}
+
+async function refundSubscriptionToOriginalSource({ userId, refundablePaise, purchases }) {
+  let remainingPaise = Number(refundablePaise) || 0;
+  const refundRecords = [];
+  if (remainingPaise <= 0) {
+    return { refundedPaise: 0, remainingPaise: 0, refundRecords };
+  }
+
+  const refundablePurchases = (purchases || [])
+    .filter((p) => p?.razorpayPaymentId && Number(p.amount) > 0)
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+  for (const purchase of refundablePurchases) {
+    if (remainingPaise <= 0) break;
+    const purchaseAmount = Number(purchase.amount) || 0;
+    const refundAmount = Math.min(remainingPaise, purchaseAmount);
+    if (refundAmount <= 0) continue;
+    const refund = await createRazorpayRefund(purchase.razorpayPaymentId, refundAmount, {
+      userId: String(userId),
+      source: "subscription_cancel",
+      planDays: String(purchase.planDays || ""),
+      purchaseId: String(purchase._id || ""),
+    });
+    refundRecords.push({
+      purchaseId: purchase._id,
+      razorpayPaymentId: purchase.razorpayPaymentId,
+      razorpayRefundId: refund?.id,
+      refundedPaise: refundAmount,
+    });
+    remainingPaise -= refundAmount;
+  }
+
+  return {
+    refundedPaise: Math.max(0, (Number(refundablePaise) || 0) - remainingPaise),
+    remainingPaise: Math.max(0, remainingPaise),
+    refundRecords,
+  };
 }
 
 /** Paid plan billing end (UserPlanSubscription), if user still has access through that record */
@@ -1261,8 +1354,7 @@ export const createPlanOrder = async (req, res) => {
     if (!hasMealsOnSubscription && !mealsFromPayload) {
       return res.status(400).json({
         success: false,
-        message:
-          "Add at least one item each for breakfast, lunch, snacks, and dinner before purchasing a plan.",
+        message: "Add at least one meal item before purchasing a plan.",
       });
     }
 
@@ -1343,8 +1435,7 @@ export const verifyPlanPayment = async (req, res) => {
       if (!fromBody && !hasOnFile) {
         return res.status(400).json({
           success: false,
-          message:
-            "Meal selection is incomplete. Add breakfast, lunch, snacks, and dinner before purchasing.",
+          message: "Meal selection is incomplete. Add at least one meal item before purchasing.",
         });
       }
     }
@@ -1582,7 +1673,10 @@ export const toggleAutoPay = async (req, res) => {
 };
 
 /**
- * Cancel subscription: within 7 days = full cancel + refund; after 7 days = cancel renewal only
+ * Cancel subscription with prorated deduction:
+ * - amount for consumed plan days is deducted
+ * - remaining amount is refunded to original payment source (Razorpay)
+ * - supports preview via { previewOnly: true }
  */
 export const cancelSubscription = async (req, res) => {
   try {
@@ -1590,46 +1684,98 @@ export const cancelSubscription = async (req, res) => {
     if (!userId) {
       return res.status(401).json({ success: false, message: "Unauthorized" });
     }
+    const previewOnly = !!req.body?.previewOnly;
     const ups = await UserPlanSubscription.findOne({ userId });
     if (!ups || ups.status !== "active") {
       return res.status(404).json({ success: false, message: "No active plan subscription found" });
     }
     const today = new Date();
+    const purchases = await SubscriptionPlanPurchase.find({ userId, status: "paid" })
+      .sort({ createdAt: 1 })
+      .select("amount createdAt razorpayPaymentId planDays")
+      .lean();
+    const totalPaidPaise = purchases.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
     const firstPurchaseAt = ups.firstPurchaseAt ? new Date(ups.firstPurchaseAt) : null;
-    const daysSinceFirst = firstPurchaseAt
-      ? Math.floor((today - firstPurchaseAt) / (24 * 60 * 60 * 1000))
-      : 999;
+    const usageStart = firstPurchaseAt || purchases[0]?.createdAt || ups.createdAt || today;
+    const usageEnd = ups.endDate || today;
+    const calc = computeCancellationRefundBreakdown(totalPaidPaise, usageStart, usageEnd, today);
+    const previewData = {
+      totalPaid: Number((totalPaidPaise / 100).toFixed(2)),
+      usedAmount: Number((calc.usedAmountPaise / 100).toFixed(2)),
+      refundableAmount: Number((calc.refundablePaise / 100).toFixed(2)),
+      totalPlanDays: calc.totalPlanDays,
+      usedPlanDays: calc.usedPlanDays,
+      remainingPlanDays: calc.remainingPlanDays,
+      refundDestination: "original_payment_method",
+    };
 
-    if (daysSinceFirst <= 7) {
-      await UserPlanSubscription.updateOne(
-        { userId },
-        {
-          $set: {
-            status: "cancelled",
-            cancellationRequestedAt: today,
-            autoPayEnabled: false,
-          },
-        }
-      );
+    if (previewOnly) {
       return res.status(200).json({
         success: true,
-        message: "Subscription cancelled within 7-day window. Refund will be processed as per policy.",
-      });
-    } else {
-      await UserPlanSubscription.updateOne(
-        { userId },
-        {
-          $set: {
-            cancellationRequestedAt: today,
-            autoPayEnabled: false,
-          },
-        }
-      );
-      return res.status(200).json({
-        success: true,
-        message: "Renewal cancelled. You retain access until " + new Date(ups.endDate).toLocaleDateString() + ".",
+        message: "Cancellation preview calculated.",
+        data: previewData,
       });
     }
+
+    let refundedPaise = 0;
+    let refundRecords = [];
+    if (calc.refundablePaise > 0) {
+      const refundResult = await refundSubscriptionToOriginalSource({
+        userId,
+        refundablePaise: calc.refundablePaise,
+        purchases,
+      });
+      refundedPaise = refundResult.refundedPaise;
+      refundRecords = refundResult.refundRecords;
+      if (refundResult.remainingPaise > 0) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "We could not process full refund to the original payment method automatically. Please contact support.",
+          data: {
+            ...previewData,
+            refundedAmount: Number((refundedPaise / 100).toFixed(2)),
+            pendingRefundAmount: Number((refundResult.remainingPaise / 100).toFixed(2)),
+          },
+        });
+      }
+    }
+
+    await UserPlanSubscription.updateOne(
+      { userId },
+      {
+        $set: {
+          status: "cancelled",
+          cancellationRequestedAt: today,
+          autoPayEnabled: false,
+          endDate: today,
+          queuedPlans: [],
+        },
+      }
+    );
+    await UserSubscription.updateMany(
+      { userId, status: { $in: ["active", "paused"] } },
+      {
+        $set: {
+          status: "cancelled",
+          pausedAt: null,
+          pauseUntil: null,
+          pauseType: null,
+        },
+      },
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: `Subscription cancelled. Refunded Rs. ${Number((refundedPaise / 100).toFixed(2)).toLocaleString("en-IN")} to your payment source.`,
+      data: {
+        ...previewData,
+        refundedAmount: Number((refundedPaise / 100).toFixed(2)),
+        refundDestination: "original_payment_method",
+        refundTransactions: refundRecords,
+        cancelledAt: today,
+      },
+    });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
   }
