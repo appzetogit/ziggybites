@@ -28,6 +28,7 @@ export const getFoodFeed = asyncHandler(async (req, res) => {
   const offset = parseInt(req.query.offset) || 0;
   const foodType = req.query.foodType; // "Veg" | "Non-Veg"
   const isCombo = req.query.isCombo === "true";
+  const tag = (req.query.tag || "").trim();
   const maxDistance = parseInt(req.query.maxDistance) || 50000;
 
   const hasLocation = !isNaN(lat) && !isNaN(lng);
@@ -81,9 +82,15 @@ export const getFoodFeed = asyncHandler(async (req, res) => {
   if (foodType === "Veg" || foodType === "Non-Veg") {
     itemMatch["sections.items.foodType"] = foodType;
   }
-  if (isCombo) {
-    itemMatch["sections.items.isCombo"] = true;
-  }
+    if (isCombo) {
+      itemMatch["sections.items.isCombo"] = true;
+    }
+    if (tag) {
+      const escapedTag = tag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      itemMatch["sections.items.tags"] = {
+        $elemMatch: { $regex: `^${escapedTag}$`, $options: "i" },
+      };
+    }
 
   const pipeline = [
     { $match: { restaurant: { $in: restaurantIds }, isActive: true } },
@@ -113,10 +120,11 @@ export const getFoodFeed = asyncHandler(async (req, res) => {
         preparationTime: "$sections.items.preparationTime",
         macronutrients: "$sections.items.macronutrients",
         vitamins: "$sections.items.vitamins",
-        nutrition: "$sections.items.nutrition",
-        allergies: "$sections.items.allergies",
+          nutrition: "$sections.items.nutrition",
+          allergies: "$sections.items.allergies",
+          tags: "$sections.items.tags",
+        },
       },
-    },
     { $sort: { rating: -1 } },
     { $skip: offset },
     { $limit: limit },

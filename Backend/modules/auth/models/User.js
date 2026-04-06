@@ -105,6 +105,11 @@ const userSchema = new mongoose.Schema(
         type: Boolean,
         default: false,
       },
+      foodPreference: {
+        type: String,
+        enum: ["healthy", "all"],
+        default: null,
+      },
       language: {
         type: String,
         default: "en",

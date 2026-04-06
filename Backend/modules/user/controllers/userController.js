@@ -44,7 +44,15 @@ export const getUserProfile = asyncHandler(async (req, res) => {
  */
 export const updateUserProfile = asyncHandler(async (req, res) => {
   try {
-    const { name, email, phone, dateOfBirth, anniversary, gender } = req.body;
+      const {
+        name,
+        email,
+        phone,
+        dateOfBirth,
+        anniversary,
+        gender,
+        preferences,
+      } = req.body;
 
     const user = await User.findById(req.user._id);
 
@@ -98,9 +106,38 @@ export const updateUserProfile = asyncHandler(async (req, res) => {
       user.anniversary = anniversary || null;
     }
 
-    if (gender !== undefined) {
-      user.gender = gender || null;
-    }
+      if (gender !== undefined) {
+        user.gender = gender || null;
+      }
+
+      if (preferences && typeof preferences === "object") {
+        if (!user.preferences) {
+          user.preferences = {};
+        }
+
+        if (preferences.vegMode !== undefined) {
+          user.preferences.vegMode = Boolean(preferences.vegMode);
+        }
+
+        if (preferences.foodPreference !== undefined) {
+          const foodPreference = preferences.foodPreference;
+          user.preferences.foodPreference =
+            foodPreference === "healthy" || foodPreference === "all"
+              ? foodPreference
+              : null;
+        }
+
+        if (preferences.language !== undefined) {
+          user.preferences.language = preferences.language || "en";
+        }
+
+        if (preferences.notifications && typeof preferences.notifications === "object") {
+          user.preferences.notifications = {
+            ...(user.preferences.notifications || {}),
+            ...preferences.notifications,
+          };
+        }
+      }
 
     // Save to database
     await user.save();
@@ -109,9 +146,17 @@ export const updateUserProfile = asyncHandler(async (req, res) => {
     const userResponse = user.toObject();
     delete userResponse.password;
 
-    logger.info(`User profile updated: ${user._id}`, {
-      updatedFields: { name, email, phone, dateOfBirth, anniversary, gender }
-    });
+      logger.info(`User profile updated: ${user._id}`, {
+        updatedFields: {
+          name,
+          email,
+          phone,
+          dateOfBirth,
+          anniversary,
+          gender,
+          preferences,
+        },
+      });
 
     return successResponse(res, 200, 'Profile updated successfully', {
       user: userResponse

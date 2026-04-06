@@ -1,9 +1,11 @@
-import { Routes, Route } from "react-router-dom"
+import { Routes, Route, Navigate } from "react-router-dom"
 import ProtectedRoute from "@/components/ProtectedRoute"
 import AuthRedirect from "@/components/AuthRedirect"
 import UserLayout from "./UserLayout"
 import { Suspense, lazy } from "react"
 import Loader from "@/components/Loader"
+import { useProfile } from "../context/ProfileContext"
+import { isModuleAuthenticated } from "@/lib/utils/auth"
 
 // Lazy Loading Pages
 
@@ -16,6 +18,7 @@ const SubscriptionPlanDetailPage = lazy(() => import("../pages/SubscriptionPlanD
 const SubscriptionPlansPage = lazy(() => import("../pages/SubscriptionPlansPage"))
 const SubscriptionFoodBrowse = lazy(() => import("../pages/SubscriptionFoodBrowse"))
 const SubscriptionEditMeal = lazy(() => import("../pages/SubscriptionEditMeal"))
+const PreferencePage = lazy(() => import("../pages/PreferencePage"))
 const HolyPujaPage = lazy(() => import("../pages/HolyPujaPage"))
 const MangalsutraPage = lazy(() => import("../pages/MangalsutraPage"))
 
@@ -93,13 +96,52 @@ const Wallet = lazy(() => import("../pages/Wallet"))
 // Complaints
 const SubmitComplaint = lazy(() => import("../pages/complaints/SubmitComplaint"))
 
+function HomeGate() {
+  const { userProfile, loading } = useProfile()
+  const isAuthenticated = isModuleAuthenticated("user")
+
+  if (!isAuthenticated) {
+    return <Home />
+  }
+
+  if (loading) {
+    return <Loader />
+  }
+
+  if (!userProfile?.preferences?.foodPreference) {
+    return <Navigate to="/preference" replace />
+  }
+
+  return <Home />
+}
+
+function PreferenceGate() {
+  const { userProfile, loading } = useProfile()
+  const isAuthenticated = isModuleAuthenticated("user")
+
+  if (!isAuthenticated) {
+    return <Navigate to="/auth/sign-in" replace />
+  }
+
+  if (loading) {
+    return <Loader />
+  }
+
+  if (userProfile?.preferences?.foodPreference) {
+    return <Navigate to="/" replace />
+  }
+
+  return <PreferencePage />
+}
+
 export default function UserRouter() {
   return (
     <Suspense fallback={<Loader />}>
       <Routes>
         <Route element={<UserLayout />}>
           {/* Home & Discovery (ZigZagLite: subscription-only, no dine-in) */}
-          <Route path="/" element={<Home />} />
+          <Route path="/" element={<HomeGate />} />
+          <Route path="/preference" element={<PreferenceGate />} />
           <Route
             path="/subscription"
             element={

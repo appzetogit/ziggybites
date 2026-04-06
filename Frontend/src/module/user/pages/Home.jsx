@@ -254,7 +254,8 @@ export default function Home() {
   const [heroSearch, setHeroSearch] = useState("")
   const { isSearchOpen, openSearch, closeSearch, searchValue, setSearchValue } = useSearchOverlay()
   const { openLocationSelector } = useLocationSelector()
-  const { vegMode, setVegMode: setVegModeContext } = useProfile()
+  const { vegMode, setVegMode: setVegModeContext, userProfile } = useProfile()
+  const foodPreference = userProfile?.preferences?.foodPreference || "all"
   const [prevVegMode, setPrevVegMode] = useState(vegMode)
   const [showVegModePopup, setShowVegModePopup] = useState(false)
   const [showSwitchOffPopup, setShowSwitchOffPopup] = useState(false)
@@ -940,10 +941,10 @@ export default function Home() {
         params.lat = location.latitude
         params.lng = location.longitude
       }
-      if (vegMode) {
-        params.foodType = "Veg"
-      }
-      const response = await restaurantAPI.getFoodFeed(params)
+        if (foodPreference === "healthy") {
+          params.tag = "Healthy"
+        }
+        const response = await restaurantAPI.getFoodFeed(params)
       if (response?.data?.success && response?.data?.data?.items) {
         setNearbyFoods(response.data.data.items)
       } else {
@@ -955,7 +956,7 @@ export default function Home() {
     } finally {
       setLoadingFoods(false)
     }
-  }, [location?.latitude, location?.longitude, vegMode])
+    }, [location?.latitude, location?.longitude, foodPreference])
 
   // Fetch food feed when location or vegMode changes
   useEffect(() => {
@@ -1128,12 +1129,19 @@ export default function Home() {
     return filtered
   }, [restaurantsData, activeFilters, selectedCuisine, sortBy, vegMode])
 
-  // Filter food items based on active filters (delivery time, distance)
-  const filteredFoods = useMemo(() => {
-    let filtered = [...nearbyFoods]
+    // Filter food items based on active filters (delivery time, distance)
+    const filteredFoods = useMemo(() => {
+      let filtered = [...nearbyFoods]
 
-    // Parse eta string (e.g. "25-30 mins" or "20 mins") to get max minutes
-    const parseEtaMinutes = (eta) => {
+      if (foodPreference === "healthy") {
+        filtered = filtered.filter((food) =>
+          Array.isArray(food.tags) &&
+          food.tags.some((tag) => String(tag).trim().toLowerCase() === "healthy")
+        )
+      }
+
+      // Parse eta string (e.g. "25-30 mins" or "20 mins") to get max minutes
+      const parseEtaMinutes = (eta) => {
       if (!eta || typeof eta !== "string") return null
       const match = eta.match(/(\d+)(?:-(\d+))?\s*(?:mins?|min)?/i)
       if (!match) return null
@@ -1186,7 +1194,7 @@ export default function Home() {
     }
 
     return filtered
-  }, [nearbyFoods, activeFilters, sortBy])
+    }, [nearbyFoods, activeFilters, sortBy, foodPreference])
 
   const foodsForDisplay = useMemo(
     () => (filteredFoods.length > 0 ? filteredFoods : DEMO_FOODS),
