@@ -4,7 +4,8 @@ import { motion, AnimatePresence } from "framer-motion"
 import Lenis from "lenis"
 import Toast from "../components/Toast"
 import { useLocation } from "@/module/user/hooks/useLocation"
-import apiClient from "@/lib/api/axios"
+import { restaurantAPI } from "@/lib/api"
+import { useNearestRestaurant } from "@/module/user/context/NearestRestaurantContext"
 import { useOrderNotifications } from "../hooks/useOrderNotifications"
 import {
   MapPin,
@@ -29,6 +30,7 @@ import { Button } from "@/components/ui/button"
 export default function HomePage() {
   const navigate = useNavigate()
   const { location, loading: locationLoading } = useLocation()
+  const { nearestRestaurant, noServiceAvailable } = useNearestRestaurant()
   useOrderNotifications()
   const [currentSlide, setCurrentSlide] = useState(0)
   const [currentPlaceholderIndex, setCurrentPlaceholderIndex] = useState(0)
@@ -136,8 +138,8 @@ export default function HomePage() {
         else if (feedFilter === "combo") params.isCombo = "true"
 
         const [feedRes, restRes] = await Promise.all([
-          apiClient.get("/restaurant/food-feed", { params }).catch(() => null),
-          apiClient.get("/restaurant/list", { params: { limit: 10 } }).catch(() => null),
+          restaurantAPI.getFoodFeed(params).catch(() => null),
+          restaurantAPI.getRestaurants({ ...params, limit: 1 }).catch(() => null),
         ])
         if (feedRes?.data?.success && Array.isArray(feedRes.data.data?.items)) {
           setFoodFeed(feedRes.data.data.items)
@@ -146,7 +148,7 @@ export default function HomePage() {
           const list = Array.isArray(restRes.data.data?.restaurants)
             ? restRes.data.data.restaurants
             : Array.isArray(restRes.data.data) ? restRes.data.data : []
-          setNearbyRestaurants(list.slice(0, 10))
+          setNearbyRestaurants(list.slice(0, 1))
         }
       } catch (e) {
         console.error("Food feed fetch error:", e)
@@ -830,7 +832,9 @@ export default function HomePage() {
         </div>
 
         <div className="flex gap-4 overflow-x-auto scrollbar-hide -mx-4 px-4">
-          {(nearbyRestaurants.length > 0 ? nearbyRestaurants : popularRestaurants).map((restaurant) => {
+          {(nearbyRestaurants.length > 0
+            ? nearbyRestaurants
+            : (nearestRestaurant ? [nearestRestaurant] : (noServiceAvailable ? [] : popularRestaurants.slice(0, 1)))).map((restaurant) => {
             const isApiRestaurant = !!restaurant._id
             const restId = restaurant._id || restaurant.id
             const restName = restaurant.name || ""
@@ -920,6 +924,11 @@ export default function HomePage() {
             )
           })}
         </div>
+        {noServiceAvailable && nearbyRestaurants.length === 0 && (
+          <div className="mt-4 rounded-2xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center text-sm text-gray-600">
+            No service available in your area
+          </div>
+        )}
       </div>
 
       {/* Find Nearby Restaurant Banner */}

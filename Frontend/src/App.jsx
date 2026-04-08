@@ -1,6 +1,7 @@
-import { Routes, Route, Navigate, useLocation } from "react-router-dom"
+import { Routes, Route, Navigate, Outlet, useLocation } from "react-router-dom"
 import ProtectedRoute from "@/components/ProtectedRoute"
 import AuthRedirect from "@/components/AuthRedirect"
+import { NearestRestaurantProvider } from "@/module/user/context/NearestRestaurantContext"
 
 import { Suspense, lazy } from "react"
 import Loader from "@/components/Loader"
@@ -131,6 +132,14 @@ function UserPathRedirect() {
   return <Navigate to={newPath} replace state={location.state} />
 }
 
+function UserMainRestaurantLayout() {
+  return (
+    <NearestRestaurantProvider>
+      <Outlet />
+    </NearestRestaurantProvider>
+  )
+}
+
 export default function App() {
   return (
     <Suspense fallback={<Loader />}>
@@ -159,18 +168,19 @@ export default function App() {
           }
         />
 
-
-        <Route path="/usermain" element={<HomePage />} />
-        <Route path="/usermain/categories" element={<CategoriesPage />} />
-        <Route path="/usermain/category/:categoryName" element={<CategoryFoodsPage />} />
-        <Route path="/usermain/food/:id" element={<FoodDetailPage />} />
-        <Route path="/usermain/cart" element={<CartPage />} />
-        <Route path="/usermain/checkout" element={<CheckoutPage />} />
-        <Route path="/usermain/payment" element={<PaymentPage />} />
-        <Route path="/usermain/orders" element={<OrdersPage />} />
-        <Route path="/usermain/orders/:orderId" element={<OrderDetailsPage />} />
-        <Route path="/usermain/orders/:orderId/chat" element={<OrderChatScreen />} />
-        <Route path="/usermain/wishlist" element={<WishlistPage />} />
+        <Route element={<UserMainRestaurantLayout />}>
+          <Route path="/usermain" element={<HomePage />} />
+          <Route path="/usermain/categories" element={<CategoriesPage />} />
+          <Route path="/usermain/category/:categoryName" element={<CategoryFoodsPage />} />
+          <Route path="/usermain/food/:id" element={<FoodDetailPage />} />
+          <Route path="/usermain/cart" element={<CartPage />} />
+          <Route path="/usermain/checkout" element={<CheckoutPage />} />
+          <Route path="/usermain/payment" element={<PaymentPage />} />
+          <Route path="/usermain/orders" element={<OrdersPage />} />
+          <Route path="/usermain/orders/:orderId" element={<OrderDetailsPage />} />
+          <Route path="/usermain/orders/:orderId/chat" element={<OrderChatScreen />} />
+          <Route path="/usermain/wishlist" element={<WishlistPage />} />
+        </Route>
 
         {/* Restaurant Protected Routes - Old Routes */}
         <Route

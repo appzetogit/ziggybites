@@ -1,7 +1,7 @@
 /**
  * Compute next subscription meal delivery instant from admin-configured meal slot ranges.
  * Uses IANA timezone (default Asia/Kolkata) via Intl — works without extra deps.
- * Each slot is { start, end } in HH:mm (e.g. 09:00–10:00). Scheduling uses window start (2h-before flow).
+ * Each slot is { start, end } in HH:mm (e.g. 09:00–10:00). Scheduling uses window start (24h-before flow).
  */
 
 export const DEFAULT_MEAL_SLOT_RANGES = {

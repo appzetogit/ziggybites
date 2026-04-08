@@ -74,9 +74,9 @@ const userSubscriptionSchema = new mongoose.Schema(
       },
     },
     specialCookingInstructions: { type: String, default: "" },
-    // Next delivery: 2hr before this we send notification and create pending order
+    // Next delivery: 24hr before this we send notification and create pending order
     nextDeliveryAt: { type: Date, required: true, index: true },
-    // Last time we sent 2hr-before notification (to avoid duplicates)
+    // Last time we sent 24hr-before notification (to avoid duplicates)
     lastNotifiedAt: { type: Date, default: null },
     // Pending order created for this delivery (user can modify/skip/confirm)
     pendingOrderId: { type: String, default: null },

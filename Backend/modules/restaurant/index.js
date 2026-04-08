@@ -4,7 +4,7 @@ import { authenticate } from './middleware/restaurantAuth.js';
 import { uploadMiddleware } from '../../shared/utils/cloudinaryService.js';
 import restaurantAuthRoutes from './routes/restaurantAuthRoutes.js';
 import { getOnboarding, upsertOnboarding, createRestaurantFromOnboardingManual } from './controllers/restaurantOnboardingController.js';
-import { getRestaurants, getRestaurantById, getRestaurantByOwner, updateRestaurantProfile, uploadProfileImage, uploadMenuImage, deleteRestaurantAccount, updateDeliveryStatus, getRestaurantsWithDishesUnder250, getFoodFeed, getFoodsByCategory } from './controllers/restaurantController.js';
+import { getRestaurants, getNearestRestaurant, getRestaurantById, getRestaurantByOwner, updateRestaurantProfile, uploadProfileImage, uploadMenuImage, deleteRestaurantAccount, updateDeliveryStatus, getRestaurantsWithDishesUnder250, getFoodFeed, getFoodsByCategory } from './controllers/restaurantController.js';
 import { getRestaurantFinance } from './controllers/restaurantFinanceController.js';
 import { getWallet, getWalletTransactions, getWalletStats } from './controllers/restaurantWalletController.js';
 import { createWithdrawalRequest, getRestaurantWithdrawalRequests } from './controllers/withdrawalController.js';
@@ -29,7 +29,7 @@ import {
   updateDiningMenuItem,
   requestDiningEnable,
 } from './controllers/diningManagementController.js';
-import { getTodaySubscriptionPrep } from './controllers/restaurantSubscriptionPrepController.js';
+import { getNext24hSubscriptionPrep, getTodaySubscriptionPrep } from './controllers/restaurantSubscriptionPrepController.js';
 
 const router = express.Router();
 
@@ -104,6 +104,7 @@ router.get('/wallet/stats', authenticate, getWalletStats);
 
 // Subscription kitchen prep (today) — meal lines only after customer edit window ends
 router.get('/subscription-prep/today', authenticate, getTodaySubscriptionPrep);
+router.get('/subscription-prep/next-24h', authenticate, getNext24hSubscriptionPrep);
 
 // Withdrawal routes (authenticated - for restaurant module)
 router.post('/withdrawal/request', authenticate, createWithdrawalRequest);
@@ -123,6 +124,7 @@ router.patch('/dining-menu/items', authenticate, updateDiningMenuItem);
 // Restaurant routes (public - for user module)
 router.get('/food-feed', getFoodFeed);
 router.get('/foods', getFoodsByCategory);
+router.get('/nearest', getNearestRestaurant);
 router.get('/list', getRestaurants);
 router.get('/under-250', getRestaurantsWithDishesUnder250);
 // Menu and inventory routes must come before /:id to avoid route conflicts

@@ -9,7 +9,7 @@ import {
 const MEAL_KEYS = ["breakfast", "lunch", "snacks", "dinner"];
 const DEFAULT_NOTIFICATION_SETTINGS = {
   mealReminderEnabled: true,
-  mealReminderLeadMinutes: 120,
+  mealReminderLeadMinutes: 1440,
 };
 
 function defaultMealSlotTimesObject() {
@@ -26,7 +26,7 @@ function normalizeNotificationSettings(raw) {
   const enabled = input.mealReminderEnabled !== false;
   const leadRaw = Number(input.mealReminderLeadMinutes);
   const leadMinutes = Number.isFinite(leadRaw)
-    ? Math.min(Math.max(Math.round(leadRaw), 15), 360)
+    ? Math.min(Math.max(Math.round(leadRaw), 15), 1440)
     : DEFAULT_NOTIFICATION_SETTINGS.mealReminderLeadMinutes;
 
   return {
@@ -118,6 +118,9 @@ subscriptionSettingsSchema.statics.getSettings = async function () {
     saveNeeded = true;
   }
   const notificationSettings = normalizeNotificationSettings(settings.notificationSettings);
+  if (Number(settings.notificationSettings?.mealReminderLeadMinutes) === 120) {
+    notificationSettings.mealReminderLeadMinutes = DEFAULT_NOTIFICATION_SETTINGS.mealReminderLeadMinutes;
+  }
   if (
     !settings.notificationSettings ||
     settings.notificationSettings.mealReminderEnabled !== notificationSettings.mealReminderEnabled ||

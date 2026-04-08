@@ -56,6 +56,7 @@ export default function RestaurantDetails() {
   const { addToCart, updateQuantity, removeFromCart, getCartItem, cart } = useCart()
   const {
     vegMode,
+    userProfile,
     addDishFavorite,
     removeDishFavorite,
     isDishFavorite,
@@ -98,6 +99,7 @@ export default function RestaurantDetails() {
     sortBy: null, // "low-to-high" | "high-to-low"
     vegNonVeg: null, // "veg" | "non-veg"
   })
+  const foodPreference = userProfile?.preferences?.foodPreference || "all"
 
   // When global Veg Mode is enabled, ensure local filter is never set to "non-veg"
   useEffect(() => {
@@ -1200,6 +1202,13 @@ export default function RestaurantDetails() {
     if (!items) return items
 
     return items.filter((item) => {
+      if (foodPreference === "healthy") {
+        const hasHealthyTag = Array.isArray(item.tags) &&
+          item.tags.some((tag) => String(tag).trim().toLowerCase() === "healthy")
+
+        if (!hasHealthyTag) return false
+      }
+
       // Under 250 filter (when coming from Under 250 page)
       if (showOnlyUnder250) {
         const finalPrice = getFinalPrice(item);
@@ -1249,6 +1258,16 @@ export default function RestaurantDetails() {
     return sorted
   }
 
+  const sectionHasVisibleItems = (section) => {
+    const directItems = filterMenuItems(section?.items || [])
+    if (directItems.length > 0) return true
+
+    return (section?.subsections || []).some((subsection) => {
+      const subsectionItems = filterMenuItems(subsection?.items || [])
+      return subsectionItems.length > 0
+    })
+  }
+
   // Helper function to check if a section has any items under ₹250
   const sectionHasItemsUnder250 = (section) => {
     if (!showOnlyUnder250) return true; // If not filtering, show all sections
@@ -1285,12 +1304,14 @@ export default function RestaurantDetails() {
   const getFilteredSections = () => {
     if (!restaurant?.menuSections) return [];
     if (!showOnlyUnder250) {
-      return restaurant.menuSections.map((section, index) => ({ section, originalIndex: index }));
+      return restaurant.menuSections
+        .map((section, index) => ({ section, originalIndex: index }))
+        .filter(({ section }) => sectionHasVisibleItems(section));
     }
 
     return restaurant.menuSections
       .map((section, index) => ({ section, originalIndex: index }))
-      .filter(({ section }) => sectionHasItemsUnder250(section));
+      .filter(({ section }) => sectionHasItemsUnder250(section) && sectionHasVisibleItems(section));
   }
 
   // Highlight offers/texts for the blue offer line
@@ -1843,9 +1864,10 @@ export default function RestaurantDetails() {
                     <div className="space-y-4">
                       {section.subsections.filter(subsection => {
                         // Filter subsections to only show those with items under ₹250
+                        const visibleItems = filterMenuItems(subsection.items || [])
+                        if (visibleItems.length === 0) return false;
                         if (!showOnlyUnder250) return true;
-                        if (!subsection.items || subsection.items.length === 0) return false;
-                        return subsection.items.some(item => {
+                        return visibleItems.some(item => {
                           if (item.isAvailable === false) return false;
                           const finalPrice = getFinalPrice(item);
                           return finalPrice <= 250;
@@ -3325,4 +3347,3 @@ export default function RestaurantDetails() {
     </AnimatedPage>
   )
 }
-

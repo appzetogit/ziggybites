@@ -115,7 +115,7 @@ export default function MealSlotTimesPage() {
       })
       if (res?.data?.success) {
         setSuccess(
-          "Meal windows saved. Users see a range (e.g. 9–10). Reminders still go ~2 hours before the window starts.",
+          "Meal windows saved. Users see a range (e.g. 9–10). Reminders still go ~24 hours before the window starts.",
         )
         const mt = res.data.data?.mealSlotTimes
         if (mt) {
@@ -157,7 +157,7 @@ export default function MealSlotTimesPage() {
           Meal slot times
         </h1>
         <p className="text-slate-600 dark:text-slate-400 mt-1 text-sm max-w-2xl">
-          Set a <strong>delivery window</strong> for each meal (for example 9:00–10:00). Scheduling and the 2-hour reminder
+          Set a <strong>delivery window</strong> for each meal (for example 9:00–10:00). Scheduling and the 24-hour reminder
           use the <strong>start</strong> of the window; customers and order notes show the full range.
         </p>
       </div>

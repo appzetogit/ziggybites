@@ -8,6 +8,7 @@ import NutritionModal from "../components/NutritionModal"
 import OptimizedImage from "@/components/OptimizedImage"
 import { restaurantAPI } from "@/lib/api"
 import { Button } from "@/components/ui/button"
+import { useProfile } from "../context/ProfileContext"
 
 /**
  * Find a menu item by id across all sections and subsections
@@ -51,6 +52,11 @@ function collectAllMenuItems(sections) {
   return items
 }
 
+function isHealthyItem(item) {
+  return Array.isArray(item?.tags) &&
+    item.tags.some((tag) => String(tag).trim().toLowerCase() === "healthy")
+}
+
 /**
  * Map feed food or API menu item to cart item format
  */
@@ -74,7 +80,9 @@ export default function FoodDetailPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const { state } = location
+  const { userProfile } = useProfile()
   const restaurantSlugFromState = state?.restaurantSlug
+  const foodPreference = userProfile?.preferences?.foodPreference || "all"
 
   const [food, setFood] = useState(null)
   const [restaurantName, setRestaurantName] = useState("")
@@ -127,7 +135,12 @@ export default function FoodDetailPage() {
           }
           const allItems = collectAllMenuItems(sections)
           const currentId = String(item.id ?? item._id ?? foodId).trim()
-          const others = allItems.filter((i) => String(i.id ?? i._id ?? "").trim() !== currentId)
+          const others = allItems.filter((i) => {
+            const itemId = String(i.id ?? i._id ?? "").trim()
+            if (itemId === currentId) return false
+            if (foodPreference === "healthy" && !isHealthyItem(i)) return false
+            return true
+          })
           setSuggestedFoods(others.slice(0, 4))
         } else {
           if (foodFromState && restaurantIdFromState) {
@@ -171,7 +184,12 @@ export default function FoodDetailPage() {
         const sections = res.data?.data?.menu?.sections || []
         const allItems = collectAllMenuItems(sections)
         const currentId = String(food.id ?? food.food_id ?? food._id ?? foodId).trim()
-        const others = allItems.filter((i) => String(i.id ?? i._id ?? "").trim() !== currentId)
+        const others = allItems.filter((i) => {
+          const itemId = String(i.id ?? i._id ?? "").trim()
+          if (itemId === currentId) return false
+          if (foodPreference === "healthy" && !isHealthyItem(i)) return false
+          return true
+        })
         if (!cancelled) setSuggestedFoods(others.slice(0, 4))
       } catch {
         if (!cancelled) setSuggestedFoods([])
@@ -179,7 +197,7 @@ export default function FoodDetailPage() {
     }
     fetchSuggestions()
     return () => { cancelled = true }
-  }, [restaurantId, food, foodId, state?.restaurantId, state?.restaurant_id])
+  }, [restaurantId, food, foodId, state?.restaurantId, state?.restaurant_id, foodPreference])
 
   const cartItem = food ? toCartItem(food, restaurantName, restaurantId) : null
   const foodImage = food?.image ?? food?.food_image ?? food?.images?.[0] ?? "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=800&h=600&fit=crop"

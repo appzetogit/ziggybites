@@ -301,6 +301,98 @@ export const zoneAPI = {
   },
 };
 
+const USER_LOCATION_STORAGE_KEY = "userLocation";
+const NEAREST_RESTAURANT_STORAGE_KEY = "userNearestRestaurant";
+
+function isUserFacingRestaurantScope() {
+  if (typeof window === "undefined") return true;
+
+  const pathname = window.location.pathname || "";
+  return !(
+    pathname.startsWith("/admin") ||
+    pathname.startsWith("/restaurant") ||
+    pathname.startsWith("/delivery")
+  );
+}
+
+function getStoredUserCoordinates() {
+  if (typeof window === "undefined") return {};
+
+  try {
+    const rawLocation = window.localStorage.getItem(USER_LOCATION_STORAGE_KEY);
+    if (!rawLocation) return {};
+
+    const parsedLocation = JSON.parse(rawLocation);
+    const latitude = parsedLocation?.latitude ?? parsedLocation?.lat;
+    const longitude = parsedLocation?.longitude ?? parsedLocation?.lng;
+
+    if (
+      typeof latitude === "number" &&
+      typeof longitude === "number" &&
+      !Number.isNaN(latitude) &&
+      !Number.isNaN(longitude)
+    ) {
+      return { lat: latitude, lng: longitude };
+    }
+  } catch (error) {
+    console.warn("Failed to read stored user coordinates:", error);
+  }
+
+  return {};
+}
+
+function mergeRestaurantLocationParams(params = {}) {
+  const hasCoordinates =
+    params.lat != null ||
+    params.lng != null ||
+    params.latitude != null ||
+    params.longitude != null;
+
+  if (hasCoordinates) {
+    return params;
+  }
+
+  return {
+    ...getStoredUserCoordinates(),
+    ...params,
+  };
+}
+
+function cacheNearestRestaurantPayload(restaurant) {
+  if (typeof window === "undefined") return;
+
+  try {
+    if (restaurant) {
+      window.localStorage.setItem(
+        NEAREST_RESTAURANT_STORAGE_KEY,
+        JSON.stringify(restaurant),
+      );
+    } else {
+      window.localStorage.removeItem(NEAREST_RESTAURANT_STORAGE_KEY);
+    }
+  } catch (error) {
+    console.warn("Failed to cache nearest restaurant:", error);
+  }
+}
+
+function normalizeNearestRestaurantResponse(response) {
+  const restaurant = response?.data?.data?.restaurant || null;
+  cacheNearestRestaurantPayload(restaurant);
+
+  return {
+    ...response,
+    data: {
+      ...response.data,
+      data: {
+        ...(response.data?.data || {}),
+        restaurant,
+        restaurants: restaurant ? [restaurant] : [],
+        total: restaurant ? 1 : 0,
+      },
+    },
+  };
+}
+
 // Export restaurant API helper functions
 export const restaurantAPI = {
   // Restaurant Authentication
@@ -628,6 +720,22 @@ export const restaurantAPI = {
     return apiClient.get(API_ENDPOINTS.RESTAURANT.SUBSCRIPTION_PREP_TODAY);
   },
 
+  /** Next 24 hours subscription orders for kitchen prep (meals hidden until edit window ends). */
+  getSubscriptionPrepNext24h: () => {
+    return apiClient.get(API_ENDPOINTS.RESTAURANT.SUBSCRIPTION_PREP_NEXT_24H);
+  },
+
+  /** Subscription flow: restaurant updates preparationStatus (pending | preparing | ready). */
+  patchSubscriptionPreparationStatus: (orderId, preparationStatus) => {
+    return apiClient.patch(
+      API_ENDPOINTS.RESTAURANT.SUBSCRIPTION_PREP_PATCH_STATUS.replace(
+        ":orderId",
+        orderId,
+      ),
+      { preparationStatus },
+    );
+  },
+
   // Withdrawal
   createWithdrawalRequest: (amount) => {
     return apiClient.post(API_ENDPOINTS.RESTAURANT.WITHDRAWAL_REQUEST, {
@@ -645,9 +753,23 @@ export const restaurantAPI = {
     return apiClient.get(API_ENDPOINTS.RESTAURANT.ANALYTICS, { params });
   },
 
+  getNearestRestaurant: (params = {}) => {
+    return apiClient
+      .get(API_ENDPOINTS.RESTAURANT.NEAREST, {
+        params: mergeRestaurantLocationParams(params),
+      })
+      .then(normalizeNearestRestaurantResponse);
+  },
+
   // Get all restaurants (for user module)
   getRestaurants: (params = {}) => {
-    return apiClient.get(API_ENDPOINTS.RESTAURANT.LIST, { params });
+    const mergedParams = mergeRestaurantLocationParams(params);
+
+    if (isUserFacingRestaurantScope()) {
+      return restaurantAPI.getNearestRestaurant(mergedParams);
+    }
+
+    return apiClient.get(API_ENDPOINTS.RESTAURANT.LIST, { params: mergedParams });
   },
 
   // Get food feed (individual food items from nearby restaurants)

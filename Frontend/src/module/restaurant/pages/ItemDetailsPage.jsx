@@ -409,7 +409,7 @@ export default function ItemDetailsPage() {
     },
     {
       category: "Dietary Restrictions",
-      tags: ["Vegan"]
+      tags: ["Healthy", "Vegan"]
     }
   ]
 
@@ -569,6 +569,41 @@ export default function ItemDetailsPage() {
         ? prev.filter(t => t !== tag)
         : [...prev, tag]
     )
+  }
+
+  const normalizeTags = (tags) => {
+    if (!Array.isArray(tags)) return []
+
+    const normalized = []
+    const seen = new Set()
+
+    tags.forEach((tag) => {
+      if (typeof tag !== "string") return
+      const trimmed = tag.trim()
+      if (!trimmed) return
+
+      const canonicalTag = trimmed.toLowerCase() === "healthy" ? "Healthy" : trimmed
+      const key = canonicalTag.toLowerCase()
+
+      if (seen.has(key)) return
+      seen.add(key)
+      normalized.push(canonicalTag)
+    })
+
+    return normalized
+  }
+
+  const healthySelected = (selectedTags || []).some(
+    (t) => String(t).trim().toLowerCase() === "healthy",
+  )
+
+  const setHealthySelected = (enabled) => {
+    setSelectedTags((prev) => {
+      const withoutHealthy = (prev || []).filter(
+        (t) => String(t).trim().toLowerCase() !== "healthy",
+      )
+      return enabled ? [...withoutHealthy, "Healthy"] : withoutHealthy
+    })
   }
 
   const handleSave = async () => {
@@ -832,7 +867,7 @@ export default function ItemDetailsPage() {
           price: typeof v.price === "number" && !isNaN(v.price) ? v.price : Number(v.price) || 0,
           stock: v.stock === "Unlimited" ? "Unlimited" : (typeof v.stock === "number" ? v.stock : Number(v.stock) || 0),
         })),
-        tags: [],
+        tags: normalizeTags(selectedTags),
         nutrition: nutritionStrings,
         macronutrients: macronutrients ?? null,
         vitamins: vitamins ?? null,
@@ -1186,6 +1221,39 @@ export default function ItemDetailsPage() {
                 {foodType === "Egg" && <Check className="w-4 h-4" />}
                 <span>Egg</span>
               </button>
+            </div>
+            {/* Food type (Normal/Healthy) */}
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-gray-900 mb-2">
+                Food type
+              </label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setHealthySelected(false)}
+                  className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${!healthySelected
+                      ? "border-gray-900 border-2 text-gray-900"
+                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    }`}
+                >
+                  {!healthySelected && <Check className="w-4 h-4" />}
+                  <span>Normal</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHealthySelected(true)}
+                  className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${healthySelected
+                      ? "border-green-600 border-2 text-green-600"
+                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    }`}
+                >
+                  {healthySelected && <Check className="w-4 h-4" />}
+                  <span>Healthy</span>
+                </button>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Used for user preference filter (<span className="font-medium">Healthy choices</span>).
+              </p>
             </div>
             {/* Meal Category (for subscription flow) */}
             <div className="mt-4">

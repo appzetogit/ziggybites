@@ -1,6 +1,7 @@
 import { Outlet, useLocation } from "react-router-dom"
 import { useEffect, useState, createContext, useContext, lazy, Suspense } from "react"
 import { ProfileProvider } from "../context/ProfileContext"
+import { NearestRestaurantProvider } from "../context/NearestRestaurantContext"
 import LocationPrompt from "./LocationPrompt"
 import { CartProvider } from "../context/CartContext"
 import { OrdersProvider } from "../context/OrdersContext"
@@ -156,25 +157,26 @@ export default function UserLayout() {
 
   return (
     <div className="min-h-screen bg-[#f5f5f5] dark:bg-[#0a0a0a] transition-colors duration-200">
-      <CartProvider>
-        <ProfileProvider>
-          <OrdersProvider>
-            <SearchOverlayProvider>
-              <LocationSelectorProvider>
-                {/* <Navbar /> */}
-                {showBottomNav && <DesktopNavbar />}
-                <LocationPrompt />
-                <main>
-                  <Outlet />
-                </main>
-                {showBottomNav && <BottomNavigation />}
-                {showChatFAB && <WhatsAppSupport />}
-              </LocationSelectorProvider>
-            </SearchOverlayProvider>
-          </OrdersProvider>
-        </ProfileProvider>
-      </CartProvider>
+      <NearestRestaurantProvider>
+        <CartProvider>
+          <ProfileProvider>
+            <OrdersProvider>
+              <SearchOverlayProvider>
+                <LocationSelectorProvider>
+                  {/* <Navbar /> */}
+                  {showBottomNav && <DesktopNavbar />}
+                  <LocationPrompt />
+                  <main>
+                    <Outlet />
+                  </main>
+                  {showBottomNav && <BottomNavigation />}
+                  {showChatFAB && <WhatsAppSupport />}
+                </LocationSelectorProvider>
+              </SearchOverlayProvider>
+            </OrdersProvider>
+          </ProfileProvider>
+        </CartProvider>
+      </NearestRestaurantProvider>
     </div>
   )
 }
-

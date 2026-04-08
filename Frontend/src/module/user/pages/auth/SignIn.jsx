@@ -17,9 +17,7 @@ import { firebaseAuth, googleProvider, ensureFirebaseInitialized } from "@/lib/f
 import { setAuthData } from "@/lib/utils/auth"
 import { syncSubscriptionDraftAfterUserLogin } from "@/module/user/utils/subscriptionDraftStorage.js"
 import { registerFcmTokenForLoggedInUser } from "@/lib/notifications/fcmWeb"
-import loginBanner from "@/assets/loginbanner.jpg"
 import tastizoLogo from "@/assets/tastizologo.png"
-import deliveryLogo from "@/assets/image.png"
 
 // Common country codes
 const countryCodes = [
@@ -465,27 +463,31 @@ export default function SignIn() {
   return (
     <AnimatedPage className="h-screen max-h-[100dvh] flex flex-col bg-white dark:bg-[#0a0a0a] overflow-hidden !pb-0 md:flex-row md:overflow-hidden">
 
-      {/* Mobile: Top Section - Banner Image */}
-      {/* Desktop: Left Section - Banner Image */}
-      {/* Mobile: Top Section - Delivery logo (ZigZagLite red theme) */}
-      <div className="relative md:hidden w-full shrink-0 flex items-center justify-center bg-[#E2E2E2] dark:bg-[#E2E2E2]" style={{ height: "45vh", minHeight: "300px" }}>
-        <img
-          src={deliveryLogo}
-          alt="ZigZagLite Delivery"
-          className="w-64 h-auto object-contain"
-          onError={(e) => { e.target.onerror = null; e.target.src = tastizoLogo }}
-        />
-      </div>
+       {/* Mobile: Top Section - Banner Image */}
+       {/* Desktop: Left Section - Banner Image */}
+       {/* Mobile: Top Section - Delivery logo (ZigZagLite red theme) */}
+      <div className="relative md:hidden w-full shrink-0 flex items-center justify-center bg-white dark:bg-white" style={{ height: "45vh", minHeight: "300px" }}>
+        <div className="flex flex-col items-center justify-center">
+          <img
+            src="/image.png"
+            alt="ZiggyBites"
+            className="w-64 h-auto object-contain"
+            onError={(e) => { e.target.onerror = null; e.target.src = tastizoLogo }}
+          />
+        </div>
+       </div>
 
-      {/* Desktop: Left Section - Delivery logo */}
-      <div className="relative hidden md:flex w-full shrink-0 md:w-1/2 md:h-full items-center justify-center bg-[#E2E2E2] dark:bg-[#E2E2E2]">
-        <img
-          src={deliveryLogo}
-          alt="ZigZagLite Delivery"
-          className="w-80 lg:w-96 h-auto object-contain"
-          onError={(e) => { e.target.onerror = null; e.target.src = tastizoLogo }}
-        />
-      </div>
+       {/* Desktop: Left Section - Delivery logo */}
+      <div className="relative hidden md:flex w-full shrink-0 md:w-1/2 md:h-full items-center justify-center bg-white dark:bg-white">
+        <div className="flex flex-col items-center justify-center">
+          <img
+            src="/image.png"
+            alt="ZiggyBites"
+            className="w-80 lg:w-96 h-auto object-contain"
+            onError={(e) => { e.target.onerror = null; e.target.src = tastizoLogo }}
+          />
+        </div>
+       </div>
 
       {/* Mobile: Bottom Section - White Login Form (scrollable); Desktop: Right Section - Login Form */}
       <div className="flex-1 min-h-0 flex flex-col md:w-1/2 md:h-full md:overflow-hidden">

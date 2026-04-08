@@ -23,7 +23,7 @@ function normalizeNotificationSettingsPayload(raw) {
     if (!Number.isFinite(lead)) {
       return { ok: false, message: "mealReminderLeadMinutes must be a number" };
     }
-    out.mealReminderLeadMinutes = Math.min(Math.max(Math.round(lead), 15), 360);
+    out.mealReminderLeadMinutes = Math.min(Math.max(Math.round(lead), 15), 1440);
   }
   return { ok: true, partial: out };
 }
@@ -41,8 +41,8 @@ function settingsToDto(settings) {
     notificationSettings: {
       mealReminderEnabled: settings.notificationSettings?.mealReminderEnabled !== false,
       mealReminderLeadMinutes: Number.isFinite(Number(settings.notificationSettings?.mealReminderLeadMinutes))
-        ? Math.min(Math.max(Math.round(Number(settings.notificationSettings?.mealReminderLeadMinutes)), 15), 360)
-        : 120,
+        ? Math.min(Math.max(Math.round(Number(settings.notificationSettings?.mealReminderLeadMinutes)), 15), 1440)
+        : 1440,
     },
   };
 }
@@ -124,8 +124,8 @@ export const updateSubscriptionSettings = asyncHandler(async (req, res) => {
           v.partial.mealReminderLeadMinutes != null
             ? v.partial.mealReminderLeadMinutes
             : Number.isFinite(Number(current.mealReminderLeadMinutes))
-              ? Math.min(Math.max(Math.round(Number(current.mealReminderLeadMinutes)), 15), 360)
-              : 120,
+              ? Math.min(Math.max(Math.round(Number(current.mealReminderLeadMinutes)), 15), 1440)
+              : 1440,
       };
       settings.markModified("notificationSettings");
     }

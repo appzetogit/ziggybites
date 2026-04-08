@@ -55,7 +55,7 @@ function getDefaultDescription(plan) {
   if (plan.durationDays === 15) return "Short-term access. Best for trying out."
   if (plan.durationDays === 30) return "Monthly standard. Most popular choice."
   if (plan.durationDays === 90) return "Quarterly value plan. Best value."
-  return "Meal subscription with 2-hour prior delivery notification."
+  return "Meal subscription with 24-hour prior delivery notification."
 }
 
 /** Next delivery: readable local date/time without seconds */

@@ -398,6 +398,27 @@ const normalizeBatchOrder = (order = {}) => {
   return normalized
 }
 
+const isLocalTestDeliveryOrder = (order = {}) => {
+  const primaryId = String(
+    order?.id ||
+    order?._id ||
+    order?.orderMongoId ||
+    order?.mongoId ||
+    order?.orderDbId ||
+    ""
+  )
+  const displayOrderId = String(order?.orderId || order?.orderCode || "")
+
+  return (
+    order?.isDemoOrder === true ||
+    primaryId.startsWith("DEMO-") ||
+    primaryId.startsWith("demo-") ||
+    displayOrderId.startsWith("DEMO-") ||
+    displayOrderId.startsWith("demo-") ||
+    (import.meta.env.DEV && /^THALI-/i.test(displayOrderId) && !primaryId)
+  )
+}
+
 export default function DeliveryHome() {
   const companyName = useCompanyName()
   const navigate = useNavigate()
@@ -852,10 +873,18 @@ export default function DeliveryHome() {
     Object.values(batchOrderDetails || {}).forEach(upsertOrder)
     if (selectedRestaurant) {
       upsertOrder(selectedRestaurant)
+      ;(selectedRestaurant.assignedOrders || []).forEach(upsertOrder)
     }
+    ;(newOrder?.assignedOrders || []).forEach(upsertOrder)
 
     return Array.from(ordersMap.values())
-  }, [deliveryBatchState?.assignedOrders, batchOrderDetails, selectedRestaurant, completedBatchOrderKeySet])
+  }, [
+    deliveryBatchState?.assignedOrders,
+    batchOrderDetails,
+    selectedRestaurant,
+    newOrder?.assignedOrders,
+    completedBatchOrderKeySet,
+  ])
 
   const activeBatchKey = useMemo(() => {
     const keys = batchOrders.map(getOrderKey).filter(Boolean).sort()
@@ -904,6 +933,70 @@ export default function DeliveryHome() {
       null
     )
   }, [batchOrders, selectedRestaurant, activeReceiptOrderKey])
+
+  const isDemoReceiptFlow = useMemo(() => {
+    const receiptFlowOrders = [
+      activeReceiptOrder,
+      selectedRestaurant,
+      ...(batchOrders || []),
+    ].filter(Boolean)
+
+    return receiptFlowOrders.some((order) => {
+      const orderKey = String(getOrderKey(order) || "")
+      const explicitOrderId = String(order?.orderId || order?.id || "")
+
+      return (
+        order?.isDemoOrder ||
+        orderKey.startsWith("DEMO-") ||
+        orderKey.startsWith("demo-") ||
+        explicitOrderId.startsWith("DEMO-") ||
+        explicitOrderId.startsWith("demo-")
+      )
+    })
+  }, [activeReceiptOrder, selectedRestaurant, batchOrders])
+
+  const activeReceiptUploaded = isDemoReceiptFlow || Boolean(
+    activeReceiptOrder && batchReceiptUploads[getOrderKey(activeReceiptOrder)]?.billImageUrl,
+  )
+
+  const uploadedBatchReceiptCount = useMemo(
+    () =>
+      batchOrders.filter((order) => {
+        const orderKey = getOrderKey(order)
+        return orderKey && Boolean(batchReceiptUploads[orderKey]?.billImageUrl)
+      }).length,
+    [batchOrders, batchReceiptUploads],
+  )
+
+  const totalBatchReceiptCount = batchOrders.length || 1
+  const effectiveUploadedBatchReceiptCount = isDemoReceiptFlow
+    ? totalBatchReceiptCount
+    : uploadedBatchReceiptCount
+  const allBatchReceiptsUploaded = effectiveUploadedBatchReceiptCount >= totalBatchReceiptCount
+  const pendingBatchReceiptCount = Math.max(totalBatchReceiptCount - effectiveUploadedBatchReceiptCount, 0)
+  const displayBillImageUploaded = isDemoReceiptFlow || billImageUploaded
+
+  const incomingPopupOrders = useMemo(() => {
+    if (Array.isArray(newOrder?.assignedOrders) && newOrder.assignedOrders.length > 0) {
+      return newOrder.assignedOrders
+    }
+
+    const fallbackOrderId = newOrder?.orderId || selectedRestaurant?.orderId || 'ORD1234567890'
+    const fallbackCustomerAddress =
+      newOrder?.customerAddress ||
+      newOrder?.customerLocation?.address ||
+      selectedRestaurant?.customerAddress ||
+      'Address pending'
+
+    return [
+      {
+        orderId: fallbackOrderId,
+        customerName: newOrder?.customerName || selectedRestaurant?.customerName || 'Customer',
+        customerAddress: fallbackCustomerAddress,
+        items: Array.isArray(newOrder?.items) ? newOrder.items : [],
+      },
+    ]
+  }, [newOrder, selectedRestaurant])
 
   const {
     bookedGigs,
@@ -2609,6 +2702,11 @@ export default function DeliveryHome() {
                 status: 'accepted',
               },
               deliveryPhase: 'en_route_to_pickup',
+              assignedOrders:
+                selectedRestaurant?.assignedOrders ||
+                newOrder?.assignedOrders ||
+                deliveryBatchState?.assignedOrders ||
+                [],
               isDemoOrder: true,
             }
 
@@ -2881,7 +2979,14 @@ export default function DeliveryHome() {
                   currentPhase: 'en_route_to_pickup', // CRITICAL: Set to en_route_to_pickup after order acceptance
                   status: 'accepted' // Set status to accepted
                 }, // Store delivery state (currentPhase, status, etc.)
-                deliveryPhase: 'en_route_to_pickup' // CRITICAL: Set to en_route_to_pickup after order acceptance so Reached Pickup popup can show
+                deliveryPhase: 'en_route_to_pickup', // CRITICAL: Set to en_route_to_pickup after order acceptance so Reached Pickup popup can show
+                assignedOrders:
+                  orderData?.assignedOrders ||
+                  order?.assignedOrders ||
+                  selectedRestaurant?.assignedOrders ||
+                  newOrder?.assignedOrders ||
+                  deliveryBatchState?.assignedOrders ||
+                  []
               }
               
               console.log('🏪 Updated restaurant info from backend:', restaurantInfo)
@@ -3694,10 +3799,11 @@ export default function DeliveryHome() {
                              newOrder?._id ||
                              selectedRestaurant?.orderId || 
                              newOrder?.orderId
-        const isDemoOrder =
-          String(orderIdForApi || '').startsWith('DEMO-') ||
-          String(orderIdForApi || '').startsWith('demo-') ||
-          selectedRestaurant?.isDemoOrder
+        const isDemoOrder = isLocalTestDeliveryOrder({
+          ...selectedRestaurant,
+          id: selectedRestaurant?.id || newOrder?.orderMongoId || newOrder?._id,
+          orderId: selectedRestaurant?.orderId || newOrder?.orderId,
+        })
         
         console.log('🔍 Order ID lookup for reached drop:', {
           selectedRestaurantId: selectedRestaurant?.id,
@@ -3710,6 +3816,82 @@ export default function DeliveryHome() {
         if (orderIdForApi) {
           if (isDemoOrder) {
             console.log('✅ Demo reached drop confirmed locally')
+
+            // TESTING MOOD: After reaching B, show route B -> C and C -> D
+            // B = current drop (Scheme No. 54), C = next drop (Scheme No. 78), D = further drop (New Palasia)
+            if (window.google && window.deliveryMapInstance && directionsServiceRef.current) {
+              const b = { 
+                lat: selectedRestaurant?.customerLat || 22.7196, 
+                lng: selectedRestaurant?.customerLng || 75.8577 
+              };
+              const c = { lat: 22.7265, lng: 75.8811 }; // Scheme No. 78
+              const d = { lat: 22.7248, lng: 75.8826 }; // New Palasia (Saket Square)
+
+              directionsServiceRef.current.route(
+                {
+                  origin: b,
+                  destination: d,
+                  waypoints: [{ location: c, stopover: true }],
+                  travelMode: window.google.maps.TravelMode.DRIVING,
+                },
+                (result, status) => {
+                  if (status === window.google.maps.DirectionsStatus.OK) {
+                    console.log('✅ Testing route (B -> C -> D) calculated')
+                    setDirectionsResponse(result)
+                    directionsResponseRef.current = result
+                    
+                    // Update live tracking polyline immediately
+                    updateLiveTrackingPolyline(result, [b.lat, b.lng])
+                    
+                    // Center on current drop B to start visualization
+                    window.deliveryMapInstance.panTo(b)
+                    
+                    // Show entire sequence bounds
+                    const bounds = new window.google.maps.LatLngBounds()
+                    bounds.extend(b); bounds.extend(c); bounds.extend(d)
+                    window.deliveryMapInstance.fitBounds(bounds, { padding: 100 })
+
+                    // Add markers for B, C, D to visualize the testing points
+                    // Clean up any existing testing markers if any
+                    if (window.testingMarkers) {
+                      window.testingMarkers.forEach(m => m.setMap(null))
+                    }
+                    window.testingMarkers = []
+
+                    const markers = [
+                      { pos: b, label: 'B', color: '#10B981' }, // Green
+                      { pos: c, label: 'C', color: '#F59E0B' }, // Orange
+                      { pos: d, label: 'D', color: '#EF4444' }  // Red
+                    ]
+
+                    markers.forEach(m => {
+                      const marker = new window.google.maps.Marker({
+                        position: m.pos,
+                        map: window.deliveryMapInstance,
+                        label: {
+                          text: m.label,
+                          color: 'white',
+                          fontWeight: 'bold'
+                        },
+                        icon: {
+                          path: window.google.maps.SymbolPath.CIRCLE,
+                          scale: 14,
+                          fillColor: m.color,
+                          fillOpacity: 1,
+                          strokeWeight: 2,
+                          strokeColor: 'white'
+                        },
+                        zIndex: 100
+                      })
+                      window.testingMarkers.push(marker)
+                    })
+                    
+                    toast.info("Testing Mode: Route B → C → D updated")
+                    console.log('✅ Testing markers (B, C, D) added to map')
+                  }
+                }
+              )
+            }
             return
           }
 
@@ -3985,9 +4167,13 @@ export default function DeliveryHome() {
   }
 
   const handleOrderIdConfirmTouchEnd = (e) => {
-    // Disable swipe if bill image is not uploaded
-    if (!billImageUploaded) {
-      toast.error('Please upload bill image first')
+    // Disable swipe until all assigned batch receipts are uploaded
+    if (!allBatchReceiptsUploaded) {
+      toast.error(
+        pendingBatchReceiptCount > 0
+          ? `Upload receipts for ${pendingBatchReceiptCount} more ${pendingBatchReceiptCount === 1 ? 'order' : 'orders'} first`
+          : 'Please upload bill image first',
+      )
       setOrderIdConfirmButtonProgress(0)
       return
     }
@@ -4345,7 +4531,44 @@ export default function DeliveryHome() {
           const status = error.response?.status
           const msg = error.response?.data?.message || error.message || ''
           console.error('❌ Error confirming order ID:', { status, message: msg, data: error.response?.data })
-          toast.error(msg || 'Failed to confirm order ID. Please try again.')
+
+          const allowLocalTestingFallback =
+            import.meta.env.DEV &&
+            status >= 500 &&
+            orderInReceiptFlow
+
+          if (allowLocalTestingFallback) {
+            const fallbackCustomerLat = orderInReceiptFlow?.customerLat ?? 22.7196
+            const fallbackCustomerLng = orderInReceiptFlow?.customerLng ?? 75.8577
+
+            setSelectedRestaurant(prev => ({
+              ...prev,
+              ...orderInReceiptFlow,
+              orderStatus: 'out_for_delivery',
+              status: 'out_for_delivery',
+              deliveryPhase: 'en_route_to_delivery',
+              customerLat: fallbackCustomerLat,
+              customerLng: fallbackCustomerLng,
+              deliveryState: {
+                ...(prev?.deliveryState || {}),
+                currentPhase: 'en_route_to_delivery',
+                status: 'order_confirmed',
+                orderIdConfirmedAt: new Date().toISOString(),
+              }
+            }))
+
+            setRoutePolyline([
+              currentLocation,
+              [fallbackCustomerLat, fallbackCustomerLng],
+            ])
+            setShowRoutePath(true)
+            setShowreachedPickupPopup(false)
+            setShowOrderIdConfirmationPopup(false)
+            setShowReachedDropPopup(true)
+            toast.success('Order picked up in local test mode.')
+          } else {
+            toast.error(msg || 'Failed to confirm order ID. Please try again.')
+          }
         }
         
         // Reset after animation
@@ -4489,7 +4712,14 @@ export default function DeliveryHome() {
             const completedOrderKey = getOrderKey(selectedRestaurant || newOrder)
             const nextBatchOrder =
               activeBatchRoute?.remainingStops?.find((stop) => stop?.order)?.order ||
-              batchOrders.find((order) => getOrderKey(order) !== completedOrderKey) ||
+              batchOrders.find((order) => {
+                const orderKey = getOrderKey(order)
+                return (
+                  orderKey &&
+                  String(orderKey) !== String(completedOrderKey) &&
+                  !completedBatchOrderKeySet.has(String(orderKey))
+                )
+              }) ||
               null
             const orderIdForApi =
               selectedRestaurant?.id ||
@@ -4497,10 +4727,11 @@ export default function DeliveryHome() {
               newOrder?._id ||
               selectedRestaurant?.orderId ||
               newOrder?.orderId
-            const isDemoOrder =
-              String(orderIdForApi || '').startsWith('DEMO-') ||
-              String(orderIdForApi || '').startsWith('demo-') ||
-              selectedRestaurant?.isDemoOrder
+            const isDemoOrder = isLocalTestDeliveryOrder({
+              ...selectedRestaurant,
+              id: selectedRestaurant?.id || newOrder?.orderMongoId || newOrder?._id,
+              orderId: selectedRestaurant?.orderId || newOrder?.orderId,
+            })
 
             if (!orderIdForApi) {
               console.error("❌ Order ID not available for completeDelivery", {
@@ -4538,6 +4769,13 @@ export default function DeliveryHome() {
                   status: 'delivered'
                 }
               } : prev)
+
+              // CLEANUP: testing markers
+              if (window.testingMarkers) {
+                window.testingMarkers.forEach(m => m.setMap(null))
+                window.testingMarkers = []
+              }
+
               const advancedToNextOrder = await advanceToNextBatchOrder(completedOrderKey, nextBatchOrder)
               if (!advancedToNextOrder) {
                 setShowPaymentPage(true)
@@ -8117,6 +8355,23 @@ export default function DeliveryHome() {
     )
   }
 
+  const totalAssignedBatchOrderCount = useMemo(() => {
+    const explicitAssignedCount = Array.isArray(selectedRestaurant?.assignedOrders)
+      ? selectedRestaurant.assignedOrders.length
+      : 0
+    const fallbackActiveCount = Number(deliveryBatchState?.activeAssignedOrderCount) || 0
+    const derivedCount = completedBatchOrderKeys.length + batchOrders.length
+
+    return explicitAssignedCount || fallbackActiveCount || (derivedCount > 0 ? derivedCount : 1)
+  }, [
+    selectedRestaurant?.assignedOrders,
+    deliveryBatchState?.activeAssignedOrderCount,
+    completedBatchOrderKeys.length,
+    batchOrders.length,
+  ])
+
+  const deliveredAssignedBatchOrderCount = completedBatchOrderKeys.length
+
   const advanceToNextBatchOrder = async (completedOrderKey, nextOrder) => {
     if (!completedOrderKey || !nextOrder) {
       return false
@@ -8138,6 +8393,13 @@ export default function DeliveryHome() {
 
     const nextActiveOrder = {
       ...nextOrder,
+      assignedOrders:
+        (selectedRestaurant?.assignedOrders || batchOrders)
+          .filter((order) => {
+            const orderKey = getOrderKey(order)
+            return orderKey && String(orderKey) !== String(completedOrderKey)
+          })
+          .map((order) => normalizeBatchOrder(order)),
       orderStatus: 'out_for_delivery',
       status: 'out_for_delivery',
       deliveryPhase: 'en_route_to_delivery',
@@ -8148,6 +8410,7 @@ export default function DeliveryHome() {
         currentPhase: 'en_route_to_delivery',
         status: 'order_confirmed',
       },
+      isDemoOrder: isLocalTestDeliveryOrder(nextOrder) || isLocalTestDeliveryOrder(selectedRestaurant),
     }
 
     setSelectedRestaurant(nextActiveOrder)
@@ -8155,7 +8418,7 @@ export default function DeliveryHome() {
     setShowPaymentPage(false)
     setShowCustomerReviewPopup(false)
     setShowOrderDeliveredAnimation(false)
-    setShowReachedDropPopup(false)
+    setShowReachedDropPopup(true)
     localStorage.setItem('deliveryActiveOrder', JSON.stringify(nextActiveOrder))
 
     const currentLocation = riderLocation || lastLocationRef.current
@@ -8193,7 +8456,7 @@ export default function DeliveryHome() {
       }
     }
 
-    toast.success(`Loaded next order ${nextOrder.orderId || nextOrder.id || ''}`.trim())
+    toast.success(`Loaded next stop ${nextOrder.orderId || nextOrder.id || ''}`.trim())
     return true
   }
   
@@ -9140,24 +9403,71 @@ export default function DeliveryHome() {
                   longitude: 75.8577,
                   address: 'Scheme No. 54, Indore',
                 },
-                items: [
+                assignedOrders: [
                   {
-                    name: 'Family Veg Thali',
-                    quantity: 5,
-                    price: 129,
+                    orderId: `THALI-${Date.now()}-1`,
+                    orderCode: `THALI-${Date.now()}-1`,
+                    customerName: 'Rohan Verma',
+                    customerAddress: 'Scheme No. 78, Near Prestige College, Indore',
+                    customerLocation: { latitude: 22.7265, longitude: 75.8811, address: 'Scheme No. 78, Near Prestige College, Indore' },
+                    items: [{ name: 'Family Veg Thali', quantity: 1, price: 129 }],
+                    total: 129,
+                  },
+                  {
+                    orderId: `THALI-${Date.now()}-2`,
+                    orderCode: `THALI-${Date.now()}-2`,
+                    customerName: 'Priya Soni',
+                    customerAddress: 'Old Palasia, Geeta Bhawan Circle, Indore',
+                    customerLocation: { latitude: 22.7178, longitude: 75.8764, address: 'Old Palasia, Geeta Bhawan Circle, Indore' },
+                    items: [{ name: 'Paneer Deluxe Thali', quantity: 1, price: 149 }],
+                    total: 149,
+                  },
+                  {
+                    orderId: `THALI-${Date.now()}-3`,
+                    orderCode: `THALI-${Date.now()}-3`,
+                    customerName: 'Ananya Dubey',
+                    customerAddress: 'Tilak Nagar Main Road, Indore',
+                    customerLocation: { latitude: 22.7092, longitude: 75.8891, address: 'Tilak Nagar Main Road, Indore' },
+                    items: [{ name: 'Mini Thali', quantity: 2, price: 89 }],
+                    total: 178,
+                  },
+                  {
+                    orderId: `THALI-${Date.now()}-4`,
+                    orderCode: `THALI-${Date.now()}-4`,
+                    customerName: 'Harsh Gupta',
+                    customerAddress: 'Bhawarkuan Square, Indore',
+                    customerLocation: { latitude: 22.6924, longitude: 75.8672, address: 'Bhawarkuan Square, Indore' },
+                    items: [{ name: 'Dal Fry Combo', quantity: 1, price: 119 }],
+                    total: 119,
+                  },
+                  {
+                    orderId: `THALI-${Date.now()}-5`,
+                    orderCode: `THALI-${Date.now()}-5`,
+                    customerName: 'Meera Nair',
+                    customerAddress: 'Vijay Nagar, C21 Mall Road, Indore',
+                    customerLocation: { latitude: 22.7533, longitude: 75.8937, address: 'Vijay Nagar, C21 Mall Road, Indore' },
+                    items: [{ name: 'Executive Lunch Box', quantity: 1, price: 165 }],
+                    total: 165,
                   },
                 ],
-                total: 645,
+                items: [
+                  {
+                    name: '5 separate batch orders',
+                    quantity: 1,
+                    price: 0,
+                  },
+                ],
+                total: 740,
                 deliveryFee: 65,
                 estimatedEarnings: 65,
                 pickupDistance: '1.30 km',
                 deliveryDistance: '4.80 km',
-                message: 'Demo order: 5 Family Veg Thali',
+                message: 'Demo batch order: 5 different customer orders',
               })
             }
             className="rounded-full bg-red-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg transition-transform active:scale-95"
           >
-            Demo 5 Thali Order
+            Demo 5 Order Batch
           </button>
         </div>
       )}
@@ -10141,7 +10451,7 @@ export default function DeliveryHome() {
               onTouchStart={handleNewOrderPopupTouchStart}
               onTouchMove={handleNewOrderPopupTouchMove}
               onTouchEnd={handleNewOrderPopupTouchEnd}
-              className="fixed bottom-0 left-0 right-0 bg-transparent rounded-t-3xl z-[110] overflow-visible"
+              className="fixed bottom-0 left-0 right-0 mx-auto w-full max-w-[430px] bg-transparent rounded-t-3xl z-[110] overflow-visible"
               style={{ touchAction: 'none' }}
             >
               {/* Swipe Handle */}
@@ -10291,28 +10601,56 @@ export default function DeliveryHome() {
                     </p>
                   </div>
 
-                  {/* Order ID */}
-                  <div className="mb-4">
-                    <p className="text-gray-500 text-xs mb-1">Order ID</p>
-                    <p className="text-base font-semibold text-gray-900">
-                      {newOrder?.orderId || selectedRestaurant?.orderId || 'ORD1234567890'}
-                    </p>
-                  </div>
-
-                  {Array.isArray(newOrder?.items) && newOrder.items.length > 0 && (
-                    <div className="mb-4 rounded-2xl border border-orange-100 bg-orange-50 px-4 py-3">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-orange-700">
-                        Order items
-                      </p>
-                      <div className="mt-2 space-y-1.5">
-                        {newOrder.items.slice(0, 3).map((item, index) => (
-                          <p key={`${item?.name || 'item'}-${index}`} className="text-sm font-semibold text-gray-900">
-                            {item?.quantity || 1} x {item?.name || 'Item'}
-                          </p>
-                        ))}
+                  <div className="mb-4 rounded-2xl border border-orange-100 bg-orange-50 px-4 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-orange-700">
+                          Batch orders
+                        </p>
+                        <p className="mt-1 text-sm font-semibold text-gray-900">
+                          {incomingPopupOrders.length} different customer orders from this pickup
+                        </p>
+                      </div>
+                      <div className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-orange-700">
+                        Testing view
                       </div>
                     </div>
-                  )}
+
+                    <div className="mt-3 max-h-64 space-y-2 overflow-y-auto pr-1">
+                      {incomingPopupOrders.map((order, index) => (
+                        <div
+                          key={`${order.orderId || order.orderCode || index}`}
+                          className="rounded-2xl bg-white px-3 py-3 shadow-sm"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-start gap-3">
+                              <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-orange-100 text-xs font-bold text-orange-700">
+                                {index + 1}
+                              </div>
+                              <div>
+                                <p className="text-sm font-semibold text-gray-900">
+                                  {order.orderId || order.orderCode || `Order ${index + 1}`}
+                                </p>
+                                <p className="text-xs font-medium text-gray-600">
+                                  {order.customerName || `Customer ${index + 1}`}
+                                </p>
+                                <p className="mt-1 text-xs leading-relaxed text-gray-500">
+                                  {order.customerAddress || order.customerLocation?.address || 'Address pending'}
+                                </p>
+                                {Array.isArray(order.items) && order.items.length > 0 && (
+                                  <p className="mt-1.5 text-xs font-semibold text-gray-900">
+                                    {(order.items || [])
+                                      .map((item) => `${item?.quantity || 1} x ${item?.name || 'Item'}`)
+                                      .join(', ')}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
 
                   {(() => {
                     const activeAssignedOrderCount =
@@ -10921,111 +11259,65 @@ export default function DeliveryHome() {
               Please verify the order ID with the restaurant before pickup
             </p>
             
-            {/* Order ID Display - single line, scroll horizontally if needed */}
+            {/* Order ID Display / Selector */}
             <div className="bg-gray-50 rounded-xl p-6 mb-6 overflow-hidden">
               <p className="text-gray-500 text-xs mb-2">Order ID</p>
-              <p className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-wider whitespace-nowrap overflow-x-auto min-w-0">
-                {activeReceiptOrder?.orderId || activeReceiptOrder?.id || selectedRestaurant?.orderId || newOrder?.orderId || newOrder?.orderMongoId || 'ORD1234567890'}
-              </p>
-            </div>
-
-            {batchOrders.length > 1 && (
-              <div className="mb-6">
-                <div className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50 via-white to-teal-50 p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
-                        Batch pickup
-                      </p>
-                      <p className="mt-1 text-sm font-semibold text-gray-900">
-                        {batchOrders.length} orders from this pickup
-                      </p>
-                    </div>
-                    <div className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-emerald-700 shadow-sm">
-                      One bill each
-                    </div>
-                  </div>
-
-                  <div className="mt-3 grid grid-cols-3 gap-2">
-                    <div className="rounded-xl bg-white px-3 py-2 text-center shadow-sm">
-                      <p className="text-[11px] uppercase tracking-[0.16em] text-gray-400">Total</p>
-                      <p className="mt-1 text-lg font-bold text-gray-900">{batchOrders.length}</p>
-                    </div>
-                    <div className="rounded-xl bg-white px-3 py-2 text-center shadow-sm">
-                      <p className="text-[11px] uppercase tracking-[0.16em] text-gray-400">Uploaded</p>
-                      <p className="mt-1 text-lg font-bold text-emerald-700">
-                        {batchOrders.filter((order) => Boolean(batchReceiptUploads[getOrderKey(order)]?.billImageUrl)).length}
-                      </p>
-                    </div>
-                    <div className="rounded-xl bg-white px-3 py-2 text-center shadow-sm">
-                      <p className="text-[11px] uppercase tracking-[0.16em] text-gray-400">Pending</p>
-                      <p className="mt-1 text-lg font-bold text-amber-600">
-                        {batchOrders.filter((order) => !batchReceiptUploads[getOrderKey(order)]?.billImageUrl).length}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <p className="mt-4 text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 mb-3">
-                  Assigned Orders
-                </p>
-                <div className="space-y-2">
+              {batchOrders.length > 0 ? (
+                <select
+                  value={activeReceiptOrderKey || ''}
+                  onChange={(e) => {
+                    const nextOrderKey = e.target.value
+                    setActiveReceiptOrderKey(nextOrderKey)
+                    setBillImageUrl(batchReceiptUploads[nextOrderKey]?.billImageUrl || null)
+                    setBillImageUploaded(Boolean(batchReceiptUploads[nextOrderKey]?.billImageUrl))
+                  }}
+                  className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-base font-bold text-gray-900 outline-none transition focus:border-green-500 focus:ring-2 focus:ring-green-100"
+                >
                   {batchOrders.map((order, index) => {
                     const orderKey = getOrderKey(order)
-                    const isActive = orderKey === getOrderKey(activeReceiptOrder)
                     const hasReceipt = Boolean(batchReceiptUploads[orderKey]?.billImageUrl)
 
                     return (
-                      <button
-                        key={orderKey || index}
-                        type="button"
-                        onClick={() => {
-                          setActiveReceiptOrderKey(orderKey)
-                          setBillImageUrl(batchReceiptUploads[orderKey]?.billImageUrl || null)
-                          setBillImageUploaded(Boolean(batchReceiptUploads[orderKey]?.billImageUrl))
-                        }}
-                        className={`w-full rounded-2xl border px-4 py-3 text-left transition-all ${
-                          isActive ? 'border-green-500 bg-green-50 shadow-sm' : 'border-gray-200 bg-white'
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex items-start gap-3">
-                            <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
-                              isActive ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600'
-                            }`}>
-                              {index + 1}
-                            </div>
-                            <div>
-                              <p className="text-sm font-semibold text-gray-900">
-                                {order.orderId || order.orderCode || `Order ${index + 1}`}
-                              </p>
-                              <p className="text-xs font-medium text-gray-600">
-                                {order.customerName || `Customer ${index + 1}`}
-                              </p>
-                              <p className="mt-1 text-xs leading-relaxed text-gray-500">
-                                {order.customerAddress || order.address || 'Address pending'}
-                              </p>
-                            </div>
-                          </div>
-                          <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                            hasReceipt ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
-                          }`}>
-                            {hasReceipt ? 'Bill Uploaded' : 'Pending'}
-                          </span>
-                        </div>
-                      </button>
+                      <option key={orderKey || index} value={orderKey || ''}>
+                        {hasReceipt ? '✓ ' : ''}{order.orderId || order.orderCode || `Order ${index + 1}`}
+                      </option>
                     )
                   })}
-                </div>
-              </div>
-            )}
+                </select>
+              ) : (
+                <p className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-wider whitespace-nowrap overflow-x-auto min-w-0">
+                  {activeReceiptOrder?.orderId || activeReceiptOrder?.id || selectedRestaurant?.orderId || newOrder?.orderId || newOrder?.orderMongoId || 'ORD1234567890'}
+                </p>
+              )}
+            </div>
 
             {/* Bill Image Upload Section */}
             <div className="mb-6">
               <p className="text-gray-600 text-sm mb-3 text-center">
-                {billImageUploaded ? '✅ Bill image uploaded for this order' : 'Please capture bill image for this order'}
+                {displayBillImageUploaded ? '✅ Bill image uploaded for this order' : 'Please capture bill image for this order'}
               </p>
-              
+              {batchOrders.length > 0 && (
+                <div className="mb-3 flex items-center justify-center gap-2">
+                  <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700">
+                    {effectiveUploadedBatchReceiptCount}/{totalBatchReceiptCount} uploaded
+                  </span>
+                  {activeReceiptUploaded ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-700">
+                      <CheckCircle className="h-3.5 w-3.5 fill-current" />
+                      Uploaded
+                    </span>
+                  ) : (
+                    <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
+                      Pending
+                    </span>
+                  )}
+                </div>
+              )}
+
+              <p className="text-xs font-medium text-center text-gray-500 mb-3">
+                Upload receipts for all assigned orders before confirming pickup.
+              </p>
+
               {/* Camera Button */}
               <div className="flex justify-center mb-4">
                 <button
@@ -11034,7 +11326,7 @@ export default function DeliveryHome() {
                   className={`flex items-center justify-center gap-2 px-6 py-3 rounded-lg transition-colors ${
                     isUploadingBill
                       ? 'bg-gray-400 cursor-not-allowed'
-                      : billImageUploaded
+                      : activeReceiptUploaded
                       ? 'bg-green-600 hover:bg-green-700'
                       : 'bg-blue-600 hover:bg-blue-700'
                   } text-white font-medium`}
@@ -11044,7 +11336,7 @@ export default function DeliveryHome() {
                       <Loader2 className="w-5 h-5 animate-spin" />
                       <span>Uploading...</span>
                     </>
-                  ) : billImageUploaded ? (
+                  ) : activeReceiptUploaded ? (
                     <>
                       <CheckCircle className="w-5 h-5" />
                       <span>Bill Uploaded</span>
@@ -11075,16 +11367,16 @@ export default function DeliveryHome() {
               <motion.div
                 ref={orderIdConfirmButtonRef}
                 className={`relative w-full rounded-full overflow-hidden shadow-xl ${
-                  billImageUploaded ? 'bg-green-600' : 'bg-gray-400 cursor-not-allowed'
+                  allBatchReceiptsUploaded ? 'bg-green-600' : 'bg-gray-400 cursor-not-allowed'
                 }`}
                 style={{ 
-                  touchAction: billImageUploaded ? 'pan-x' : 'none',
-                  opacity: billImageUploaded ? 1 : 0.6
+                  touchAction: allBatchReceiptsUploaded ? 'pan-x' : 'none',
+                  opacity: allBatchReceiptsUploaded ? 1 : 0.6
                 }}
-                onTouchStart={billImageUploaded ? handleOrderIdConfirmTouchStart : undefined}
-                onTouchMove={billImageUploaded ? handleOrderIdConfirmTouchMove : undefined}
-                onTouchEnd={billImageUploaded ? handleOrderIdConfirmTouchEnd : undefined}
-                whileTap={billImageUploaded ? { scale: 0.98 } : {}}
+                onTouchStart={allBatchReceiptsUploaded ? handleOrderIdConfirmTouchStart : undefined}
+                onTouchMove={allBatchReceiptsUploaded ? handleOrderIdConfirmTouchMove : undefined}
+                onTouchEnd={allBatchReceiptsUploaded ? handleOrderIdConfirmTouchEnd : undefined}
+                whileTap={allBatchReceiptsUploaded ? { scale: 0.98 } : {}}
               >
                 {/* Swipe progress background */}
                 <motion.div
@@ -11130,8 +11422,8 @@ export default function DeliveryHome() {
                         damping: 25
                       } : { duration: 0 }}
                     >
-                      {!billImageUploaded 
-                        ? 'Upload Bill First' 
+                      {!allBatchReceiptsUploaded 
+                        ? `Upload ${pendingBatchReceiptCount} More ${pendingBatchReceiptCount === 1 ? 'Receipt' : 'Receipts'}`
                         : orderIdConfirmButtonProgress > 0.5 
                         ? 'Release to Confirm' 
                         : 'Order Picked Up'}
@@ -11255,6 +11547,22 @@ export default function DeliveryHome() {
             <p className="text-gray-500 text-sm font-medium">
               Order ID: {selectedRestaurant?.orderId || 'ORD1234567890'}
             </p>
+          </div>
+
+          <div className="mb-6 rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
+                  Batch progress
+                </p>
+                <p className="mt-1 text-sm font-semibold text-gray-900">
+                  {deliveredAssignedBatchOrderCount} of {totalAssignedBatchOrderCount} orders delivered
+                </p>
+              </div>
+              <div className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-emerald-700 shadow-sm">
+                {Math.max(totalAssignedBatchOrderCount - deliveredAssignedBatchOrderCount, 1)} active
+              </div>
+            </div>
           </div>
 
           {activeBatchRoute?.remainingStops?.length > 0 && (
@@ -11457,8 +11765,13 @@ export default function DeliveryHome() {
               </svg>
             </div>
             <h1 className="text-2xl font-bold text-gray-900 mb-2">
-              Great job! Delivery complete 👍
+              {activeBatchRoute?.remainingStops?.length > 0 ? 'Drop completed' : 'Great job! Delivery complete'}
             </h1>
+            <p className="text-sm text-gray-500">
+              {activeBatchRoute?.remainingStops?.length > 0
+                ? `${deliveredAssignedBatchOrderCount + 1} of ${totalAssignedBatchOrderCount} orders delivered. Next stop will open after confirmation.`
+                : `${deliveredAssignedBatchOrderCount + 1} of ${totalAssignedBatchOrderCount} orders delivered.`}
+            </p>
           </div>
 
           {/* Trip Details */}

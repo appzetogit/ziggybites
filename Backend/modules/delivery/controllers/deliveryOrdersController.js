@@ -36,6 +36,32 @@ const logger = winston.createLogger({
   ],
 });
 
+function normalizeRestaurantLookupValue(restaurantRef) {
+  if (!restaurantRef) return null;
+  if (typeof restaurantRef === "string") return restaurantRef;
+  if (typeof restaurantRef === "object") {
+    if (restaurantRef._id) return String(restaurantRef._id);
+    if (restaurantRef.restaurantId) return String(restaurantRef.restaurantId);
+  }
+  return String(restaurantRef);
+}
+
+async function findRestaurantForOrderRef(restaurantRef) {
+  const lookupValue = normalizeRestaurantLookupValue(restaurantRef);
+  if (!lookupValue) return null;
+
+  if (mongoose.Types.ObjectId.isValid(lookupValue)) {
+    const byMongoId = await Restaurant.findById(lookupValue)
+      .select("name location address phone ownerPhone restaurantId")
+      .lean();
+    if (byMongoId) return byMongoId;
+  }
+
+  return Restaurant.findOne({ restaurantId: lookupValue })
+    .select("name location address phone ownerPhone restaurantId")
+    .lean();
+}
+
 /**
  * Get Delivery Partner Orders
  * GET /api/delivery/orders
@@ -1234,7 +1260,6 @@ export const confirmOrderId = asyncHandler(async (req, res) => {
         $and: [{ _id: orderId }, { deliveryPartnerId: deliveryId }],
       })
         .populate("userId", "name phone")
-        .populate("restaurantId", "name location address phone ownerPhone")
         .lean();
     }
 
@@ -1244,7 +1269,6 @@ export const confirmOrderId = asyncHandler(async (req, res) => {
         $and: [{ orderId: orderId }, { deliveryPartnerId: deliveryId }],
       })
         .populate("userId", "name phone")
-        .populate("restaurantId", "name location address phone ownerPhone")
         .lean();
     }
 
@@ -1261,7 +1285,6 @@ export const confirmOrderId = asyncHandler(async (req, res) => {
         ],
       })
         .populate("userId", "name phone")
-        .populate("restaurantId", "name location address phone ownerPhone")
         .lean();
     }
 
@@ -1273,10 +1296,11 @@ export const confirmOrderId = asyncHandler(async (req, res) => {
     }
 
     // Pre-compute restaurant coordinates (for Firebase + routing)
+    const restaurant = await findRestaurantForOrderRef(order.restaurantId);
     let restaurantLat = null;
     let restaurantLng = null;
-    if (order.restaurantId?.location?.coordinates?.length >= 2) {
-      [restaurantLng, restaurantLat] = order.restaurantId.location.coordinates;
+    if (restaurant?.location?.coordinates?.length >= 2) {
+      [restaurantLng, restaurantLat] = restaurant.location.coordinates;
     }
 
     // Verify order ID matches
@@ -1329,19 +1353,7 @@ export const confirmOrderId = asyncHandler(async (req, res) => {
         if (deliveryPartner?.availability?.currentLocation?.coordinates) {
           [deliveryLng, deliveryLat] =
             deliveryPartner.availability.currentLocation.coordinates;
-        } else if (order.restaurantId) {
-          let restaurant = null;
-          if (mongoose.Types.ObjectId.isValid(order.restaurantId)) {
-            restaurant = await Restaurant.findById(order.restaurantId)
-              .select("location")
-              .lean();
-          } else {
-            restaurant = await Restaurant.findOne({
-              restaurantId: order.restaurantId,
-            })
-              .select("location")
-              .lean();
-          }
+        } else if (restaurant) {
           if (restaurant?.location?.coordinates) {
             [deliveryLng, deliveryLat] = restaurant.location.coordinates;
           }
@@ -1469,20 +1481,6 @@ export const confirmOrderId = asyncHandler(async (req, res) => {
           deliveryPartner.availability.currentLocation.coordinates;
       } else {
         // Use restaurant location as fallback
-        // order.restaurantId might be a string or ObjectId
-        let restaurant = null;
-        if (mongoose.Types.ObjectId.isValid(order.restaurantId)) {
-          restaurant = await Restaurant.findById(order.restaurantId)
-            .select("location")
-            .lean();
-        } else {
-          // Try to find by restaurantId field if it's a string
-          restaurant = await Restaurant.findOne({
-            restaurantId: order.restaurantId,
-          })
-            .select("location")
-            .lean();
-        }
         if (restaurant?.location?.coordinates) {
           [deliveryLng, deliveryLat] = restaurant.location.coordinates;
         } else {
@@ -1572,7 +1570,6 @@ export const confirmOrderId = asyncHandler(async (req, res) => {
       { new: true },
     )
       .populate("userId", "name phone")
-      .populate("restaurantId", "name location address")
       .lean();
 
     console.log(`✅ Order ID confirmed for order ${order.orderId}`);

@@ -454,6 +454,59 @@ export const useDeliveryNotifications = () => {
 
   const injectDemoOrder = useCallback((overrides = {}) => {
     const now = Date.now();
+    const defaultAssignedOrders = [
+      {
+        orderId: `DEMO-${now}-1`,
+        orderCode: `DEMO-${now}-1`,
+        customerName: 'Aarav Mehta',
+        customerPhone: '9999999901',
+        customerAddress: 'Scheme No. 54, Near Medanta Hospital, Indore',
+        customerLocation: { latitude: 22.7196, longitude: 75.8577, address: 'Scheme No. 54, Near Medanta Hospital, Indore' },
+        items: [{ name: 'Family Veg Thali', quantity: 1, price: 129 }],
+        total: 129,
+      },
+      {
+        orderId: `DEMO-${now}-2`,
+        orderCode: `DEMO-${now}-2`,
+        customerName: 'Siya Jain',
+        customerPhone: '9999999902',
+        customerAddress: 'New Palasia, Saket Square, Indore',
+        customerLocation: { latitude: 22.7248, longitude: 75.8826, address: 'New Palasia, Saket Square, Indore' },
+        items: [{ name: 'Paneer Lababdar Combo', quantity: 1, price: 189 }],
+        total: 189,
+      },
+      {
+        orderId: `DEMO-${now}-3`,
+        orderCode: `DEMO-${now}-3`,
+        customerName: 'Kabir Khan',
+        customerPhone: '9999999903',
+        customerAddress: 'Vijay Nagar, Sector B, Indore',
+        customerLocation: { latitude: 22.7533, longitude: 75.8937, address: 'Vijay Nagar, Sector B, Indore' },
+        items: [{ name: 'Dal Bafla Meal', quantity: 2, price: 99 }],
+        total: 198,
+      },
+      {
+        orderId: `DEMO-${now}-4`,
+        orderCode: `DEMO-${now}-4`,
+        customerName: 'Myra Sharma',
+        customerPhone: '9999999904',
+        customerAddress: 'LIG Colony, A.B. Road, Indore',
+        customerLocation: { latitude: 22.7004, longitude: 75.8756, address: 'LIG Colony, A.B. Road, Indore' },
+        items: [{ name: 'Tawa Roti Meal Box', quantity: 3, price: 79 }],
+        total: 237,
+      },
+      {
+        orderId: `DEMO-${now}-5`,
+        orderCode: `DEMO-${now}-5`,
+        customerName: 'Vivaan Patel',
+        customerPhone: '9999999905',
+        customerAddress: 'Bhanwar Kuan, Tower Square, Indore',
+        customerLocation: { latitude: 22.6924, longitude: 75.8672, address: 'Bhanwar Kuan, Tower Square, Indore' },
+        items: [{ name: 'Mini Lunch Pack', quantity: 1, price: 149 }],
+        total: 149,
+      },
+    ];
+
     const demoOrder = {
       orderId: `DEMO-${now}`,
       orderMongoId: `demo-${now}`,
@@ -473,6 +526,7 @@ export const useDeliveryNotifications = () => {
         longitude: 75.8577,
         address: 'Scheme No. 54, Indore',
       },
+      assignedOrders: defaultAssignedOrders,
       items: [
         {
           name: 'Special Veg Thali',

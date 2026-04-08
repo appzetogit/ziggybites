@@ -2,20 +2,20 @@ import Order from "../models/Order.js";
 import { getIO } from "../../../server.js";
 
 const EDIT_WINDOW_MS = 30 * 60 * 1000;
-const TWO_H_MS = 2 * 60 * 60 * 1000;
-/** Cron runs every 5 min; match slot around "exactly 2h before meal". */
+const TWENTY_FOUR_H_MS = 24 * 60 * 60 * 1000;
+/** Cron runs every 5 min; match slot around "exactly 24h before meal". */
 const WINDOW_SLACK_MS = 5 * 60 * 1000;
 
 /**
- * A) ~2 hours before scheduledMealAt: notify user, open 30m edit window (once).
+ * A) ~24 hours before scheduledMealAt: notify user, open 30m edit window (once).
  */
 export async function processMealChangeNotifications() {
   const now = new Date();
   const results = { notified: 0, errors: [] };
 
   // scheduledMealAt ≈ now + 2h  (within slack)
-  const lower = new Date(now.getTime() + TWO_H_MS - WINDOW_SLACK_MS);
-  const upper = new Date(now.getTime() + TWO_H_MS + WINDOW_SLACK_MS);
+  const lower = new Date(now.getTime() + TWENTY_FOUR_H_MS - WINDOW_SLACK_MS);
+  const upper = new Date(now.getTime() + TWENTY_FOUR_H_MS + WINDOW_SLACK_MS);
 
   const orders = await Order.find({
     "source.type": "subscription",

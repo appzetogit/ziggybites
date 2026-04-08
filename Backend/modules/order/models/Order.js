@@ -226,7 +226,7 @@ const orderSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
-    // Order source: one_time or subscription (subscription orders auto-generated 2hr before slot)
+    // Order source: one_time or subscription (subscription orders auto-generated 24hr before slot)
     source: {
       type: {
         type: String,
@@ -387,7 +387,7 @@ const orderSchema = new mongoose.Schema(
       default: null,
     },
     // --- Subscription / meal-change flow (additive; optional on all orders) ---
-    /** When the meal is scheduled to arrive (used for 2h-before edit-window cron). */
+    /** When the meal is scheduled to arrive (used for 24h-before edit-window cron). */
     scheduledMealAt: {
       type: Date,
       default: null,
@@ -412,12 +412,12 @@ const orderSchema = new mongoose.Schema(
       type: Number,
       default: null,
     },
-    /** 30-minute window after 2h-before notification when user may change meal. */
+    /** 30-minute window after 24h-before notification when user may change meal. */
     editWindow: {
       start: { type: Date, default: null },
       end: { type: Date, default: null },
     },
-    /** Set once when 2h-before notification is sent (idempotent cron). */
+    /** Set once when 24h-before notification is sent (idempotent cron). */
     mealChangeNotificationSentAt: {
       type: Date,
       default: null,

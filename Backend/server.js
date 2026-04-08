@@ -779,7 +779,7 @@ function initializeScheduledTasks() {
       console.error("❌ Failed to initialize auto-reject service:", error);
     });
 
-  // ZigZagLite: 2-hour-before subscription notification and auto-generated order
+  // ZigZagLite: 24-hour-before subscription notification and auto-generated order
   import("./modules/subscription/services/subscriptionNotificationService.js")
     .then(({ processSubscriptionTwoHourNotifications }) => {
       cron.schedule(subscriptionNotificationCron, async () => {
@@ -800,7 +800,7 @@ function initializeScheduledTasks() {
       console.error("❌ Failed to initialize subscription 2hr service:", error);
     });
 
-  // Subscription meal: 2h-before edit window + post-window lock (every 5 minutes)
+  // Subscription meal: 24h-before edit window + post-window lock (every 5 minutes)
   import("./modules/order/services/subscriptionMealCronService.js")
     .then(({ runSubscriptionMealCronTick }) => {
       cron.schedule("*/5 * * * *", async () => {

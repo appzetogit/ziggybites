@@ -13,7 +13,7 @@ import {
   wallClockFromUtc,
 } from "./subscriptionScheduleService.js";
 
-const DEFAULT_NOTIFICATION_LEAD_MINUTES = 120;
+const DEFAULT_NOTIFICATION_LEAD_MINUTES = 1440;
 const DEFAULT_CRON_INTERVAL_MINUTES = 5;
 const MAX_RETRY_ATTEMPTS = 3;
 const RETRY_BACKOFF_MINUTES = [5, 15, 30];
@@ -41,7 +41,7 @@ function getNotificationSettings(settings) {
   return {
     enabled: cfg.mealReminderEnabled !== false,
     leadMinutes: Number.isFinite(lead)
-      ? clamp(Math.round(lead), 15, 360)
+      ? clamp(Math.round(lead), 15, 1440)
       : DEFAULT_NOTIFICATION_LEAD_MINUTES,
   };
 }
@@ -56,7 +56,7 @@ function collectUserTokens(user) {
 }
 
 function leadText(leadMinutes) {
-  if (leadMinutes === 120) return "2 hours";
+  if (leadMinutes === 1440) return "24 hours";
   if (leadMinutes % 60 === 0) {
     const h = leadMinutes / 60;
     return h === 1 ? "1 hour" : `${h} hours`;

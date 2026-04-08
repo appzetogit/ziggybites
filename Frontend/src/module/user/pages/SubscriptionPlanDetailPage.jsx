@@ -12,7 +12,7 @@ const FALLBACK_PLANS = [
 ]
 
 const DEFAULT_BENEFITS = [
-  "2-hour prior delivery notification before each meal",
+  "24-hour prior delivery notification before each meal",
   "Modify, skip, or confirm each delivery",
   "Subscribe from any restaurant on Home",
   "No refunds on cancellation (ZigZagLite policy)",
@@ -34,7 +34,7 @@ function getDefaultDescription(plan) {
   if (plan?.durationDays === 15) return "Short-term access. Best for trying out."
   if (plan?.durationDays === 30) return "Monthly standard. Most popular choice."
   if (plan?.durationDays === 90) return "Quarterly value plan. Best value."
-  return "Meal subscription with 2-hour prior delivery notification."
+  return "Meal subscription with 24-hour prior delivery notification."
 }
 
 /** Build selectedMeals from draft items - same selection for all days */

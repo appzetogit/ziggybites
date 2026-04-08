@@ -399,7 +399,7 @@ export default function SubscriptionPlansPage() {
                 id="edit-benefits"
                 value={form.benefits}
                 onChange={(e) => setForm((f) => ({ ...f, benefits: e.target.value }))}
-                placeholder={"One bullet per line, for example:\n2-hour prior delivery notification before each meal"}
+                placeholder={"One bullet per line, for example:\n24-hour prior delivery notification before each meal"}
                 rows={4}
               />
               <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -502,7 +502,7 @@ export default function SubscriptionPlansPage() {
                 id="add-benefits"
                 value={addForm.benefits}
                 onChange={(e) => setAddForm((f) => ({ ...f, benefits: e.target.value }))}
-                placeholder={"One bullet per line, for example:\n2-hour prior delivery notification before each meal"}
+                placeholder={"One bullet per line, for example:\n24-hour prior delivery notification before each meal"}
                 rows={4}
               />
               <p className="text-xs text-slate-500 dark:text-slate-400">

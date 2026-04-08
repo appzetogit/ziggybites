@@ -600,7 +600,7 @@ export const createSubscription = async (req, res) => {
     return res.status(201).json({
       success: true,
       data: sub,
-      message: "Subscription created. You will get a notification 2 hours before each delivery.",
+      message: "Subscription created. You will get a notification 24 hours before each delivery.",
     });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });

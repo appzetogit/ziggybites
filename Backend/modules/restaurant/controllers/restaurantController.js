@@ -33,42 +33,20 @@ export const getFoodFeed = asyncHandler(async (req, res) => {
 
   const hasLocation = !isNaN(lat) && !isNaN(lng);
 
-  let restaurantIds;
+  let restaurantIds = [];
   const distanceMap = new Map();
 
-  if (hasLocation) {
-    try {
-      const nearbyRestaurants = await Restaurant.aggregate([
-        {
-          $geoNear: {
-            near: { type: "Point", coordinates: [lng, lat] },
-            distanceField: "dist",
-            maxDistance,
-            query: { isActive: true, isAcceptingOrders: { $ne: false } },
-            spherical: true,
-            key: "location.coordinates",
-          },
-        },
-        { $project: { _id: 1, name: 1, slug: 1, rating: 1, profileImage: 1, dist: 1, estimatedDeliveryTime: 1 } },
-      ]);
-      restaurantIds = nearbyRestaurants.map((r) => r._id);
-      nearbyRestaurants.forEach((r) => distanceMap.set(r._id.toString(), r));
-    } catch (geoErr) {
-      console.warn("[getFoodFeed] Geo query failed, falling back to all restaurants:", geoErr.message);
-      const allActive = await Restaurant.find({ isActive: true, isAcceptingOrders: { $ne: false } })
-        .select("_id name slug rating profileImage estimatedDeliveryTime")
-        .lean()
-        .limit(200);
-      restaurantIds = allActive.map((r) => r._id);
-      allActive.forEach((r) => distanceMap.set(r._id.toString(), { ...r, dist: null }));
-    }
-  } else {
-    const allActive = await Restaurant.find({ isActive: true, isAcceptingOrders: { $ne: false } })
-      .select("_id name slug rating profileImage estimatedDeliveryTime")
-      .lean()
-      .limit(200);
-    restaurantIds = allActive.map((r) => r._id);
-    allActive.forEach((r) => distanceMap.set(r._id.toString(), { ...r, dist: null }));
+  const nearestRestaurant = await findNearestRestaurant({
+    ...req.query,
+    maxDistance: hasLocation ? maxDistance / 1000 : req.query.maxDistance,
+  });
+
+  if (nearestRestaurant?._id) {
+    restaurantIds = [nearestRestaurant._id];
+    distanceMap.set(nearestRestaurant._id.toString(), {
+      ...nearestRestaurant,
+      dist: nearestRestaurant._distanceMeters ?? null,
+    });
   }
 
   if (!restaurantIds.length) {
@@ -331,6 +309,233 @@ function isRestaurantInAnyZone(restaurantLat, restaurantLng, activeZones) {
   return false;
 }
 
+function calculateHaversineDistanceMeters(lat1, lng1, lat2, lng2) {
+  const toRadians = (value) => (value * Math.PI) / 180;
+  const earthRadiusMeters = 6371000;
+  const dLat = toRadians(lat2 - lat1);
+  const dLng = toRadians(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRadians(lat1)) *
+      Math.cos(toRadians(lat2)) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return earthRadiusMeters * c;
+}
+
+function getRestaurantCoordinates(restaurant) {
+  const latitude =
+    restaurant?.location?.latitude ??
+    (Array.isArray(restaurant?.location?.coordinates)
+      ? restaurant.location.coordinates[1]
+      : null);
+  const longitude =
+    restaurant?.location?.longitude ??
+    (Array.isArray(restaurant?.location?.coordinates)
+      ? restaurant.location.coordinates[0]
+      : null);
+
+  if (
+    typeof latitude !== "number" ||
+    typeof longitude !== "number" ||
+    Number.isNaN(latitude) ||
+    Number.isNaN(longitude)
+  ) {
+    return null;
+  }
+
+  return { latitude, longitude };
+}
+
+async function buildPublicRestaurantQuery(queryParams = {}) {
+  const {
+    cuisine,
+    minRating,
+    maxPrice,
+    hasOffers,
+    diningCategory,
+    isDining,
+  } = queryParams;
+
+  const query = { isActive: true, isAcceptingOrders: { $ne: false } };
+
+  if (cuisine) {
+    query.cuisines = { $in: [new RegExp(cuisine, "i")] };
+  }
+
+  if (minRating) {
+    query.rating = { $gte: parseFloat(minRating) };
+  }
+
+  if (queryParams.topRated === "true") {
+    query.rating = { $gte: 4.5 };
+  } else if (queryParams.trusted === "true") {
+    query.rating = { $gte: 4.0 };
+    query.totalRatings = { $gte: 100 };
+  }
+
+  if (maxPrice) {
+    const priceMap = { 200: ["$"], 500: ["$", "$$"] };
+    if (priceMap[maxPrice]) {
+      query.priceRange = { $in: priceMap[maxPrice] };
+    }
+  }
+
+  if (hasOffers === "true") {
+    query.$or = [
+      { offer: { $exists: true, $ne: null, $ne: "" } },
+      { featuredPrice: { $exists: true } },
+    ];
+  }
+
+  if (diningCategory) {
+    const allCategories = await DiningCategory.find({ isActive: true }).lean();
+    const targetCategory = allCategories.find(
+      (category) =>
+        category.name.toLowerCase().replace(/\s+/g, "-") ===
+        diningCategory.toLowerCase(),
+    );
+
+    if (targetCategory) {
+      query["diningConfig.categories"] = targetCategory._id;
+      query["diningConfig.enabled"] = true;
+      query.$and = [
+        ...(query.$and || []),
+        {
+          $or: [
+            { "diningSettings.isEnabled": { $exists: false } },
+            { "diningSettings.isEnabled": { $ne: false } },
+          ],
+        },
+      ];
+    } else {
+      query["diningConfig.categories"] = new mongoose.Types.ObjectId();
+    }
+  } else if (isDining === "true") {
+    query["diningConfig.enabled"] = true;
+    query.$and = [
+      ...(query.$and || []),
+      {
+        $or: [
+          { "diningSettings.isEnabled": { $exists: false } },
+          { "diningSettings.isEnabled": { $ne: false } },
+        ],
+      },
+    ];
+  }
+
+  return query;
+}
+
+function passesRestaurantFilters(restaurant, queryParams = {}, distanceMeters = null) {
+  const { maxDeliveryTime, maxDistance } = queryParams;
+
+  if (maxDeliveryTime) {
+    const maxTime = parseInt(maxDeliveryTime, 10);
+    const timeMatch = restaurant?.estimatedDeliveryTime?.match(/(\d+)/);
+    if (!timeMatch || parseInt(timeMatch[1], 10) > maxTime) {
+      return false;
+    }
+  }
+
+  if (maxDistance) {
+    const maxDistanceKm = parseFloat(maxDistance);
+    if (distanceMeters != null) {
+      if (distanceMeters / 1000 > maxDistanceKm) {
+        return false;
+      }
+    } else {
+      const distanceMatch = restaurant?.distance?.match(/(\d+\.?\d*)/);
+      if (!distanceMatch || parseFloat(distanceMatch[1]) > maxDistanceKm) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
+async function findNearestRestaurant(queryParams = {}) {
+  const lat = parseFloat(queryParams.lat ?? queryParams.latitude);
+  const lng = parseFloat(queryParams.lng ?? queryParams.longitude);
+  const hasCoordinates = !Number.isNaN(lat) && !Number.isNaN(lng);
+  const query = await buildPublicRestaurantQuery(queryParams);
+  const selectFields = "-owner -createdAt -updatedAt -password";
+
+  let restaurants = [];
+
+  if (hasCoordinates) {
+    restaurants = await Restaurant.find({
+      ...query,
+      "location.coordinates": {
+        $near: {
+          $geometry: { type: "Point", coordinates: [lng, lat] },
+        },
+      },
+    })
+      .select(selectFields)
+      .limit(50)
+      .lean();
+  } else {
+    restaurants = await Restaurant.find(query)
+      .select(selectFields)
+      .sort({ rating: -1, totalRatings: -1, createdAt: -1 })
+      .limit(50)
+      .lean();
+  }
+
+  const candidates = restaurants
+    .map((restaurant) => {
+      const coords = getRestaurantCoordinates(restaurant);
+      const distanceMeters =
+        hasCoordinates && coords
+          ? calculateHaversineDistanceMeters(
+              lat,
+              lng,
+              coords.latitude,
+              coords.longitude,
+            )
+          : null;
+
+      return {
+        ...restaurant,
+        _distanceMeters: distanceMeters,
+      };
+    })
+    .filter((restaurant) =>
+      passesRestaurantFilters(
+        restaurant,
+        queryParams,
+        restaurant._distanceMeters,
+      ),
+    );
+
+  candidates.sort((a, b) => {
+    if (hasCoordinates) {
+      const distanceA = a._distanceMeters ?? Number.POSITIVE_INFINITY;
+      const distanceB = b._distanceMeters ?? Number.POSITIVE_INFINITY;
+      if (distanceA !== distanceB) {
+        return distanceA - distanceB;
+      }
+    }
+
+    if ((b.rating || 0) !== (a.rating || 0)) {
+      return (b.rating || 0) - (a.rating || 0);
+    }
+
+    return (b.totalRatings || 0) - (a.totalRatings || 0);
+  });
+
+  return candidates[0] || null;
+}
+
+function serializeNearestRestaurant(restaurant) {
+  if (!restaurant) return null;
+  const { _distanceMeters, ...restaurantData } = restaurant;
+  return restaurantData;
+}
+
 /**
  * Get restaurant's zoneId based on location
  * @param {number} restaurantLat - Restaurant latitude
@@ -362,217 +567,34 @@ function getRestaurantZoneId(restaurantLat, restaurantLng, activeZones) {
 // Get all restaurants (for user module)
 export const getRestaurants = async (req, res) => {
   try {
-    const {
-      limit = 50,
-      offset = 0,
-      sortBy,
-      cuisine,
-      minRating,
-      maxDeliveryTime,
-      maxDistance,
-      maxPrice,
-      hasOffers,
-      zoneId, // User's zone ID (optional - if provided, filters by zone)
-      diningCategory, // Dining category slug (optional)
-    } = req.query;
-
-    // Optional: Zone-based filtering - if zoneId is provided, validate and filter by zone
-    let userZone = null;
-    if (zoneId) {
-      // Validate zone exists and is active
-      userZone = await Zone.findById(zoneId).lean();
-      if (!userZone || !userZone.isActive) {
-        return errorResponse(
-          res,
-          400,
-          "Invalid or inactive zone. Please detect your zone again.",
-        );
-      }
-    }
-
-    // Build query
-    const query = { isActive: true };
-
-    // Cuisine filter
-    if (cuisine) {
-      query.cuisines = { $in: [new RegExp(cuisine, "i")] };
-    }
-
-    // Rating filter
-    if (minRating) {
-      query.rating = { $gte: parseFloat(minRating) };
-    }
-
-    // Trust filters (top-rated = 4.5+, trusted = 4.0+ with high totalRatings)
-    if (req.query.topRated === "true") {
-      query.rating = { $gte: 4.5 };
-    } else if (req.query.trusted === "true") {
-      query.rating = { $gte: 4.0 };
-      query.totalRatings = { $gte: 100 }; // At least 100 ratings to be "trusted"
-    }
-
-    // Delivery time filter (estimatedDeliveryTime contains time in format "25-30 mins")
-    if (maxDeliveryTime) {
-      const maxTime = parseInt(maxDeliveryTime);
-      query.$or = [
-        {
-          estimatedDeliveryTime: {
-            $regex: new RegExp(`(\\d+)-?\\d*\\s*mins?`, "i"),
-          },
-        },
-      ];
-      // We'll filter this in application logic since it's a string field
-    }
-
-    // Distance filter (distance is stored as string like "1.2 km")
-    if (maxDistance) {
-      const maxDist = parseFloat(maxDistance);
-      query.$or = [
-        { distance: { $regex: new RegExp(`\\d+\\.?\\d*\\s*km`, "i") } },
-      ];
-      // We'll filter this in application logic since it's a string field
-    }
-
-    // Price range filter
-    if (maxPrice) {
-      const priceMap = { 200: ["$"], 500: ["$", "$$"] };
-      if (priceMap[maxPrice]) {
-        query.priceRange = { $in: priceMap[maxPrice] };
-      }
-    }
-
-    // Offers filter
-    if (hasOffers === "true") {
-      query.$or = [
-        { offer: { $exists: true, $ne: null, $ne: "" } },
-        { featuredPrice: { $exists: true } },
-      ];
-    }
-
-    // Dining category filter
-    if (diningCategory) {
-      // Find the category ID from slug
-      const allCategories = await DiningCategory.find({
-        isActive: true,
-      }).lean();
-      const targetCategory = allCategories.find(
-        (c) =>
-          c.name.toLowerCase().replace(/\s+/g, "-") ===
-          diningCategory.toLowerCase(),
-      );
-
-      if (targetCategory) {
-        query["diningConfig.categories"] = targetCategory._id;
-        query["diningConfig.enabled"] = true;
-        // Respect admin-level dining toggle: only show if not explicitly disabled
-        query["$or"] = [
-          { "diningSettings.isEnabled": { $exists: false } },
-          { "diningSettings.isEnabled": { $ne: false } },
-        ];
-      } else {
-        // If category slug doesn't match any active category, return empty results
-        query["diningConfig.categories"] = new mongoose.Types.ObjectId(); // Non-existent ID
-      }
-    } else if (req.query.isDining === "true") {
-      // General dining filter if requested
-      query["diningConfig.enabled"] = true;
-      // Respect admin-level dining toggle as master switch
-      query["$or"] = [
-        { "diningSettings.isEnabled": { $exists: false } },
-        { "diningSettings.isEnabled": { $ne: false } },
-      ];
-    }
-
-    // Build sort object
-    let sortObj = { createdAt: -1 }; // Default: Latest first
-
-    if (sortBy) {
-      switch (sortBy) {
-        case "price-low":
-          sortObj = { priceRange: 1, rating: -1 }; // $ < $$ < $$$, then by rating
-          break;
-        case "price-high":
-          sortObj = { priceRange: -1, rating: -1 }; // $$$$ > $$$ > $$ > $, then by rating
-          break;
-        case "rating-high":
-          sortObj = { rating: -1, totalRatings: -1 }; // Highest rating first
-          break;
-        case "rating-low":
-          sortObj = { rating: 1, totalRatings: -1 }; // Lowest rating first
-          break;
-        case "relevance":
-        default:
-          sortObj = { rating: -1, totalRatings: -1, createdAt: -1 }; // Relevance: high rating + recent
-          break;
-      }
-    }
-
-    // Fetch restaurants - Show ALL restaurants regardless of zone
-    let restaurants = await Restaurant.find(query)
-      .select("-owner -createdAt -updatedAt -password")
-      .sort(sortObj)
-      .limit(parseInt(limit))
-      .skip(parseInt(offset))
-      .lean();
-
-    // Note: We show all restaurants regardless of zone. Zone-based filtering is removed.
-    // Users in any zone will see all restaurants.
-
-    // Apply string-based filters that can't be done in MongoDB query
-    if (maxDeliveryTime) {
-      const maxTime = parseInt(maxDeliveryTime);
-      restaurants = restaurants.filter((r) => {
-        if (!r.estimatedDeliveryTime) return false;
-        const timeMatch = r.estimatedDeliveryTime.match(/(\d+)/);
-        return timeMatch && parseInt(timeMatch[1]) <= maxTime;
-      });
-    }
-
-    if (maxDistance) {
-      const maxDist = parseFloat(maxDistance);
-      restaurants = restaurants.filter((r) => {
-        if (!r.distance) return false;
-        const distMatch = r.distance.match(/(\d+\.?\d*)/);
-        return distMatch && parseFloat(distMatch[1]) <= maxDist;
-      });
-    }
-
-    // Get total count (before filtering by string fields)
-    const totalQuery = { ...query };
-    delete totalQuery.$or; // Remove $or for count
-    const total = await Restaurant.countDocuments(totalQuery);
-
-    console.log(
-      `Fetched ${restaurants.length} restaurants from database with filters:`,
-      {
-        sortBy,
-        cuisine,
-        minRating,
-        maxDeliveryTime,
-        maxDistance,
-        maxPrice,
-        hasOffers,
-      },
-    );
+    const nearestRestaurant = await findNearestRestaurant(req.query);
+    const restaurant = serializeNearestRestaurant(nearestRestaurant);
+    const restaurants = restaurant ? [restaurant] : [];
 
     return successResponse(res, 200, "Restaurants retrieved successfully", {
       restaurants,
       total: restaurants.length,
-      filters: {
-        sortBy,
-        cuisine,
-        minRating,
-        maxDeliveryTime,
-        maxDistance,
-        maxPrice,
-        hasOffers,
-      },
+      filters: { ...req.query },
     });
   } catch (error) {
     console.error("Error fetching restaurants:", error);
     return errorResponse(res, 500, "Failed to fetch restaurants");
   }
 };
+
+export const getNearestRestaurant = asyncHandler(async (req, res) => {
+  const nearestRestaurant = await findNearestRestaurant(req.query);
+
+  if (!nearestRestaurant) {
+    return successResponse(res, 200, "No nearby restaurant found", {
+      restaurant: null,
+    });
+  }
+
+  return successResponse(res, 200, "Nearest restaurant retrieved successfully", {
+    restaurant: serializeNearestRestaurant(nearestRestaurant),
+  });
+});
 
 // Get restaurant by ID or slug
 export const getRestaurantById = async (req, res) => {
@@ -1189,22 +1211,6 @@ export const deleteRestaurantAccount = asyncHandler(async (req, res) => {
 // Get restaurants with dishes under ₹250
 export const getRestaurantsWithDishesUnder250 = async (req, res) => {
   try {
-    const { zoneId } = req.query; // User's zone ID (optional - if provided, filters by zone)
-
-    // Optional: Zone-based filtering - if zoneId is provided, validate and filter by zone
-    let userZone = null;
-    if (zoneId) {
-      // Validate zone exists and is active
-      userZone = await Zone.findById(zoneId).lean();
-      if (!userZone || !userZone.isActive) {
-        return errorResponse(
-          res,
-          400,
-          "Invalid or inactive zone. Please detect your zone again.",
-        );
-      }
-    }
-
     const MAX_PRICE = 250;
 
     // Helper function to calculate final price after discount
@@ -1326,23 +1332,14 @@ export const getRestaurantsWithDishesUnder250 = async (req, res) => {
       }
     };
 
-    // Get all active restaurants - Show ALL restaurants regardless of zone
-    let restaurants = await Restaurant.find({ isActive: true })
-      .select("-owner -createdAt -updatedAt")
-      .lean()
-      .limit(100); // Limit to first 100 restaurants for performance
-
-    // Note: We show all restaurants regardless of zone. Zone-based filtering is removed.
-    // Users in any zone will see all restaurants.
-
-    // Process restaurants in parallel (batch processing for better performance)
-    const batchSize = 10; // Process 10 restaurants at a time
+    const nearestRestaurant = await findNearestRestaurant(req.query);
     const restaurantsWithDishes = [];
 
-    for (let i = 0; i < restaurants.length; i += batchSize) {
-      const batch = restaurants.slice(i, i + batchSize);
-      const results = await Promise.all(batch.map(processRestaurant));
-      restaurantsWithDishes.push(...results.filter((r) => r !== null));
+    if (nearestRestaurant) {
+      const processedRestaurant = await processRestaurant(nearestRestaurant);
+      if (processedRestaurant) {
+        restaurantsWithDishes.push(processedRestaurant);
+      }
     }
 
     // Sort by rating (highest first) or by number of dishes

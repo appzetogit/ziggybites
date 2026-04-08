@@ -227,7 +227,7 @@ export default function SubscriptionPlansPage() {
                        <div className="h-5 w-5 rounded-full bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center text-emerald-500">
                          <Check className="h-3 w-3" strokeWidth={4} />
                        </div>
-                       <span className="text-xs font-bold text-gray-600 dark:text-gray-400">2-hour prior delivery notification</span>
+                       <span className="text-xs font-bold text-gray-600 dark:text-gray-400">24-hour prior delivery notification</span>
                     </div>
                     <div className="flex items-center gap-3 text-xs font-bold text-gray-600 dark:text-gray-400">
                        <div className="h-5 w-5 rounded-full bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center text-emerald-500">
@@ -249,7 +249,7 @@ export default function SubscriptionPlansPage() {
         </div>
 
         <p className="mt-12 text-center text-[11px] font-bold text-gray-400 leading-relaxed max-w-[280px] mx-auto">
-          Subscribe from any restaurant on Home. You will get a notification 2 hours before each delivery.
+          Subscribe from any restaurant on Home. You will get a notification 24 hours before each delivery.
         </p>
       </div>
     </AnimatedPage>

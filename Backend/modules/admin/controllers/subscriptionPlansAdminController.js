@@ -3,7 +3,7 @@ import { successResponse, errorResponse } from "../../../shared/utils/response.j
 import { asyncHandler } from "../../../shared/middleware/asyncHandler.js";
 
 const DEFAULT_BENEFITS = [
-  "2-hour prior delivery notification before each meal",
+  "24-hour prior delivery notification before each meal",
   "Modify, skip, or confirm each delivery",
   "Subscribe from any restaurant on Home",
   "No refunds on cancellation (ZigZagLite policy)",
