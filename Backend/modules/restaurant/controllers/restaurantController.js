@@ -42,16 +42,18 @@ export const getFoodFeed = asyncHandler(async (req, res) => {
   let restaurantIds = [];
   const distanceMap = new Map();
 
-  const nearestRestaurant = await findNearestRestaurant({
+  const nearbyRestaurants = await findNearbyRestaurants({
     ...req.query,
     maxDistance: hasLocation ? maxDistance / 1000 : req.query.maxDistance,
-  });
+  }, 25);
 
-  if (nearestRestaurant?._id) {
-    restaurantIds = [nearestRestaurant._id];
-    distanceMap.set(nearestRestaurant._id.toString(), {
-      ...nearestRestaurant,
-      dist: nearestRestaurant._distanceMeters ?? null,
+  if (Array.isArray(nearbyRestaurants) && nearbyRestaurants.length) {
+    restaurantIds = nearbyRestaurants.map((restaurant) => restaurant._id);
+    nearbyRestaurants.forEach((restaurant) => {
+      distanceMap.set(restaurant._id.toString(), {
+        ...restaurant,
+        dist: restaurant._distanceMeters ?? null,
+      });
     });
   }
 
@@ -462,7 +464,7 @@ function passesRestaurantFilters(restaurant, queryParams = {}, distanceMeters = 
   return true;
 }
 
-async function findNearestRestaurant(queryParams = {}) {
+async function findNearbyRestaurants(queryParams = {}, limit = 50) {
   const lat = parseFloat(queryParams.lat ?? queryParams.latitude);
   const lng = parseFloat(queryParams.lng ?? queryParams.longitude);
   const hasCoordinates = !Number.isNaN(lat) && !Number.isNaN(lng);
@@ -481,13 +483,13 @@ async function findNearestRestaurant(queryParams = {}) {
       },
     })
       .select(selectFields)
-      .limit(50)
+      .limit(limit)
       .lean();
   } else {
     restaurants = await Restaurant.find(query)
       .select(selectFields)
       .sort({ rating: -1, totalRatings: -1, createdAt: -1 })
-      .limit(50)
+      .limit(limit)
       .lean();
   }
 
@@ -533,6 +535,11 @@ async function findNearestRestaurant(queryParams = {}) {
     return (b.totalRatings || 0) - (a.totalRatings || 0);
   });
 
+  return candidates;
+}
+
+async function findNearestRestaurant(queryParams = {}) {
+  const candidates = await findNearbyRestaurants(queryParams, 50);
   return candidates[0] || null;
 }
 

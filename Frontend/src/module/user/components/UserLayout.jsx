@@ -36,9 +36,13 @@ export function useSearchOverlay() {
 function SearchOverlayProvider({ children }) {
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [searchValue, setSearchValue] = useState("")
+  const [voiceSearchRequestId, setVoiceSearchRequestId] = useState(0)
 
-  const openSearch = () => {
+  const openSearch = (options = {}) => {
     setIsSearchOpen(true)
+    if (options.startVoiceSearch) {
+      setVoiceSearchRequestId((prev) => prev + 1)
+    }
   }
 
   const closeSearch = () => {
@@ -56,6 +60,7 @@ function SearchOverlayProvider({ children }) {
             onClose={closeSearch}
             searchValue={searchValue}
             onSearchChange={setSearchValue}
+            autoStartVoiceSearchKey={voiceSearchRequestId}
           />
         )}
       </Suspense>

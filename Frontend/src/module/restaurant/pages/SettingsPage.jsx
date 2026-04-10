@@ -8,7 +8,6 @@ import {
   Bell,
   Shield,
   Globe,
-  Moon,
   Sun,
   Info,
   LogOut,
@@ -28,7 +27,6 @@ export default function SettingsPage() {
   const navigate = useNavigate()
   const [showMenu, setShowMenu] = useState(false)
   const [notificationsEnabled, setNotificationsEnabled] = useState(true)
-  const [darkMode, setDarkMode] = useState(false)
 
   // Lenis smooth scrolling
   useEffect(() => {
@@ -65,7 +63,7 @@ export default function SettingsPage() {
       title: "Preferences",
       items: [
         { id: "language", label: "Language", icon: Globe, route: "/restaurant/language", value: "English" },
-        { id: "theme", label: "Theme", icon: darkMode ? Moon : Sun, hasToggle: true, toggleValue: darkMode, onToggle: setDarkMode },
+        { id: "theme", label: "Theme", icon: Sun, value: "Light" },
       ]
     },
     {
@@ -207,4 +205,3 @@ export default function SettingsPage() {
     </div>
   )
 }
-

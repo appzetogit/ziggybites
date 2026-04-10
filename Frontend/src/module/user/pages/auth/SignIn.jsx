@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/select"
 import { authAPI } from "@/lib/api"
 import { firebaseAuth, googleProvider, ensureFirebaseInitialized } from "@/lib/firebase"
+import { requestNativeGoogleSignIn } from "@/lib/mobileBridge"
 import { setAuthData } from "@/lib/utils/auth"
 import { syncSubscriptionDraftAfterUserLogin } from "@/module/user/utils/subscriptionDraftStorage.js"
 import { registerFcmTokenForLoggedInUser } from "@/lib/notifications/fcmWeb"
@@ -397,7 +398,32 @@ export default function SignIn() {
         throw new Error("Firebase Auth is not initialized. Please check your Firebase configuration.")
       }
 
-      const { signInWithPopup } = await import("firebase/auth")
+      const nativeSignInResult = await requestNativeGoogleSignIn()
+      const { GoogleAuthProvider, signInWithCredential, signInWithPopup } = await import("firebase/auth")
+
+      if (nativeSignInResult) {
+        if (!nativeSignInResult.success) {
+          const nativeMessage = nativeSignInResult.error || nativeSignInResult.message || ""
+          if (!nativeMessage) {
+            setIsLoading(false)
+            redirectHandledRef.current = false
+            return
+          }
+          throw new Error(nativeMessage)
+        }
+
+        if (!nativeSignInResult.idToken) {
+          throw new Error("Native Google sign-in did not return an ID token.")
+        }
+
+        const credential = GoogleAuthProvider.credential(nativeSignInResult.idToken)
+        const result = await signInWithCredential(firebaseAuth, credential)
+
+        if (result?.user) {
+          await processSignedInUser(result.user, "flutter-native-google")
+          return
+        }
+      }
 
       // Log current origin for debugging
       console.log("🚀 Starting Google sign-in popup...")

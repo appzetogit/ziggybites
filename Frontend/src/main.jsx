@@ -78,13 +78,9 @@ window.__googleMapsLoaded = window.__googleMapsLoaded || false;
   }
 })()
 
-// Apply theme on app initialization
-const savedTheme = localStorage.getItem('appTheme') || 'light'
-if (savedTheme === 'dark') {
-  document.documentElement.classList.add('dark')
-} else {
-  document.documentElement.classList.remove('dark')
-}
+// Force light theme app-wide.
+localStorage.setItem('appTheme', 'light')
+document.documentElement.classList.remove('dark')
 
 // Suppress browser extension errors
 const originalError = console.error

@@ -871,9 +871,29 @@ export default function Home() {
         if (foodPreference === "healthy") {
           params.tag = "Healthy"
         }
-        const response = await restaurantAPI.getFoodFeed(params)
-      if (response?.data?.success && response?.data?.data?.items) {
-        setNearbyFoods(response.data.data.items)
+      const response = await restaurantAPI.getFoodFeed(params)
+      const payload = response?.data?.data
+      const rawItems = Array.isArray(payload?.items)
+        ? payload.items
+        : Array.isArray(payload?.foods)
+          ? payload.foods
+          : Array.isArray(payload)
+            ? payload
+            : []
+
+      if (response?.data?.success && rawItems.length > 0) {
+        const normalizedItems = rawItems.map((item, index) => ({
+          ...item,
+          food_id: item.food_id ?? item.itemId ?? item.id ?? item._id ?? `food-${index}`,
+          food_name: item.food_name ?? item.name ?? "Untitled food",
+          food_image: item.food_image ?? item.image ?? item.images?.[0] ?? "",
+          restaurant_id: item.restaurant_id ?? item.restaurantId ?? item.restaurant?._id ?? item.restaurantObjId ?? null,
+          restaurant_name: item.restaurant_name ?? item.restaurantName ?? item.restaurant?.name ?? "",
+          foodType: item.foodType ?? item.food_type ?? "",
+          food_type: item.food_type ?? item.foodType ?? "",
+          distance_km: item.distance_km ?? (typeof item.distance === "number" ? item.distance / 1000 : null),
+        }))
+        setNearbyFoods(normalizedItems)
       } else {
         setNearbyFoods([])
       }
@@ -1147,6 +1167,13 @@ export default function Home() {
     openSearch()
   }, [heroSearch, openSearch, setSearchValue])
 
+  const handleVoiceSearchOpen = useCallback(() => {
+    if (heroSearch) {
+      setSearchValue(heroSearch)
+    }
+    openSearch({ startVoiceSearch: true })
+  }, [heroSearch, openSearch, setSearchValue])
+
   const handleSearchClose = useCallback(() => {
     closeSearch()
     setHeroSearch("")
@@ -1186,7 +1213,7 @@ export default function Home() {
   )
 
   return (
-    <div className="relative min-h-screen bg-white dark:bg-[#0a0a0a] pb-28 md:pb-24">
+    <div className="relative min-h-screen overflow-x-hidden bg-white dark:bg-[#0a0a0a] pb-28 md:pb-24">
       {/* Unified Background for Entire Page - Vibrant Food Theme */}
       <div className="absolute top-0 left-0 right-0 bottom-0 pointer-events-none overflow-hidden z-0">
         {/* Main Background */}
@@ -1436,7 +1463,7 @@ export default function Home() {
                     <button
                       type="button"
                       aria-label="Voice Search"
-                      onClick={handleSearchFocus}
+                      onClick={handleVoiceSearchOpen}
                       className="flex-shrink-0 mr-2 sm:mr-3 lg:mr-4 p-1 lg:p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
                     >
                       <Mic className="h-4 w-4 sm:h-4 sm:w-4 lg:h-5 lg:w-5 text-gray-500 dark:text-gray-400" strokeWidth={2.5} />
@@ -1477,14 +1504,14 @@ export default function Home() {
 
       {/* Rest of Content - Container Width with Unified Background */}
       <motion.div
-        className="relative max-w-7xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 space-y-0 pt-2 sm:pt-3 lg:pt-6"
+        className="relative max-w-7xl mx-auto w-full min-w-0 overflow-x-hidden px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 space-y-0 pt-2 sm:pt-3 lg:pt-6"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.6, delay: 0.4 }}
       >
         {/* Sticky Section - Food Categories and Filters (no Lenis on this page so sticky is stable) */}
         <div
-          className="sticky top-0 z-40 bg-white dark:bg-[#0a0a0a]"
+          className="sticky top-0 z-40 w-full min-w-0 overflow-x-hidden bg-white dark:bg-[#0a0a0a]"
           style={{
             transform: 'translateZ(0)',
             WebkitTransform: 'translateZ(0)',
@@ -1502,7 +1529,7 @@ export default function Home() {
           >
             <div
               ref={categoryScrollRef}
-              className="flex gap-3 sm:gap-4 lg:gap-5 xl:gap-6 overflow-x-auto overflow-y-visible scrollbar-hide scroll-smooth px-2 sm:px-3 lg:px-4 py-2 sm:py-3 lg:py-4"
+              className="flex w-full min-w-0 max-w-full gap-3 sm:gap-4 lg:gap-5 xl:gap-6 overflow-x-auto overflow-y-visible scrollbar-hide scroll-smooth px-2 sm:px-3 lg:px-4 py-2 sm:py-3 lg:py-4"
               style={{
                 scrollbarWidth: "none",
                 msOverflowStyle: "none",
@@ -1655,7 +1682,7 @@ export default function Home() {
             transition={{ duration: 0 }}
           >
             <div
-              className="flex items-center gap-1.5 sm:gap-2 lg:gap-3 overflow-x-auto scrollbar-hide pb-1 lg:pb-2"
+              className="flex w-full min-w-0 max-w-full items-center gap-1.5 sm:gap-2 lg:gap-3 overflow-x-auto scrollbar-hide pb-1 lg:pb-2"
               style={{
                 scrollbarWidth: "none",
                 msOverflowStyle: "none",
@@ -1739,7 +1766,7 @@ export default function Home() {
             {exploreMoreHeading}
           </motion.h2>
           <div
-            className="flex gap-2 sm:gap-3 lg:gap-4 overflow-x-auto scrollbar-hide pb-2 lg:pb-3"
+            className="flex w-full min-w-0 max-w-full gap-2 sm:gap-3 lg:gap-4 overflow-x-auto scrollbar-hide pb-2 lg:pb-3"
             style={{
               scrollbarWidth: "none",
               msOverflowStyle: "none",

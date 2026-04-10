@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { Clock, Loader2, Search, X } from "lucide-react"
+import { Clock, Loader2, Mic, Search, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { restaurantAPI } from "@/lib/api"
 import { foodImages } from "@/constants/images"
+import { requestVoiceSearch, stopVoiceSearch } from "@/lib/mobileBridge"
+import { toast } from "sonner"
 
 const SEARCH_HISTORY_KEY = "user_search_history_v2"
 const MAX_HISTORY_ITEMS = 10
@@ -16,6 +18,7 @@ export default function SearchOverlay({
   onClose,
   searchValue,
   onSearchChange,
+  autoStartVoiceSearchKey,
 }) {
   const navigate = useNavigate()
   const inputRef = useRef(null)
@@ -25,12 +28,19 @@ export default function SearchOverlay({
   const [searchResults, setSearchResults] = useState([])
   const [loadingResults, setLoadingResults] = useState(false)
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
+  const [isVoiceSearching, setIsVoiceSearching] = useState(false)
 
   useEffect(() => {
     if (isOpen && inputRef.current) {
       inputRef.current.focus()
     }
   }, [isOpen])
+
+  useEffect(() => {
+    return () => {
+      stopVoiceSearch().catch(() => {})
+    }
+  }, [])
 
   useEffect(() => {
     const handleEscape = (event) => {
@@ -127,6 +137,34 @@ export default function SearchOverlay({
 
     return () => window.clearTimeout(timeoutId)
   }, [isOpen, searchValue])
+
+  const handleVoiceSearch = async () => {
+    if (isVoiceSearching) {
+      await stopVoiceSearch()
+      setIsVoiceSearching(false)
+      return
+    }
+
+    try {
+      setIsVoiceSearching(true)
+      const transcript = await requestVoiceSearch()
+      onSearchChange(transcript)
+      if (String(transcript || "").trim()) {
+        setIsDropdownOpen(true)
+      }
+      inputRef.current?.focus()
+    } catch (error) {
+      console.error("Voice search failed:", error)
+      toast.error(error?.message || "Voice search failed. Please try again.")
+    } finally {
+      setIsVoiceSearching(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!isOpen || !autoStartVoiceSearchKey) return
+    handleVoiceSearch()
+  }, [autoStartVoiceSearchKey, isOpen])
 
   const saveSearchToHistory = (term) => {
     const value = String(term || "").trim()
@@ -262,6 +300,20 @@ export default function SearchOverlay({
                   </button>
                 )}
               </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={handleVoiceSearch}
+                className={`rounded-full ${isVoiceSearching ? "bg-red-50 text-red-500 hover:bg-red-100" : "hover:bg-gray-100 dark:hover:bg-gray-800"}`}
+                aria-label={isVoiceSearching ? "Stop voice search" : "Start voice search"}
+              >
+                {isVoiceSearching ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  <Mic className="h-5 w-5 text-gray-700 dark:text-gray-300" />
+                )}
+              </Button>
               <Button
                 type="button"
                 variant="ghost"
