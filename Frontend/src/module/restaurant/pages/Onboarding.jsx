@@ -13,7 +13,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { uploadAPI, api } from "@/lib/api"
+import { uploadAPI, api, restaurantAPI } from "@/lib/api"
+import ApprovalPendingPopup from "@/components/account/ApprovalPendingPopup"
 import { MobileTimePicker } from "@mui/x-date-pickers/MobileTimePicker"
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider"
 import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns"
@@ -34,6 +35,7 @@ const cuisinesOptions = [
 const daysOfWeek = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 const ONBOARDING_STORAGE_KEY = "restaurant_onboarding_data"
+const RESTAURANT_APPROVAL_PENDING_KEY = "restaurant_approval_pending"
 
 // Helper functions for localStorage
 const saveOnboardingToLocalStorage = (step1, step2, step3, step4, currentStep) => {
@@ -177,6 +179,7 @@ export default function RestaurantOnboarding() {
   const [saving, setSaving] = useState(false)
   const mainContentRef = useRef(null)
   const [error, setError] = useState("")
+  const [approvalPending, setApprovalPending] = useState(false)
 
   const [step1, setStep1] = useState({
     restaurantName: "",
@@ -227,6 +230,42 @@ export default function RestaurantOnboarding() {
     featuredPrice: "",
     offer: "",
   })
+
+  useEffect(() => {
+    let isMounted = true
+
+    const fetchApprovalState = async () => {
+      try {
+        const response = await restaurantAPI.getCurrentRestaurant()
+        const restaurant =
+          response?.data?.data?.restaurant || response?.data?.restaurant
+
+        if (!isMounted || !restaurant) return
+
+        setApprovalPending(
+          restaurant.isActive === false && !restaurant.rejectionReason,
+        )
+      } catch (fetchError) {
+        if (
+          fetchError.code !== "ERR_NETWORK" &&
+          fetchError.code !== "ECONNABORTED" &&
+          !fetchError.message?.includes("timeout")
+        ) {
+          console.error("Error fetching restaurant approval state:", fetchError)
+        }
+      }
+    }
+
+    fetchApprovalState()
+    const intervalId = setInterval(fetchApprovalState, 30000)
+    window.addEventListener("focus", fetchApprovalState)
+
+    return () => {
+      isMounted = false
+      clearInterval(intervalId)
+      window.removeEventListener("focus", fetchApprovalState)
+    }
+  }, [])
 
 
   // Load from localStorage on mount and check URL parameter
@@ -1007,12 +1046,45 @@ export default function RestaurantOnboarding() {
         // Clear localStorage when onboarding is complete
         clearOnboardingFromLocalStorage()
 
-        // Show success message briefly, then navigate
-        console.log('✅ Onboarding completed successfully, redirecting to restaurant home with zone-setup prompt...')
+        const savedRestaurant =
+          response?.data?.data?.restaurant || null
+        const isPendingAdminApproval = savedRestaurant?.isActive === false
 
-        // Wait a moment to ensure data is saved, then navigate.
-        // Add a query flag so the home page can show a Zone Setup popup once.
+        if (isPendingAdminApproval) {
+          try {
+            localStorage.setItem(RESTAURANT_APPROVAL_PENDING_KEY, "true")
+            const storedUser = localStorage.getItem("restaurant_user")
+            if (storedUser) {
+              const parsedUser = JSON.parse(storedUser)
+              localStorage.setItem(
+                "restaurant_user",
+                JSON.stringify({
+                  ...parsedUser,
+                  isActive: false,
+                  approvedAt: null,
+                }),
+              )
+            }
+          } catch (storageError) {
+            console.error("Failed to persist restaurant pending approval state:", storageError)
+          }
+        }
+
+        // Show success message briefly, then navigate.
+        // Pending restaurants should land on the approval-pending view, not the
+        // post-approval zone-setup flow.
+        console.log('✅ Onboarding completed successfully', {
+          isPendingAdminApproval,
+          restaurantId: savedRestaurant?.restaurantId,
+        })
+
         setTimeout(() => {
+          if (isPendingAdminApproval) {
+            console.log('🚀 Navigating to restaurant home in admin-pending state...')
+            navigate("/restaurant", { replace: true })
+            return
+          }
+
           console.log('🚀 Navigating to restaurant home page with showZoneSetup flag...')
           navigate("/restaurant?showZoneSetup=1", { replace: true })
         }, 800)
@@ -1733,6 +1805,12 @@ export default function RestaurantOnboarding() {
   return (
     <LocalizationProvider dateAdapter={AdapterDateFns}>
       <div className="min-h-screen bg-gray-100 flex flex-col">
+        {approvalPending && (
+          <ApprovalPendingPopup
+            title="Waiting for admin approval"
+            message="Your restaurant registration has been submitted. This popup will stay until admin approval is completed."
+          />
+        )}
         <header className="px-4 py-4 sm:px-6 sm:py-5 bg-white border-b border-gray-100 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 bg-black rounded-lg flex items-center justify-center">

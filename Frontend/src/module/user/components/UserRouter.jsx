@@ -24,7 +24,6 @@ const MangalsutraPage = lazy(() => import("../pages/MangalsutraPage"))
 
 const RestaurantDetails = lazy(() => import("../pages/restaurants/RestaurantDetails"))
 const SearchResults = lazy(() => import("../pages/SearchResults"))
-const ProductDetail = lazy(() => import("../pages/ProductDetail"))
 const FoodDetailPage = lazy(() => import("../pages/FoodDetailPage"))
 
 // Cart
@@ -196,7 +195,7 @@ export default function UserRouter() {
 
           <Route path="/restaurants/:slug" element={<RestaurantDetails />} />
           <Route path="/search" element={<SearchResults />} />
-          <Route path="/product/:id" element={<ProductDetail />} />
+          <Route path="/product/:id" element={<Navigate to="/" replace />} />
           <Route path="/food/:id" element={<FoodDetailPage />} />
 
           {/* Cart - Protected */}

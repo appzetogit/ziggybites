@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import { useParams, useNavigate, useLocation } from "react-router-dom"
-import { ArrowLeft, Loader2, Plus, Minus, Utensils, Check, Wallet, CreditCard, X, ChevronRight, UtensilsCrossed } from "lucide-react"
+import { ArrowLeft, Loader2, Plus, Minus, Utensils, Wallet, CreditCard, X } from "lucide-react"
 import api from "@/lib/api"
 import { toast } from "sonner"
 import { initRazorpayPayment } from "@/lib/utils/razorpay"
@@ -56,11 +56,9 @@ export default function SubscriptionFoodBrowse() {
   const location = useLocation()
   const fromEditMeal = location.state?.fromEditMeal
   const fromManage = location.state?.fromManage
-  const addNextMeal = location.state?.addNextMeal
   const chooseMealsFirstTime = Boolean(location.state?.chooseMealsFirstTime)
   const [restaurants, setRestaurants] = useState([])
   const [loading, setLoading] = useState(true)
-  const [selectedRestaurant, setSelectedRestaurant] = useState(null)
   const [adding, setAdding] = useState(null)
   const [removing, setRemoving] = useState(null)
   const [activeSubscriptions, setActiveSubscriptions] = useState([])
@@ -72,7 +70,37 @@ export default function SubscriptionFoodBrowse() {
   const categoryMeta = MEAL_CATEGORIES.find((c) => c.id === category)
   const primarySub = activeSubscriptions.find((s) => s.status === "active") || activeSubscriptions[0] || null
   const displayItems = primarySub?.items ? primarySub.items : draftItems
-  const minimalFirstTimeBrowse = chooseMealsFirstTime && !primarySub
+  const foods = useMemo(
+    () =>
+      restaurants.flatMap((restaurant) =>
+        (restaurant.foods || [])
+          .filter((food) => food?.id && food?.name)
+          .map((food) => ({
+            ...food,
+            image: food.image || food.food_image || food.images?.[0] || "",
+            restaurantId: restaurant.id,
+            restaurantName: restaurant.name,
+          })),
+      ),
+    [restaurants],
+  )
+
+  const handleBack = () => {
+    if (fromManage) {
+      navigate("/subscription/manage")
+      return
+    }
+
+    if (fromEditMeal) {
+      navigate("/subscription/edit-meal", {
+        state: { fromBrowse: true, mealSetupFirst: chooseMealsFirstTime },
+      })
+      return
+    }
+
+    navigate("/subscription", { state: { skipMealRedirect: true } })
+  }
+
   const clampQty = (value) => Math.max(1, Math.min(10, Number(value) || 1))
   const getFoodQty = (foodId, fallback = 1) => clampQty(selectedQuantities[String(foodId)] ?? fallback)
   const changeFoodQty = (foodId, delta, fallback = 1) => {
@@ -82,12 +110,22 @@ export default function SubscriptionFoodBrowse() {
       [key]: clampQty((prev[key] ?? fallback) + delta),
     }))
   }
+  const handleDecreaseOrRemove = async (foodId, currentQty) => {
+    if (currentQty <= 1) {
+      await handleRemoveFood(foodId)
+      return
+    }
+    const food = foods.find((item) => String(item.id) === String(foodId))
+    if (!food) return
+    await handleChangeAddedFoodQty(food, currentQty - 1)
+  }
 
   useEffect(() => {
     if (!category || !["breakfast", "lunch", "snacks", "dinner"].includes(category)) {
       navigate("/subscription")
       return
     }
+
     const fetchData = async () => {
       setLoading(true)
       try {
@@ -113,6 +151,7 @@ export default function SubscriptionFoodBrowse() {
         setLoading(false)
       }
     }
+
     fetchData()
   }, [category, navigate])
 
@@ -159,7 +198,7 @@ export default function SubscriptionFoodBrowse() {
       setActiveSubscriptions((prev) => mergeServerSubscription(prev, serverSub))
       window.dispatchEvent(new CustomEvent("subscriptionDraftUpdated"))
       setPendingPayment(null)
-      toast.success(pendingPayment.hadOtherMealInCategory ? `Updated ${categoryMeta?.label}` : `Added to ${categoryMeta?.label}`)
+      toast.success(`Saved ${pendingPayment.foodName} (Qty ${pendingPayment.quantity || 1})`)
     } catch (e) {
       toast.error(e?.response?.data?.message || "Payment failed")
     } finally {
@@ -179,7 +218,7 @@ export default function SubscriptionFoodBrowse() {
       currency: rz.currency || "INR",
       order_id: rz.orderId,
       name: p.companyName || "Ziggybites",
-      description: `Subscription meal — ${categoryMeta?.label}`,
+      description: `Subscription meal - ${categoryMeta?.label}`,
       prefill: { name: p.prefill?.name || "", email: p.prefill?.email || "", contact: p.prefill?.contact || "" },
       notes: { checkoutId: p.checkoutId, subscriptionId: String(p.subId) },
       handler: async (response) => {
@@ -195,7 +234,7 @@ export default function SubscriptionFoodBrowse() {
           setActiveSubscriptions((prev) => mergeServerSubscription(prev, serverSub))
           window.dispatchEvent(new CustomEvent("subscriptionDraftUpdated"))
           setPendingPayment(null)
-          toast.success(p.hadOtherMealInCategory ? `Updated ${categoryMeta?.label}` : `Added to ${categoryMeta?.label}`)
+          toast.success(`Saved ${p.foodName} (Qty ${p.quantity || 1})`)
         } catch (err) {
           toast.error(err?.response?.data?.message || "Could not verify payment")
         } finally {
@@ -226,18 +265,20 @@ export default function SubscriptionFoodBrowse() {
       image: food.image,
       isVeg: food.foodType === "Veg",
       mealCategory: category,
+      restaurantId: food.restaurantId || "",
+      restaurantName: food.restaurantName || "",
     }
     if (primarySub) {
       setAdding(food.id)
       try {
-        const hadOtherMealInCategory = (displayItems || []).some((i) => i.mealCategory === category && String(i.itemId) !== String(food.id))
         const initRes = await api.post(`/subscription/${primarySub._id}/items/init-add-payment`, { item: newItem })
         const pay = initRes?.data?.data
         if (!initRes?.data?.success) throw new Error(initRes?.data?.message || "Could not start checkout")
 
         if (!pay.paymentRequired) {
           setActiveSubscriptions((prev) => mergeServerSubscription(prev, pay.subscription))
-          toast.success(`${hadOtherMealInCategory ? `Updated` : `Added to`} ${categoryMeta?.label}`)
+          setSelectedQuantities((prev) => ({ ...prev, [String(food.id)]: quantity }))
+          toast.success(`Saved ${food.name} (Qty ${quantity})`)
           return
         }
 
@@ -252,7 +293,7 @@ export default function SubscriptionFoodBrowse() {
           payOnlineRupees,
           razorpay: razorpay?.key ? razorpay : null,
           razorpayOnlineOnly: razorpayOnlineOnly?.key ? razorpayOnlineOnly : null,
-          hadOtherMealInCategory,
+          quantity,
           companyName,
           prefill: {},
         })
@@ -263,14 +304,44 @@ export default function SubscriptionFoodBrowse() {
       }
     } else {
       try {
-        const existing = readSubscriptionDraftFromStorage().filter((i) => i.mealCategory !== category)
-        const draft = [...existing, newItem]
+        const existing = readSubscriptionDraftFromStorage()
+        const draft = existing.some(
+          (i) => String(i.itemId) === String(newItem.itemId) && i.mealCategory === category,
+        )
+          ? existing.map((i) =>
+              String(i.itemId) === String(newItem.itemId) && i.mealCategory === category ? { ...i, ...newItem } : i,
+            )
+          : [...existing, newItem]
         writeSubscriptionDraftToStorage(draft)
         setDraftItems(draft)
-        toast.success(`Added to ${categoryMeta?.label} (Qty ${quantity})`)
+        setSelectedQuantities((prev) => ({ ...prev, [String(food.id)]: quantity }))
+        toast.success(`Saved ${food.name} (Qty ${quantity})`)
       } catch (e) {
         toast.error("Failed to add food")
       }
+    }
+  }
+
+  const handleChangeAddedFoodQty = async (food, nextQty) => {
+    const quantity = clampQty(nextQty)
+
+    if (primarySub) {
+      await handleAddFood(food, quantity)
+      return
+    }
+
+    try {
+      const updatedDraft = readSubscriptionDraftFromStorage().map((item) =>
+        String(item.itemId) === String(food.id) && item.mealCategory === category
+          ? { ...item, quantity }
+          : item,
+      )
+      writeSubscriptionDraftToStorage(updatedDraft)
+      setDraftItems(updatedDraft)
+      setSelectedQuantities((prev) => ({ ...prev, [String(food.id)]: quantity }))
+      toast.success(`Saved ${food.name} (Qty ${quantity})`)
+    } catch (e) {
+      toast.error("Failed to update quantity")
     }
   }
 
@@ -298,20 +369,10 @@ export default function SubscriptionFoodBrowse() {
 
   return (
     <div className={`min-h-[100dvh] bg-[#F8F9FA] dark:bg-gray-950 flex flex-col ${pendingPayment ? "pb-52" : "pb-24"}`}>
-      
-      {/* Dynamic Header */}
       <header className="sticky top-0 z-40 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md transition-shadow border-b border-gray-100 dark:border-gray-800 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)]">
         <div className="max-w-[480px] mx-auto flex items-center gap-3 px-6 py-4">
           <button
-            onClick={() =>
-              navigate(
-                fromManage
-                  ? "/subscription/manage"
-                  : fromEditMeal
-                    ? "/subscription/edit-meal"
-                    : "/subscription",
-              )
-            }
+            onClick={handleBack}
             className="text-[#DC2626] transition-opacity hover:opacity-75 focus:outline-none"
           >
             <ArrowLeft className="w-5 h-5 stroke-[2.5]" />
@@ -324,37 +385,28 @@ export default function SubscriptionFoodBrowse() {
       </header>
 
       <div className="max-w-[480px] mx-auto w-full flex-1">
-        
-        {/* Curated Heading (List View Only) */}
-        {!selectedRestaurant && (
-          <div className="px-6 mt-8 mb-8 animate-in fade-in slide-in-from-bottom-2 duration-700">
-            <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest mb-1.5 leading-none">CURATED COLLECTION</p>
-            <h2 className="text-[36px] font-black leading-[1.05] text-gray-900 dark:text-white tracking-tight whitespace-pre-line">
-              {categoryMeta.heading}
-            </h2>
-            <div className="h-1 w-10 bg-[#DC2626] mt-5 rounded-full" />
-          </div>
-        )}
+        <div className="px-6 mt-8 mb-8">
+          <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest mb-1.5 leading-none">CURATED COLLECTION</p>
+          <h2 className="text-[36px] font-black leading-[1.05] text-gray-900 dark:text-white tracking-tight whitespace-pre-line">
+            {categoryMeta.heading}
+          </h2>
+          <div className="h-1 w-10 bg-[#DC2626] mt-5 rounded-full" />
+        </div>
 
         <div className="px-5">
           {loading ? (
             <div className="flex justify-center py-16">
               <Loader2 className="w-8 h-8 animate-spin text-[#DC2626]" />
             </div>
-          ) : selectedRestaurant ? (
-            <div className="animate-in fade-in slide-in-from-right-4 duration-300">
-              <div className="flex items-center gap-3 mb-6 mt-4 pl-1">
-                <button
-                  onClick={() => setSelectedRestaurant(null)}
-                  className="h-10 w-10 flex items-center justify-center rounded-full bg-white shadow-sm border border-gray-100 text-[#DC2626] transition-transform active:scale-95"
-                >
-                  <ArrowLeft className="w-5 h-5" />
-                </button>
-                <h2 className="text-2xl font-semibold text-gray-900 dark:text-white tracking-tight">{selectedRestaurant.name}</h2>
-              </div>
-
-              <div className="space-y-4">
-                {selectedRestaurant.foods?.map((food) => {
+          ) : (
+            <div className="space-y-4 pt-2">
+              {foods.length === 0 ? (
+                <div className="text-center py-16">
+                  <Utensils className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                  <p className="font-bold text-gray-400 text-lg">No foods available.</p>
+                </div>
+              ) : (
+                foods.map((food) => {
                   const selectedItem = (displayItems || []).find(
                     (i) => String(i.itemId) === String(food.id) && i.mealCategory === category,
                   )
@@ -362,126 +414,55 @@ export default function SubscriptionFoodBrowse() {
                   const isAdding = adding === food.id
                   const isRemoving = removing === food.id
                   const qty = getFoodQty(food.id, Number(selectedItem?.quantity) || 1)
+
                   return (
-                    <div key={food.id} className="flex items-center gap-4 p-4 bg-white dark:bg-gray-900 rounded-[1.65rem] border border-gray-100 dark:border-gray-800 shadow-[0_6px_24px_-12px_rgba(0,0,0,0.08)]">
-                      <div className="w-[4.5rem] h-[4.5rem] rounded-2xl overflow-hidden bg-gray-50 shrink-0 ring-1 ring-black/5">
-                        <img src={food.image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=100&q=80"} alt={food.name} className="w-full h-full object-cover" />
+                    <div key={`${food.restaurantId || "restaurant"}-${food.id}`} className="flex items-center gap-4 p-4 bg-white dark:bg-gray-900 rounded-[1.65rem] border border-gray-100 dark:border-gray-800 shadow-[0_6px_24px_-12px_rgba(0,0,0,0.08)]">
+                      <div className="w-[5.5rem] h-[5.5rem] rounded-[1.4rem] overflow-hidden bg-gray-50 shrink-0 ring-1 ring-black/5 shadow-sm flex items-center justify-center">
+                        {food.image ? (
+                          <img src={food.image} alt={food.name} className="w-full h-full object-cover" />
+                        ) : (
+                          <Utensils className="w-7 h-7 text-gray-300" />
+                        )}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-[1.08rem] font-semibold text-gray-900 dark:text-white leading-tight truncate">{food.name}</p>
                         <p className="text-sm font-light text-gray-500 mt-1">{"\u20B9"}{(Number(food.price) || 0).toLocaleString("en-IN")}</p>
-                        <div className="mt-3 inline-flex items-center rounded-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/70">
+                      </div>
+                      {!added && (
+                        <div className="flex flex-col items-end gap-2">
                           <button
-                            onClick={() => changeFoodQty(food.id, -1, Number(selectedItem?.quantity) || 1)}
-                            disabled={isAdding || pendingPayment || qty <= 1}
-                            className="h-8 w-8 flex items-center justify-center text-gray-600 disabled:opacity-40"
-                            aria-label="Decrease quantity"
+                            onClick={() => handleAddFood(food, qty)}
+                            disabled={isAdding || pendingPayment}
+                            className="h-9 min-w-[4.75rem] px-4 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold uppercase tracking-[0.12em] disabled:opacity-50 transition-colors"
                           >
-                            <Minus className="w-3.5 h-3.5" />
-                          </button>
-                          <span className="min-w-8 text-center text-sm font-medium text-gray-900 dark:text-white">{qty}</span>
-                          <button
-                            onClick={() => changeFoodQty(food.id, 1, Number(selectedItem?.quantity) || 1)}
-                            disabled={isAdding || pendingPayment || qty >= 10}
-                            className="h-8 w-8 flex items-center justify-center text-gray-600 disabled:opacity-40"
-                            aria-label="Increase quantity"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
+                            {isAdding ? <Loader2 className="w-4 h-4 animate-spin" /> : "Add"}
                           </button>
                         </div>
-                      </div>
-                      <div className="flex flex-col items-end gap-2">
-                        {added && (
-                          <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-semibold uppercase tracking-[0.14em]">
-                            <Check className="w-3 h-3 stroke-[3]" /> Added
-                          </span>
-                        )}
-                        <button
-                          onClick={() => handleAddFood(food, qty)}
-                          disabled={isAdding || pendingPayment}
-                          className="h-9 px-4 rounded-full bg-[#DC2626] hover:bg-[#bf2020] text-white text-[11px] font-semibold uppercase tracking-[0.12em] disabled:opacity-50 transition-colors"
-                        >
-                          {isAdding ? <Loader2 className="w-4 h-4 animate-spin" /> : added ? "Update" : "Add"}
-                        </button>
-                        {added && (
-                          <button
-                            onClick={() => handleRemoveFood(food.id)}
-                            disabled={isRemoving}
-                            className="text-[11px] font-medium text-red-500 hover:text-red-600 uppercase tracking-[0.1em] p-1"
-                          >
-                            {isRemoving ? "Removing..." : "Remove"}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-4 pt-2">
-              {restaurants.length === 0 ? (
-                <div className="text-center py-16">
-                  <Utensils className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                  <p className="font-bold text-gray-400 text-lg">No collections available.</p>
-                </div>
-              ) : (
-                restaurants.map((r, index) => {
-                  const isLarge = index < 3;
-                  return (
-                    <button
-                      key={r.id}
-                      onClick={() => setSelectedRestaurant(r)}
-                      className={`w-full text-left transition-transform active:scale-[0.98] ${
-                        isLarge 
-                          ? 'flex flex-col rounded-[2rem] bg-white dark:bg-gray-900 shadow-[0_8px_40px_-12px_rgba(0,0,0,0.1)] mb-6 overflow-hidden border border-gray-100 dark:border-gray-800' 
-                          : 'flex items-center gap-4 p-[10px] rounded-[1.5rem] bg-white dark:bg-gray-800 mb-4 border border-gray-100 dark:border-gray-800 shadow-sm'
-                      }`}
-                    >
-                      {isLarge ? (
-                        <>
-                          <div className="w-full h-52 sm:h-64 overflow-hidden bg-gray-100 dark:bg-gray-800 relative">
-                            <img
-                              src={r.image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=800&q=80"}
-                              alt={r.name}
-                              className="w-full h-full object-cover transition-transform duration-700 hover:scale-105"
-                            />
-                            <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent pointer-events-none" />
-                          </div>
-                          <div className="p-6 flex items-center justify-between bg-white dark:bg-gray-900">
-                            <div>
-                              <h3 className="text-[20px] font-black tracking-tight text-gray-900 dark:text-white mb-2">{r.name}</h3>
-                              <p className="text-[11px] font-bold text-gray-500 uppercase tracking-[0.1em] flex items-center gap-2">
-                                <UtensilsCrossed className="w-3.5 h-3.5" />
-                                {r.foods?.length || 0} items available
-                              </p>
-                            </div>
-                            <div className="h-12 w-12 rounded-full bg-[#DC2626] flex items-center justify-center text-white shadow-lg shadow-red-500/30">
-                              <ChevronRight className="w-5 h-5 stroke-[2.5] ml-0.5" />
-                            </div>
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                           <div className="w-[4.5rem] h-[4.5rem] rounded-[1rem] overflow-hidden bg-gray-50 shrink-0 shadow-inner">
-                             <img
-                               src={r.image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=200&q=80"}
-                               alt={r.name}
-                               className="w-full h-full object-cover"
-                             />
-                           </div>
-                           <div className="flex-1 min-w-0 pr-2 py-1">
-                             <h3 className="text-[15px] font-black text-gray-900 dark:text-white mb-1.5 truncate">{r.name}</h3>
-                             <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">
-                               HEALTHY BITES • {r.foods?.length || 0} ITEMS
-                             </p>
-                           </div>
-                           <div className="mr-3 text-gray-300 dark:text-gray-600">
-                              <ChevronRight className="w-5 h-5 stroke-[3]" />
-                           </div>
-                        </>
                       )}
-                    </button>
+                      {added && (
+                        <div className="flex flex-col items-end gap-2">
+                          <div className="inline-flex items-center rounded-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/70">
+                            <button
+                              onClick={() => handleDecreaseOrRemove(food.id, qty)}
+                              disabled={isAdding || pendingPayment || isRemoving}
+                              className="h-9 w-9 flex items-center justify-center text-gray-600 disabled:opacity-40"
+                              aria-label="Decrease quantity"
+                            >
+                              <Minus className="w-3.5 h-3.5" />
+                            </button>
+                            <span className="min-w-8 text-center text-sm font-medium text-gray-900 dark:text-white">{qty}</span>
+                            <button
+                              onClick={() => handleChangeAddedFoodQty(food, qty + 1)}
+                              disabled={isAdding || pendingPayment || qty >= 10}
+                              className="h-9 w-9 flex items-center justify-center text-gray-600 disabled:opacity-40"
+                              aria-label="Increase quantity"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   )
                 })
               )}
@@ -490,7 +471,6 @@ export default function SubscriptionFoodBrowse() {
         </div>
       </div>
 
-      {/* Payment Sheet */}
       {pendingPayment && (
         <div className="fixed inset-x-0 bottom-0 z-[60] border-t border-gray-100 rounded-t-3xl dark:border-gray-800 bg-white dark:bg-gray-900 shadow-[0_-10px_40px_rgba(0,0,0,0.1)] px-6 pt-6 pb-[max(2rem,env(safe-area-inset-bottom))] max-w-[480px] mx-auto w-full animate-in slide-in-from-bottom-full duration-300">
           <div className="flex items-start justify-between gap-3 mb-5">
@@ -508,26 +488,26 @@ export default function SubscriptionFoodBrowse() {
               <X className="w-5 h-5 stroke-[2.5]" />
             </button>
           </div>
-          
+
           <ul className="space-y-3 mb-6 bg-gray-50 dark:bg-gray-800/50 p-4 rounded-2xl">
-             {pendingPayment.walletWillDebitRupees > 0 && (
-               <li className="flex items-center justify-between text-sm">
-                 <div className="flex items-center gap-2 font-bold text-gray-600">
-                   <Wallet className="w-4 h-4 text-emerald-500" /> Wallet Balance
-                 </div>
-                 <strong className="font-black text-emerald-600">₹{Number(pendingPayment.walletWillDebitRupees).toFixed(2)}</strong>
-               </li>
-             )}
-             {pendingPayment.payOnlineRupees > 0 && (
-               <li className="flex items-center justify-between text-sm">
-                 <div className="flex items-center gap-2 font-bold text-gray-600">
-                   <CreditCard className="w-4 h-4 text-[#DC2626]" /> Razorpay Source
-                 </div>
-                 <strong className="font-black text-gray-900">₹{Number(pendingPayment.payOnlineRupees).toFixed(2)}</strong>
-               </li>
-             )}
+            {pendingPayment.walletWillDebitRupees > 0 && (
+              <li className="flex items-center justify-between text-sm">
+                <div className="flex items-center gap-2 font-bold text-gray-600">
+                  <Wallet className="w-4 h-4 text-emerald-500" /> Wallet Balance
+                </div>
+                <strong className="font-black text-emerald-600">{"\u20B9"}{Number(pendingPayment.walletWillDebitRupees).toFixed(2)}</strong>
+              </li>
+            )}
+            {pendingPayment.payOnlineRupees > 0 && (
+              <li className="flex items-center justify-between text-sm">
+                <div className="flex items-center gap-2 font-bold text-gray-600">
+                  <CreditCard className="w-4 h-4 text-[#DC2626]" /> Razorpay Source
+                </div>
+                <strong className="font-black text-gray-900">{"\u20B9"}{Number(pendingPayment.payOnlineRupees).toFixed(2)}</strong>
+              </li>
+            )}
           </ul>
-          
+
           <div className="flex flex-col gap-3">
             {pendingPayment.walletWillDebitRupees > 0 && !pendingPayment.razorpay ? (
               <button disabled={payingCheckout} onClick={handlePayFromWallet} className="w-full h-14 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm rounded-2xl shadow-lg shadow-emerald-600/20 active:scale-95 transition-transform flex items-center justify-center gap-2">
@@ -545,4 +525,3 @@ export default function SubscriptionFoodBrowse() {
     </div>
   )
 }
-

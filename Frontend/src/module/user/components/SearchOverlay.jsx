@@ -1,23 +1,31 @@
-import { useState, useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { X, Search, Clock } from "lucide-react"
+import { Clock, Loader2, Search, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { restaurantAPI } from "@/lib/api"
 import { foodImages } from "@/constants/images"
 
-const SEARCH_HISTORY_KEY = "user_search_history_v1"
+const SEARCH_HISTORY_KEY = "user_search_history_v2"
 const MAX_HISTORY_ITEMS = 10
+const MIN_SEARCH_LENGTH = 1
+const SEARCH_DEBOUNCE_MS = 350
 
-export default function SearchOverlay({ isOpen, onClose, searchValue, onSearchChange }) {
+export default function SearchOverlay({
+  isOpen,
+  onClose,
+  searchValue,
+  onSearchChange,
+}) {
   const navigate = useNavigate()
   const inputRef = useRef(null)
-  const [allFoods, setAllFoods] = useState([])
-  const [filteredFoods, setFilteredFoods] = useState([])
+  const searchPanelRef = useRef(null)
+  const latestRequestRef = useRef(0)
   const [recentSearches, setRecentSearches] = useState([])
-  const [loadingFoods, setLoadingFoods] = useState(false)
+  const [searchResults, setSearchResults] = useState([])
+  const [loadingResults, setLoadingResults] = useState(false)
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false)
 
-  // Focus input when opened
   useEffect(() => {
     if (isOpen && inputRef.current) {
       inputRef.current.focus()
@@ -25,8 +33,8 @@ export default function SearchOverlay({ isOpen, onClose, searchValue, onSearchCh
   }, [isOpen])
 
   useEffect(() => {
-    const handleEscape = (e) => {
-      if (e.key === "Escape" && isOpen) {
+    const handleEscape = (event) => {
+      if (event.key === "Escape" && isOpen) {
         onClose()
       }
     }
@@ -42,120 +50,101 @@ export default function SearchOverlay({ isOpen, onClose, searchValue, onSearchCh
     }
   }, [isOpen, onClose])
 
-  // Load recent searches from localStorage when overlay opens
   useEffect(() => {
     if (!isOpen) return
+
     try {
       const raw = localStorage.getItem(SEARCH_HISTORY_KEY)
-      if (raw) {
-        const parsed = JSON.parse(raw)
-        if (Array.isArray(parsed)) {
-          const cleaned = parsed
-            .filter((item) => typeof item === "string" && item.trim().length > 0)
-            .slice(0, MAX_HISTORY_ITEMS)
-          setRecentSearches(cleaned)
-        }
+      if (!raw) {
+        setRecentSearches([])
+        return
       }
+
+      const parsed = JSON.parse(raw)
+      if (!Array.isArray(parsed)) {
+        setRecentSearches([])
+        return
+      }
+
+      setRecentSearches(
+        parsed
+          .filter((item) => typeof item === "string" && item.trim())
+          .slice(0, MAX_HISTORY_ITEMS),
+      )
     } catch (error) {
       console.warn("Failed to load search history:", error)
+      setRecentSearches([])
     }
   }, [isOpen])
 
-  // Load real dish suggestions from backend restaurants (featured dishes)
   useEffect(() => {
-    if (!isOpen || allFoods.length > 0 || loadingFoods) return
+    if (!isOpen) return
 
-    const loadFoods = async () => {
-      try {
-        setLoadingFoods(true)
-        const response = await restaurantAPI.getRestaurants({})
-        const restaurants = response?.data?.data?.restaurants || []
-
-        const foods = restaurants
-          .map((restaurant, index) => {
-            // Show restaurant cards (not dish names)
-            const name = restaurant.name || restaurant.featuredDish
-            if (!name) return null
-
-            const coverImages = restaurant.coverImages && restaurant.coverImages.length > 0
-              ? restaurant.coverImages.map((img) => img.url || img).filter(Boolean)
-              : []
-
-            const fallbackImages = restaurant.menuImages && restaurant.menuImages.length > 0
-              ? restaurant.menuImages.map((img) => img.url || img).filter(Boolean)
-              : []
-
-            const allImages = coverImages.length > 0
-              ? coverImages
-              : (fallbackImages.length > 0
-                ? fallbackImages
-                : (restaurant.profileImage?.url ? [restaurant.profileImage.url] : []))
-
-            const image = allImages[0] || foodImages[0]
-            const slug =
-              restaurant.slug ||
-              (restaurant.name || "")
-                .toLowerCase()
-                .trim()
-                .replace(/\s+/g, "-")
-
-            return {
-              id: restaurant.restaurantId || restaurant._id || index,
-              name,
-              image,
-              restaurantSlug: slug,
-              featuredDish: restaurant.featuredDish || null,
-            }
-          })
-          .filter(Boolean)
-
-        setAllFoods(foods)
-        setFilteredFoods(foods)
-      } catch (error) {
-        console.error("Error loading search suggestions:", error)
-        setAllFoods([])
-        setFilteredFoods([])
-      } finally {
-        setLoadingFoods(false)
+    const handleOutsideClick = (event) => {
+      if (!searchPanelRef.current?.contains(event.target)) {
+        setIsDropdownOpen(false)
       }
     }
 
-    loadFoods()
-  }, [isOpen, allFoods.length, loadingFoods])
+    document.addEventListener("mousedown", handleOutsideClick)
+    return () => document.removeEventListener("mousedown", handleOutsideClick)
+  }, [isOpen])
 
-  // Filter foods based on search input
   useEffect(() => {
-    if (!allFoods || allFoods.length === 0) {
-      setFilteredFoods([])
+    if (!isOpen) return
+
+    const trimmedValue = searchValue.trim()
+    if (trimmedValue.length < MIN_SEARCH_LENGTH) {
+      setLoadingResults(false)
+      setSearchResults([])
+      setIsDropdownOpen(false)
       return
     }
 
-    if (searchValue.trim() === "") {
-      setFilteredFoods(allFoods)
-    } else {
-      const query = searchValue.toLowerCase()
-      const filtered = allFoods.filter((food) =>
-        food.name.toLowerCase().includes(query)
-      )
-      setFilteredFoods(filtered)
-    }
-  }, [searchValue, allFoods])
+    const requestId = latestRequestRef.current + 1
+    latestRequestRef.current = requestId
+
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        setLoadingResults(true)
+        setIsDropdownOpen(true)
+
+        const response = await restaurantAPI.searchFoods(trimmedValue)
+        if (latestRequestRef.current !== requestId) return
+
+        const items = response?.data?.data?.items || []
+        setSearchResults(items.slice(0, 4))
+      } catch (error) {
+        if (latestRequestRef.current !== requestId) return
+        console.error("Food search failed:", error)
+        setSearchResults([])
+      } finally {
+        if (latestRequestRef.current === requestId) {
+          setLoadingResults(false)
+        }
+      }
+    }, SEARCH_DEBOUNCE_MS)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [isOpen, searchValue])
 
   const saveSearchToHistory = (term) => {
-    const value = term.trim()
+    const value = String(term || "").trim()
     if (!value) return
 
     setRecentSearches((prev) => {
-      const existing = prev.filter(
-        (item) => item.toLowerCase() !== value.toLowerCase()
-      )
-      const updated = [value, ...existing].slice(0, MAX_HISTORY_ITEMS)
+      const nextHistory = [
+        value,
+        ...prev.filter((item) => item.toLowerCase() !== value.toLowerCase()),
+      ].slice(0, MAX_HISTORY_ITEMS)
+
       try {
-        localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(updated))
+        localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(nextHistory))
       } catch (error) {
         console.warn("Failed to save search history:", error)
       }
-      return updated
+
+      return nextHistory
     })
   }
 
@@ -168,214 +157,216 @@ export default function SearchOverlay({ isOpen, onClose, searchValue, onSearchCh
     setRecentSearches([])
   }
 
-  const handleSuggestionClick = (suggestion) => {
-    onSearchChange(suggestion)
-    saveSearchToHistory(suggestion)
+  const handleHistoryClick = (term) => {
+    onSearchChange(term)
+    setIsDropdownOpen(true)
     inputRef.current?.focus()
   }
 
-  const handleSearchSubmit = (e) => {
-    e.preventDefault()
-    if (searchValue.trim()) {
-      saveSearchToHistory(searchValue.trim())
-      navigate(`/user/search?q=${encodeURIComponent(searchValue.trim())}`)
-      onClose()
-      onSearchChange("")
-    }
+  const closeAndReset = () => {
+    setIsDropdownOpen(false)
+    setSearchResults([])
+    setLoadingResults(false)
+    onClose()
   }
 
   const handleFoodClick = (food) => {
-    saveSearchToHistory(food.name)
+    const foodId = food.foodId || food.food_id || food.id || food._id
+    const restaurantId = food.restaurantId || food.restaurant_id
+    const restaurantSlug = food.restaurantSlug || food.restaurant_slug
 
-    if (food.restaurantSlug) {
-      // Go directly to the restaurant menu page with a dish search query
-      navigate(
-        `/user/restaurants/${food.restaurantSlug}?q=${encodeURIComponent(
-          food.name,
-        )}`,
-      )
-    } else {
-      // Fallback: use generic search results page
-      navigate(`/user/search?q=${encodeURIComponent(food.name)}`)
+    if (!foodId) return
+
+    saveSearchToHistory(food.foodName)
+    setIsDropdownOpen(false)
+    navigate(`/food/${encodeURIComponent(foodId)}${restaurantId ? `?restaurant=${encodeURIComponent(restaurantId)}` : ""}`, {
+      state: {
+        food,
+        restaurantId,
+        restaurantSlug,
+      },
+    })
+    onSearchChange("")
+    onClose()
+  }
+
+  const handleSearchSubmit = (event) => {
+    event.preventDefault()
+    const trimmedValue = searchValue.trim()
+    if (!trimmedValue) return
+
+    saveSearchToHistory(trimmedValue)
+
+    if (searchResults.length > 0) {
+      handleFoodClick(searchResults[0])
+      return
     }
 
-    onClose()
+    navigate(`/user/search?q=${encodeURIComponent(trimmedValue)}`)
     onSearchChange("")
+    onClose()
   }
 
   if (!isOpen) return null
 
+  const trimmedValue = searchValue.trim()
+  const showDropdown = isDropdownOpen && trimmedValue.length >= MIN_SEARCH_LENGTH
+  const showNoResults =
+    showDropdown && !loadingResults && trimmedValue && searchResults.length === 0
+
   return (
-    <div
-      className="fixed inset-0 z-[9999] flex flex-col bg-white dark:bg-[#0a0a0a]"
-      style={{
-        animation: 'fadeIn 0.3s ease-out'
-      }}
-    >
-      {/* Header with Search Bar */}
-      <div className="flex-shrink-0 bg-white dark:bg-[#1a1a1a] border-b border-gray-100 dark:border-gray-800 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <form onSubmit={handleSearchSubmit} className="flex items-center gap-4">
-            <div className="flex-1 relative">
-              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground dark:text-gray-400 z-10" />
-              <Input
-                ref={inputRef}
-                value={searchValue}
-                onChange={(e) => onSearchChange(e.target.value)}
-                placeholder="Search for food, restaurants..."
-                className="pl-12 pr-4 h-12 w-full bg-white dark:bg-[#1a1a1a] border-gray-100 dark:border-gray-800 focus:border-primary-orange dark:focus:border-primary-orange rounded-full text-lg dark:text-white placeholder:text-gray-500 dark:placeholder:text-gray-400"
-              />
+    <div className="fixed inset-0 z-[9999] flex flex-col bg-white dark:bg-[#0a0a0a]">
+      <div className="flex-shrink-0 border-b border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-[#1a1a1a]">
+        <div
+          ref={searchPanelRef}
+          className="mx-auto w-full max-w-7xl px-4 py-4 sm:px-6 lg:px-8"
+        >
+          <form onSubmit={handleSearchSubmit} className="relative">
+            <div className="flex items-center gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-4 top-1/2 z-10 h-5 w-5 -translate-y-1/2 text-muted-foreground dark:text-gray-400" />
+                <Input
+                  ref={inputRef}
+                  value={searchValue}
+                  onChange={(event) => {
+                    const nextValue = event.target.value
+                    onSearchChange(nextValue)
+                    if (!nextValue.trim()) {
+                      setIsDropdownOpen(false)
+                      setSearchResults([])
+                    } else {
+                      setIsDropdownOpen(true)
+                    }
+                  }}
+                  onFocus={() => {
+                    if (searchValue.trim()) {
+                      setIsDropdownOpen(true)
+                    }
+                  }}
+                  placeholder="Search food items"
+                  className="h-12 w-full rounded-full border-gray-200 bg-white pl-12 pr-10 text-base dark:border-gray-800 dark:bg-[#1a1a1a] dark:text-white"
+                />
+                {searchValue && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onSearchChange("")
+                      setIsDropdownOpen(false)
+                      setSearchResults([])
+                      inputRef.current?.focus()
+                    }}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
+                    aria-label="Clear search"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={closeAndReset}
+                className="rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
+              >
+                <X className="h-5 w-5 text-gray-700 dark:text-gray-300" />
+              </Button>
             </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={onClose}
-              className="rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
-            >
-              <X className="h-5 w-5 text-gray-700 dark:text-gray-300" />
-            </Button>
+
+            {showDropdown && (
+              <div className="absolute left-0 right-0 top-[calc(100%+12px)] z-20 overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-[#141414]">
+                {loadingResults ? (
+                  <div className="flex items-center gap-3 px-4 py-4 text-sm text-gray-500 dark:text-gray-400">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Searching foods...
+                  </div>
+                ) : null}
+
+                {!loadingResults &&
+                  searchResults.map((food) => (
+                    <button
+                      key={`${food.restaurantId}-${food.foodId}`}
+                      type="button"
+                      onClick={() => handleFoodClick(food)}
+                      className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-gray-50 dark:hover:bg-[#1d1d1d]"
+                    >
+                      <img
+                        src={food.image || foodImages[0]}
+                        alt={food.foodName}
+                        className="h-14 w-14 rounded-2xl object-cover"
+                        onError={(event) => {
+                          event.currentTarget.src = foodImages[0]
+                        }}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-gray-900 dark:text-white">
+                          {food.foodName}
+                        </p>
+                        <p className="truncate text-xs text-gray-500 dark:text-gray-400">
+                          {food.restaurantName}
+                        </p>
+                        {food.category ? (
+                          <p className="truncate text-[11px] text-gray-400 dark:text-gray-500">
+                            {food.category}
+                          </p>
+                        ) : null}
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                          Rs.{Math.round(Number(food.price) || 0)}
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+
+                {showNoResults ? (
+                  <div className="px-4 py-4 text-sm text-gray-500 dark:text-gray-400">
+                    No food found
+                  </div>
+                ) : null}
+              </div>
+            )}
           </form>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6 scrollbar-hide bg-white dark:bg-[#0a0a0a]">
-        {/* Suggestions Row */}
-        <div
-          className="mb-6"
-          style={{
-            animation: 'slideDown 0.3s ease-out 0.1s both'
-          }}
-        >
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <h3 className="text-sm sm:text-base font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
-              <Clock className="h-4 w-4 text-primary-orange" />
-              Recent Searches
-            </h3>
-            {recentSearches.length > 0 && (
-              <button
-                type="button"
-                onClick={clearRecentSearches}
-                className="text-[11px] sm:text-xs font-medium text-gray-500 hover:text-red-500 underline-offset-2 hover:underline"
-              >
-                Clear
-              </button>
-            )}
-          </div>
+      <div className="mx-auto w-full max-w-7xl flex-1 overflow-y-auto bg-white px-4 py-6 dark:bg-[#0a0a0a] sm:px-6 lg:px-8">
+        <div className="mb-6 flex items-center justify-between gap-3">
+          <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
+            <Clock className="h-4 w-4 text-red-500" />
+            Recent Searches
+          </h3>
           {recentSearches.length > 0 ? (
-            <div className="flex gap-2 sm:gap-3 flex-wrap">
-              {recentSearches.map((suggestion, index) => (
-                <button
-                  key={`${suggestion}-${index}`}
-                  onClick={() => handleSuggestionClick(suggestion)}
-                  className="inline-flex items-center gap-2 px-3 sm:px-4 py-2 rounded-full bg-orange-50 dark:bg-orange-900/20 hover:bg-orange-100 dark:hover:bg-orange-900/30 border border-orange-200 dark:border-orange-800 hover:border-orange-300 dark:hover:border-orange-700 text-gray-700 dark:text-gray-300 hover:text-primary-orange dark:hover:text-orange-400 transition-all duration-200 text-xs sm:text-sm font-medium shadow-sm hover:shadow-md"
-                  style={{
-                    animation: `scaleIn 0.3s ease-out ${0.1 + index * 0.02}s both`
-                  }}
-                >
-                  <Clock className="h-3 w-3 sm:h-4 sm:w-4 text-primary-orange flex-shrink-0" />
-                  <span>{suggestion}</span>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">
-              Start searching to build your recent history.
-            </p>
-          )}
+            <button
+              type="button"
+              onClick={clearRecentSearches}
+              className="text-xs font-medium text-gray-500 hover:text-red-500"
+            >
+              Clear
+            </button>
+          ) : null}
         </div>
 
-        {/* Food Grid */}
-        <div
-          style={{
-            animation: 'fadeIn 0.3s ease-out 0.2s both'
-          }}
-        >
-          <h3 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white mb-4 sm:mb-6">
-            {searchValue.trim() === ""
-              ? "Popular restaurants around you"
-              : `Search Results (${filteredFoods.length})`}
-          </h3>
-          {loadingFoods ? (
-            <div className="text-center py-12 sm:py-16 text-sm sm:text-base text-gray-500 dark:text-gray-400">
-              Loading restaurants...
-            </div>
-          ) : filteredFoods.length > 0 ? (
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3 sm:gap-4 md:gap-5 lg:gap-6">
-              {filteredFoods.map((food, index) => (
-                <div
-                  key={food.id}
-                  className="flex flex-col items-center gap-2 sm:gap-3 cursor-pointer group"
-                  style={{
-                    animation: `slideUp 0.3s ease-out ${0.25 + 0.05 * (index % 12)}s both`
-                  }}
-                  onClick={() => handleFoodClick(food)}
-                >
-                  <div className="relative w-full aspect-square rounded-full overflow-hidden transition-all duration-200 shadow-md group-hover:shadow-lg bg-white dark:bg-[#1a1a1a] p-1 sm:p-1.5">
-                    <img
-                      src={food.image}
-                      alt={food.name}
-                      className="w-full h-full object-cover rounded-full"
-                      loading="lazy"
-                      onError={(e) => {
-                        e.target.src = foodImages[0]
-                      }}
-                    />
-                  </div>
-                  <div className="px-1 sm:px-2 text-center">
-                    <span className="text-xs sm:text-sm font-semibold text-gray-800 dark:text-gray-200 group-hover:text-primary-orange dark:group-hover:text-orange-400 transition-colors line-clamp-2">
-                      {food.name}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-12 sm:py-16">
-              <Search className="h-12 w-12 sm:h-16 sm:w-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
-              <p className="text-gray-600 dark:text-gray-400 text-base sm:text-lg font-semibold">No results found for "{searchValue}"</p>
-              <p className="text-sm sm:text-base text-gray-500 dark:text-gray-500 mt-2">Try a different search term</p>
-            </div>
-          )}
-        </div>
+        {recentSearches.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {recentSearches.map((term, index) => (
+              <button
+                key={`${term}-${index}`}
+                type="button"
+                onClick={() => handleHistoryClick(term)}
+                className="inline-flex items-center gap-2 rounded-full border border-red-100 bg-red-50 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-red-100 dark:border-red-900/40 dark:bg-red-900/10 dark:text-gray-200"
+              >
+                <Clock className="h-3.5 w-3.5 text-red-500" />
+                {term}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Start typing a food name to get quick suggestions.
+          </p>
+        )}
       </div>
-      <style>{`
-          @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-          }
-          @keyframes slideDown {
-            from {
-              opacity: 0;
-              transform: translateY(-20px);
-            }
-            to {
-              opacity: 1;
-              transform: translateY(0);
-            }
-          }
-          @keyframes slideUp {
-            from {
-              opacity: 0;
-              transform: translateY(20px);
-            }
-            to {
-              opacity: 1;
-              transform: translateY(0);
-            }
-          }
-          @keyframes scaleIn {
-            from {
-              opacity: 0;
-              transform: scale(0.9);
-            }
-            to {
-              opacity: 1;
-              transform: scale(1);
-            }
-          }
-        `}</style>
     </div>
   )
 }
-

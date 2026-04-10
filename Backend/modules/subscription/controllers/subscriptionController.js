@@ -96,27 +96,32 @@ function normalizeSubscriptionItemFromBody(item) {
 }
 
 /**
- * Mutates Mongoose sub document: one dish per meal category.
+ * Mutates Mongoose sub document: supports multiple dishes per meal category.
+ * Re-adding the same item updates its quantity instead of duplicating it.
  */
 function applyAddItemToUserSubscriptionDoc(sub, newItem) {
   sub.items = sub.items || [];
-  if (newItem.mealCategory && MEAL_CATEGORY_KEYS.includes(newItem.mealCategory)) {
-    sub.items = sub.items.filter((i) => i.mealCategory !== newItem.mealCategory);
-  }
   const existingIdx = sub.items.findIndex(
     (i) => String(i.itemId) === String(newItem.itemId) && i.mealCategory === newItem.mealCategory,
   );
   if (existingIdx >= 0) {
-    sub.items[existingIdx].quantity = (sub.items[existingIdx].quantity || 1) + (newItem.quantity || 1);
+    sub.items[existingIdx].name = newItem.name;
+    sub.items[existingIdx].price = newItem.price;
+    sub.items[existingIdx].image = newItem.image;
+    sub.items[existingIdx].isVeg = newItem.isVeg !== false;
+    sub.items[existingIdx].quantity = Number(newItem.quantity) || 1;
   } else {
     sub.items.push(newItem);
   }
 }
 
-/** Upgrade delta in paise (0 if free, same, or downgrade). */
+/** Upgrade delta in paise for a single item (0 if free, same, or downgrade). */
 function computeMealAddAmountDuePaise(subItems, newItem) {
-  const cat = newItem.mealCategory;
-  const oldPaise = cat ? categorySubtotalPaise(subItems, cat) : 0;
+  const existing = (subItems || []).find(
+    (i) => String(i.itemId) === String(newItem.itemId) && i.mealCategory === newItem.mealCategory,
+  );
+  const oldPaise =
+    existing ? Math.round((Number(existing.price) || 0) * 100) * (Number(existing.quantity) || 1) : 0;
   const unitPaise = Math.round((Number(newItem.price) || 0) * 100);
   const qty = Number(newItem.quantity) || 1;
   const newPaise = unitPaise * qty;

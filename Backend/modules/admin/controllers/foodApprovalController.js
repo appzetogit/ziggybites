@@ -17,6 +17,13 @@ const logger = winston.createLogger({
   ],
 });
 
+const VALID_MEAL_CATEGORIES = ["breakfast", "lunch", "snacks", "dinner"];
+
+function normalizeMealCategories(value) {
+  const values = Array.isArray(value) ? value : value ? [value] : [];
+  return [...new Set(values.filter((category) => VALID_MEAL_CATEGORIES.includes(category)))];
+}
+
 /**
  * Get all pending food approval requests
  * GET /api/admin/food-approvals
@@ -821,15 +828,15 @@ export const rejectFoodItem = asyncHandler(async (req, res) => {
 /**
  * Update a menu item's meal category (admin only)
  * PATCH /api/admin/restaurants/:restaurantId/menu-item/:itemId/meal-category
- * Body: { mealCategory: "breakfast" | "lunch" | "snacks" | "dinner" }
+ * Body: { mealCategory?: string, mealCategories?: string[] }
  */
 export const updateMenuItemMealCategory = asyncHandler(async (req, res) => {
   const { restaurantId, itemId } = req.params;
-  const { mealCategory } = req.body;
-
-  const validCategories = ["breakfast", "lunch", "snacks", "dinner"];
-  const finalCategory =
-    mealCategory && validCategories.includes(mealCategory) ? mealCategory : null;
+  const { mealCategory, mealCategories } = req.body;
+  const finalCategories = normalizeMealCategories(
+    mealCategories !== undefined ? mealCategories : mealCategory,
+  );
+  const finalCategory = finalCategories[0] || null;
 
   const menu = await Menu.findOne({
     restaurant: restaurantId,
@@ -852,6 +859,7 @@ export const updateMenuItemMealCategory = asyncHandler(async (req, res) => {
     );
     if (itemIndex !== -1) {
       menu.sections[sIdx].items[itemIndex].mealCategory = finalCategory;
+      menu.sections[sIdx].items[itemIndex].mealCategories = finalCategories;
       menu.markModified(`sections.${sIdx}.items.${itemIndex}`);
       menu.markModified(`sections.${sIdx}.items`);
       itemUpdated = true;
@@ -867,6 +875,8 @@ export const updateMenuItemMealCategory = asyncHandler(async (req, res) => {
       if (subItemIndex !== -1) {
         menu.sections[sIdx].subsections[ssIdx].items[subItemIndex].mealCategory =
           finalCategory;
+        menu.sections[sIdx].subsections[ssIdx].items[subItemIndex].mealCategories =
+          finalCategories;
         menu.markModified(
           `sections.${sIdx}.subsections.${ssIdx}.items.${subItemIndex}`,
         );
@@ -888,5 +898,6 @@ export const updateMenuItemMealCategory = asyncHandler(async (req, res) => {
   return successResponse(res, 200, "Meal category updated successfully", {
     itemId,
     mealCategory: finalCategory,
+    mealCategories: finalCategories,
   });
 });

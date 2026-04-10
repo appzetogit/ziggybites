@@ -53,6 +53,7 @@ export default function RestaurantDetails() {
   const [searchParams] = useSearchParams()
   const showOnlyUnder250 = searchParams.get('under250') === 'true'
   const initialSearchQuery = searchParams.get('q') || ""
+  const selectedFoodId = searchParams.get('food') || searchParams.get('dish') || ""
   const { addToCart, updateQuantity, removeFromCart, getCartItem, cart } = useCart()
   const {
     vegMode,
@@ -95,6 +96,8 @@ export default function RestaurantDetails() {
   const [expandedSections, setExpandedSections] = useState(new Set([0])) // Default: Recommended section is expanded
   const [showVariantModal, setShowVariantModal] = useState(false)
   const [itemForVariant, setItemForVariant] = useState(null)
+  const [showFocusedFoodOnly, setShowFocusedFoodOnly] = useState(Boolean(selectedFoodId))
+  const [selectedFoodMissing, setSelectedFoodMissing] = useState(false)
   const [filters, setFilters] = useState({
     sortBy: null, // "low-to-high" | "high-to-low"
     vegNonVeg: null, // "veg" | "non-veg"
@@ -110,6 +113,11 @@ export default function RestaurantDetails() {
       }))
     }
   }, [vegMode, filters.vegNonVeg])
+
+  useEffect(() => {
+    setShowFocusedFoodOnly(Boolean(selectedFoodId))
+    setSelectedFoodMissing(false)
+  }, [selectedFoodId, slug])
 
   // Restaurant data state
   const [restaurant, setRestaurant] = useState(null)
@@ -1197,11 +1205,59 @@ export default function RestaurantDetails() {
     return Math.max(0, item.price || 0);
   };
 
+  const findFocusedFood = () => {
+    if (!selectedFoodId || !restaurant?.menuSections) return null
+
+    for (const section of restaurant.menuSections) {
+      for (const item of section?.items || []) {
+        if (String(item?.id || "") === String(selectedFoodId)) {
+          return {
+            item,
+            sectionName: section?.name || "Selected dish",
+            subsectionName: "",
+          }
+        }
+      }
+
+      for (const subsection of section?.subsections || []) {
+        for (const item of subsection?.items || []) {
+          if (String(item?.id || "") === String(selectedFoodId)) {
+            return {
+              item,
+              sectionName: section?.name || "Selected dish",
+              subsectionName: subsection?.name || "",
+            }
+          }
+        }
+      }
+    }
+
+    return null
+  }
+
+  const focusedFoodResult = findFocusedFood()
+
+  useEffect(() => {
+    if (!selectedFoodId || loadingRestaurant || !restaurant?.menuSections) return
+
+    if (focusedFoodResult?.item) {
+      setSelectedFoodMissing(false)
+      return
+    }
+
+    setSelectedFoodMissing(true)
+    setShowFocusedFoodOnly(false)
+  }, [focusedFoodResult, loadingRestaurant, restaurant?.menuSections, selectedFoodId])
+
   // Filter menu items based on active filters
   const filterMenuItems = (items) => {
     if (!items) return items
 
     return items.filter((item) => {
+      if (showFocusedFoodOnly && selectedFoodId) {
+        if (String(item?.id || "") !== String(selectedFoodId)) return false
+      }
+
       if (foodPreference === "healthy") {
         const hasHealthyTag = Array.isArray(item.tags) &&
           item.tags.some((tag) => String(tag).trim().toLowerCase() === "healthy")
@@ -1303,6 +1359,20 @@ export default function RestaurantDetails() {
   // Returns array of { section, originalIndex } to preserve original index for expanded sections
   const getFilteredSections = () => {
     if (!restaurant?.menuSections) return [];
+
+    if (showFocusedFoodOnly && focusedFoodResult?.item) {
+      return [{
+        section: {
+          name: focusedFoodResult.subsectionName
+            ? `${focusedFoodResult.sectionName} - ${focusedFoodResult.subsectionName}`
+            : focusedFoodResult.sectionName,
+          items: [focusedFoodResult.item],
+          subsections: [],
+        },
+        originalIndex: "focused-item",
+      }];
+    }
+
     if (!showOnlyUnder250) {
       return restaurant.menuSections
         .map((section, index) => ({ section, originalIndex: index }))
@@ -1598,6 +1668,35 @@ export default function RestaurantDetails() {
         {/* Menu Items Section */}
         {restaurant?.menuSections && Array.isArray(restaurant.menuSections) && restaurant.menuSections.length > 0 && (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8 lg:px-10 xl:px-12 py-6 sm:py-8 md:py-10 lg:py-12 space-y-6 md:space-y-8 lg:space-y-10">
+            {showFocusedFoodOnly && focusedFoodResult?.item && (
+              <div className="rounded-3xl border border-red-200 bg-red-50 px-4 py-4 dark:border-red-900/40 dark:bg-red-900/10">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-semibold text-red-600 dark:text-red-400">
+                      Showing selected food first
+                    </p>
+                    <p className="mt-1 text-sm text-gray-700 dark:text-gray-300">
+                      {focusedFoodResult.item.name} from {restaurant?.name || "this restaurant"}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setShowFocusedFoodOnly(false)}
+                    className="border-red-200 bg-white text-red-600 hover:bg-red-50 dark:border-red-900/40 dark:bg-transparent dark:text-red-400"
+                  >
+                    Show full menu
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {selectedFoodMissing && (
+              <div className="rounded-3xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800 dark:border-amber-900/40 dark:bg-amber-900/10 dark:text-amber-200">
+                Selected food is no longer available. Showing the full restaurant menu instead.
+              </div>
+            )}
+
             {getFilteredSections().map(({ section, originalIndex }, sectionIndex) => {
               // Handle section name - check for valid non-empty string
               let sectionTitle = "Unnamed Section"
@@ -1610,12 +1709,14 @@ export default function RestaurantDetails() {
               }
               const sectionId = `menu-section-${originalIndex}`
 
-              const isExpanded = expandedSections.has(originalIndex)
+              const isExpanded = showFocusedFoodOnly
+                ? true
+                : expandedSections.has(originalIndex)
 
               return (
                 <div key={sectionIndex} id={sectionId} className="space-y-4 scroll-mt-20">
                   {/* Section Header */}
-                  {sectionIndex === 0 && (
+                  {sectionIndex === 0 && !showFocusedFoodOnly && (
                     <div className="flex items-center justify-between">
                       <h2 className="text-lg font-bold text-gray-900 dark:text-white">
                         Recommended for you
@@ -1642,7 +1743,7 @@ export default function RestaurantDetails() {
                       </button>
                     </div>
                   )}
-                  {sectionIndex > 0 && (
+                  {(sectionIndex > 0 || showFocusedFoodOnly) && (
                     <div className="flex items-center justify-between">
                       <div className="space-y-1">
                         <h2 className="text-lg font-bold text-gray-900 dark:text-white">
@@ -1658,26 +1759,28 @@ export default function RestaurantDetails() {
                           </button>
                         )}
                       </div>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setExpandedSections(prev => {
-                            const newSet = new Set(prev)
-                            if (newSet.has(originalIndex)) {
-                              newSet.delete(originalIndex)
-                            } else {
-                              newSet.add(originalIndex)
-                            }
-                            return newSet
-                          })
-                        }}
-                        className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
-                      >
-                        <ChevronDown
-                          className={`h-5 w-5 text-gray-600 dark:text-gray-400 transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'
-                            }`}
-                        />
-                      </button>
+                      {!showFocusedFoodOnly && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setExpandedSections(prev => {
+                              const newSet = new Set(prev)
+                              if (newSet.has(originalIndex)) {
+                                newSet.delete(originalIndex)
+                              } else {
+                                newSet.add(originalIndex)
+                              }
+                              return newSet
+                            })
+                          }}
+                          className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
+                        >
+                          <ChevronDown
+                            className={`h-5 w-5 text-gray-600 dark:text-gray-400 transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'
+                              }`}
+                          />
+                        </button>
+                      )}
                     </div>
                   )}
 
@@ -1693,6 +1796,7 @@ export default function RestaurantDetails() {
                     <div className="space-y-0">
                       {sortMenuItems(filterMenuItems(section.items)).map((item) => {
                         const quantity = quantities[item.id] || 0
+                        const isFocusedItem = selectedFoodId && String(item.id) === String(selectedFoodId)
                         // Determine veg/non-veg based on foodType
                         const isVeg = item.foodType === "Veg"
 
@@ -1704,7 +1808,10 @@ export default function RestaurantDetails() {
                         return (
                           <div
                             key={item.id}
-                            className="flex gap-4 p-4 border-b border-gray-100 last:border-none relative cursor-pointer"
+                            className={`flex gap-4 p-4 border-b border-gray-100 last:border-none relative cursor-pointer ${isFocusedItem
+                              ? "rounded-3xl border border-red-200 bg-red-50/70 dark:border-red-900/40 dark:bg-red-900/10"
+                              : ""
+                              }`}
                             onClick={() => handleItemClick(item)}
                           >
                             {/* Left Side - Details */}
@@ -1910,6 +2017,7 @@ export default function RestaurantDetails() {
                               <div className="space-y-0">
                                 {sortMenuItems(filterMenuItems(subsection.items)).map((item) => {
                                   const quantity = quantities[item.id] || 0
+                                  const isFocusedItem = selectedFoodId && String(item.id) === String(selectedFoodId)
                                   // Determine veg/non-veg based on foodType
                                   const isVeg = item.foodType === "Veg"
 
@@ -1921,7 +2029,10 @@ export default function RestaurantDetails() {
                                   return (
                                     <div
                                       key={item.id}
-                                      className="flex gap-4 p-4 border-b border-gray-100 last:border-none relative cursor-pointer"
+                                      className={`flex gap-4 p-4 border-b border-gray-100 last:border-none relative cursor-pointer ${isFocusedItem
+                                        ? "rounded-3xl border border-red-200 bg-red-50/70 dark:border-red-900/40 dark:bg-red-900/10"
+                                        : ""
+                                        }`}
                                       onClick={() => handleItemClick(item)}
                                     >
                                       {/* Left Side - Details */}

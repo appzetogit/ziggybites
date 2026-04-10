@@ -4,7 +4,7 @@ import { authenticate } from './middleware/restaurantAuth.js';
 import { uploadMiddleware } from '../../shared/utils/cloudinaryService.js';
 import restaurantAuthRoutes from './routes/restaurantAuthRoutes.js';
 import { getOnboarding, upsertOnboarding, createRestaurantFromOnboardingManual } from './controllers/restaurantOnboardingController.js';
-import { getRestaurants, getNearestRestaurant, getRestaurantById, getRestaurantByOwner, updateRestaurantProfile, uploadProfileImage, uploadMenuImage, deleteRestaurantAccount, updateDeliveryStatus, getRestaurantsWithDishesUnder250, getFoodFeed, getFoodsByCategory } from './controllers/restaurantController.js';
+import { getRestaurants, getNearestRestaurant, getRestaurantById, getRestaurantByOwner, updateRestaurantProfile, uploadProfileImage, uploadMenuImage, deleteRestaurantAccount, updateDeliveryStatus, getRestaurantsWithDishesUnder250, getFoodFeed, getFoodsByCategory, searchFoods } from './controllers/restaurantController.js';
 import { getRestaurantFinance } from './controllers/restaurantFinanceController.js';
 import { getWallet, getWalletTransactions, getWalletStats } from './controllers/restaurantWalletController.js';
 import { createWithdrawalRequest, getRestaurantWithdrawalRequests } from './controllers/withdrawalController.js';
@@ -123,6 +123,7 @@ router.patch('/dining-menu/items', authenticate, updateDiningMenuItem);
 
 // Restaurant routes (public - for user module)
 router.get('/food-feed', getFoodFeed);
+router.get('/search/foods', searchFoods);
 router.get('/foods', getFoodsByCategory);
 router.get('/nearest', getNearestRestaurant);
 router.get('/list', getRestaurants);

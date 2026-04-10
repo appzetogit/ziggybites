@@ -186,9 +186,8 @@ export const verifyOTP = asyncHandler(async (req, res) => {
       // Set owner name from restaurant name if not provided separately
       restaurantData.ownerName = name;
 
-      // Set isActive to false - restaurant needs admin approval before becoming active
-      // Auto-approve in development
-      restaurantData.isActive = process.env.NODE_ENV === "development";
+      // Keep new restaurants pending until admin approval in every environment.
+      restaurantData.isActive = false;
 
       try {
         // For phone signups, use $unset to ensure email field is not saved
@@ -470,9 +469,8 @@ export const verifyOTP = asyncHandler(async (req, res) => {
 
         restaurantData.ownerName = name;
 
-        // Set isActive to false - restaurant needs admin approval before becoming active
-        // Auto-approve in development
-        restaurantData.isActive = process.env.NODE_ENV === "development";
+        // Keep new restaurants pending until admin approval in every environment.
+        restaurantData.isActive = false;
 
         try {
           // For phone signups, ensure email field is not included
@@ -746,9 +744,8 @@ export const register = asyncHandler(async (req, res) => {
     ownerName: ownerName || name,
     ownerEmail: (ownerEmail || email).toLowerCase().trim(),
     signupMethod: "email",
-    // Set isActive to false - restaurant needs admin approval before becoming active
-    // Auto-approve in development
-    isActive: process.env.NODE_ENV === "development",
+    // Keep new restaurants pending until admin approval in every environment.
+    isActive: false,
   };
 
   // Only include phone if provided (don't set to null)
@@ -814,13 +811,14 @@ export const login = asyncHandler(async (req, res) => {
     return errorResponse(res, 401, "Invalid email or password");
   }
 
-  // Allow login if active OR in development mode
+  // Allow inactive restaurants to login so they can complete setup
+  // and see the admin-approval state on the frontend.
   if (!restaurant.isActive && process.env.NODE_ENV !== "development") {
-    return errorResponse(
-      res,
-      401,
-      "Restaurant account is inactive. Please contact support.",
-    );
+    logger.info("Inactive restaurant logged in while awaiting admin action", {
+      restaurantId: restaurant._id,
+      email,
+      hasRejectionReason: !!restaurant.rejectionReason,
+    });
   }
 
   // Check if restaurant has a password set
@@ -872,6 +870,9 @@ export const login = asyncHandler(async (req, res) => {
       profileImage: restaurant.profileImage,
       isActive: restaurant.isActive,
       onboarding: restaurant.onboarding,
+      rejectionReason: restaurant.rejectionReason || null,
+      approvedAt: restaurant.approvedAt || null,
+      rejectedAt: restaurant.rejectedAt || null,
     },
   });
 });

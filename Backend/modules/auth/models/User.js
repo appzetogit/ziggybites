@@ -63,13 +63,16 @@ const userSchema = new mongoose.Schema(
       {
         label: {
           type: String,
-          enum: ["Home", "Office", "Other"],
+          enum: ["Home", "Office", "Work", "Other"],
         },
         street: String,
         additionalDetails: String,
+        fullAddress: String,
         city: String,
         state: String,
         zipCode: String,
+        phone: String,
+        zoneId: String,
         location: {
           type: {
             type: String,

@@ -193,24 +193,11 @@ export default function Under250() {
           }))
           setCategories(adminCategories)
         } else {
-          // Fallback to default categories if API fails
-          const defaultCategories = [
-            { id: 1, name: "Biryani", image: foodImages[0] },
-            { id: 2, name: "Cake", image: foodImages[1] },
-            { id: 3, name: "Chhole Bhature", image: foodImages[2] },
-            { id: 4, name: "Chicken Tanduri", image: foodImages[3] },
-          ]
-          setCategories(defaultCategories)
+          setCategories([])
         }
       } catch (error) {
         console.error('Error fetching categories:', error)
-        // Fallback to default categories on error
-        const defaultCategories = [
-          { id: 1, name: "Biryani", image: foodImages[0] },
-          { id: 2, name: "Cake", image: foodImages[1] },
-          { id: 3, name: "Chhole Bhature", image: foodImages[2] },
-        ]
-        setCategories(defaultCategories)
+        setCategories([])
       } finally {
         setLoadingCategories(false)
       }

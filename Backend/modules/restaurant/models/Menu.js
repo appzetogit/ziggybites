@@ -85,6 +85,11 @@ const menuItemSchema = new mongoose.Schema({
     enum: ['breakfast', 'lunch', 'snacks', 'dinner'],
     default: null,
   },
+  mealCategories: {
+    type: [String],
+    enum: ['breakfast', 'lunch', 'snacks', 'dinner'],
+    default: [],
+  },
 }, { _id: false });
 
 const subsectionSchema = new mongoose.Schema({
@@ -141,4 +146,3 @@ const menuSchema = new mongoose.Schema({
 menuSchema.index({ restaurant: 1, isActive: 1 });
 
 export default mongoose.model('Menu', menuSchema);
-

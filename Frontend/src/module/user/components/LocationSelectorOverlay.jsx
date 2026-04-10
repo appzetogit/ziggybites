@@ -40,12 +40,71 @@ const getAddressIcon = (address) => {
   return Home
 }
 
+function normalizeLocationSuggestion(place, query, index = 0) {
+  const latitude = Number(
+    place?.latitude ?? place?.lat ?? place?.geometry?.location?.lat,
+  )
+  const longitude = Number(
+    place?.longitude ?? place?.lng ?? place?.geometry?.location?.lng,
+  )
+
+  return {
+    ...place,
+    id:
+      place?.id ||
+      place?.place_id ||
+      `${query}-${index}-${place?.name || place?.fullAddress || "location"}`,
+    name:
+      place?.name ||
+      place?.title ||
+      place?.mainText ||
+      place?.structured_formatting?.main_text ||
+      "",
+    address:
+      place?.address ||
+      place?.vicinity ||
+      place?.secondaryText ||
+      place?.structured_formatting?.secondary_text ||
+      place?.description ||
+      "",
+    fullAddress:
+      place?.fullAddress ||
+      place?.formattedAddress ||
+      place?.formatted_address ||
+      place?.description ||
+      place?.address ||
+      place?.vicinity ||
+      "",
+    latitude,
+    longitude,
+  }
+}
+
+function isValidLocationSuggestion(place) {
+  return (
+    Number.isFinite(place?.latitude) &&
+    Number.isFinite(place?.longitude) &&
+    (place?.name || place?.fullAddress || place?.address)
+  )
+}
+
+function isPlaceholderLocationValue(value) {
+  if (typeof value !== "string") return !value
+  const normalized = value.trim()
+  if (!normalized) return true
+  if (/^current location\b/i.test(normalized)) return true
+  if (/^select location\b/i.test(normalized)) return true
+  if (/^-?\d+\.\d+,\s*-?\d+\.\d+$/.test(normalized)) return true
+  return false
+}
+
 export default function LocationSelectorOverlay({ isOpen, onClose }) {
   const navigate = useNavigate()
   const inputRef = useRef(null)
+  const searchContainerRef = useRef(null)
   const [searchValue, setSearchValue] = useState("")
   const { location, loading, requestLocation } = useGeoLocation()
-  const { addresses = [], addAddress, updateAddress, userProfile } = useProfile()
+  const { addresses = [], addAddress, userProfile, selectAddress, updateUserProfile } = useProfile()
   const [showAddressForm, setShowAddressForm] = useState(false)
   const [mapPosition, setMapPosition] = useState([22.7196, 75.8577]) // Default Indore coordinates [lat, lng]
   const [addressFormData, setAddressFormData] = useState({
@@ -55,10 +114,15 @@ export default function LocationSelectorOverlay({ isOpen, onClose }) {
     zipCode: "",
     additionalDetails: "",
     label: "Home",
+    receiverName: "",
     phone: "",
   })
   const [loadingAddress, setLoadingAddress] = useState(false)
+  const [searchSuggestions, setSearchSuggestions] = useState([])
+  const [searchLoading, setSearchLoading] = useState(false)
+  const [showSearchDropdown, setShowSearchDropdown] = useState(false)
   const [mapLoading, setMapLoading] = useState(false)
+  const [showReceiverDetailsEditor, setShowReceiverDetailsEditor] = useState(false)
   const mapContainerRef = useRef(null)
   const googleMapRef = useRef(null) // Google Maps instance
   const greenMarkerRef = useRef(null) // Green marker for address selection
@@ -70,6 +134,58 @@ export default function LocationSelectorOverlay({ isOpen, onClose }) {
   const locationUpdateTimeoutRef = useRef(null) // Timeout for location updates
   const [currentAddress, setCurrentAddress] = useState("")
   const [GOOGLE_MAPS_API_KEY, setGOOGLE_MAPS_API_KEY] = useState(null)
+  const searchRequestRef = useRef(0)
+  const selectedSearchValueRef = useRef("")
+  const selectedPlaceRef = useRef(null)
+
+  const getBestKnownLocation = () => {
+    const liveLocation = lastUserLocationRef.current
+    if (
+      liveLocation &&
+      Number.isFinite(Number(liveLocation.latitude)) &&
+      Number.isFinite(Number(liveLocation.longitude))
+    ) {
+      return {
+        latitude: Number(liveLocation.latitude),
+        longitude: Number(liveLocation.longitude),
+        accuracy: liveLocation.accuracy || location?.accuracy || null,
+      }
+    }
+
+    if (
+      location &&
+      Number.isFinite(Number(location.latitude)) &&
+      Number.isFinite(Number(location.longitude))
+    ) {
+      return {
+        ...location,
+        latitude: Number(location.latitude),
+        longitude: Number(location.longitude),
+      }
+    }
+
+    try {
+      const stored = localStorage.getItem("userLocation")
+      if (stored) {
+        const parsed = JSON.parse(stored)
+        if (
+          parsed &&
+          Number.isFinite(Number(parsed.latitude)) &&
+          Number.isFinite(Number(parsed.longitude))
+        ) {
+          return {
+            ...parsed,
+            latitude: Number(parsed.latitude),
+            longitude: Number(parsed.longitude),
+          }
+        }
+      }
+    } catch (error) {
+      console.warn("Failed to read cached user location:", error)
+    }
+
+    return null
+  }
 
   // Decide where to send user after closing this overlay.
   // If a page (like Cart) stored a custom return path in localStorage,
@@ -116,6 +232,155 @@ export default function LocationSelectorOverlay({ isOpen, onClose }) {
       })
     })
   }, [])
+
+  useEffect(() => {
+    if (!isOpen) return
+
+    const handleOutsideClick = (event) => {
+      if (!searchContainerRef.current?.contains(event.target)) {
+        setShowSearchDropdown(false)
+      }
+    }
+
+    document.addEventListener("mousedown", handleOutsideClick)
+    return () => document.removeEventListener("mousedown", handleOutsideClick)
+  }, [isOpen])
+
+  useEffect(() => {
+    if (!isOpen) return
+
+    const trimmedQuery = searchValue.trim()
+    if (
+      trimmedQuery &&
+      selectedSearchValueRef.current &&
+      trimmedQuery === selectedSearchValueRef.current
+    ) {
+      setSearchLoading(false)
+      setShowSearchDropdown(false)
+      return
+    }
+
+    if (trimmedQuery.length < 2) {
+      setSearchSuggestions([])
+      setSearchLoading(false)
+      if (!trimmedQuery) {
+        setShowSearchDropdown(false)
+      }
+      return
+    }
+
+    const requestId = searchRequestRef.current + 1
+    searchRequestRef.current = requestId
+
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        setSearchLoading(true)
+        const response = await locationAPI.getNearbyLocations(
+          location?.latitude,
+          location?.longitude,
+          5000,
+          trimmedQuery,
+        )
+        if (searchRequestRef.current !== requestId) return
+
+        const rawSuggestions =
+          response?.data?.data?.locations ||
+          response?.data?.locations ||
+          response?.locations ||
+          []
+
+        let suggestions = rawSuggestions
+          .map((place, index) => normalizeLocationSuggestion(place, trimmedQuery, index))
+          .filter(isValidLocationSuggestion)
+          .slice(0, 4)
+
+        if (
+          suggestions.length === 0 &&
+          window.google?.maps?.places?.AutocompleteService &&
+          window.google?.maps?.Geocoder
+        ) {
+          const autocompleteService = new window.google.maps.places.AutocompleteService()
+          const geocoder = new window.google.maps.Geocoder()
+
+          const predictions = await new Promise((resolve) => {
+            autocompleteService.getPlacePredictions(
+              {
+                input: trimmedQuery,
+                componentRestrictions: { country: "in" },
+              },
+              (results, status) => {
+                if (
+                  status === window.google.maps.places.PlacesServiceStatus.OK &&
+                  Array.isArray(results)
+                ) {
+                  resolve(results)
+                  return
+                }
+                resolve([])
+              },
+            )
+          })
+
+          const geocodedSuggestions = await Promise.all(
+            predictions.slice(0, 4).map(
+              (prediction) =>
+                new Promise((resolve) => {
+                  geocoder.geocode(
+                    { placeId: prediction.place_id },
+                    (results, status) => {
+                      const result = Array.isArray(results) ? results[0] : null
+                      if (
+                        status !== "OK" ||
+                        !result?.geometry?.location
+                      ) {
+                        resolve(null)
+                        return
+                      }
+
+                      resolve(
+                        normalizeLocationSuggestion(
+                          {
+                            id: prediction.place_id,
+                            place_id: prediction.place_id,
+                            name:
+                              prediction.structured_formatting?.main_text ||
+                              prediction.description,
+                            address:
+                              prediction.structured_formatting?.secondary_text ||
+                              prediction.description,
+                            fullAddress:
+                              result.formatted_address || prediction.description,
+                            latitude: result.geometry.location.lat(),
+                            longitude: result.geometry.location.lng(),
+                          },
+                          trimmedQuery,
+                        ),
+                      )
+                    },
+                  )
+                }),
+            ),
+          )
+
+          suggestions = geocodedSuggestions.filter(isValidLocationSuggestion).slice(0, 4)
+        }
+
+        setSearchSuggestions(suggestions)
+        setShowSearchDropdown(true)
+      } catch (error) {
+        if (searchRequestRef.current !== requestId) return
+        console.error("Location search failed:", error)
+        setSearchSuggestions([])
+        setShowSearchDropdown(true)
+      } finally {
+        if (searchRequestRef.current === requestId) {
+          setSearchLoading(false)
+        }
+      }
+    }, 350)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [isOpen, searchValue, location?.latitude, location?.longitude])
   const reverseGeocodeTimeoutRef = useRef(null) // Debounce timeout for reverse geocoding
   const lastReverseGeocodeCoordsRef = useRef(null) // Track last coordinates to avoid duplicate calls
 
@@ -241,6 +506,50 @@ export default function LocationSelectorOverlay({ isOpen, onClose }) {
     // Final fallback
     return location?.city || location?.area || "Detecting location..."
   })()
+
+  const applySelectedLocation = async (place) => {
+    const latitude = Number(place?.latitude)
+    const longitude = Number(place?.longitude)
+    if (Number.isNaN(latitude) || Number.isNaN(longitude)) {
+      toast.error("Invalid location selected")
+      return
+    }
+
+    const selectedAddress = place.fullAddress || place.address || place.name || ""
+    const selectedStreet = place.name || selectedAddress.split(",")[0]?.trim() || ""
+
+    selectedPlaceRef.current = {
+      latitude,
+      longitude,
+      fullAddress: selectedAddress,
+      street: selectedStreet,
+    }
+    selectedSearchValueRef.current = selectedAddress.trim()
+    setSearchValue(selectedAddress)
+    setShowSearchDropdown(false)
+    setSearchSuggestions([])
+    setCurrentAddress(selectedAddress)
+    setMapPosition([latitude, longitude])
+    setAddressFormData((prev) => ({
+      ...prev,
+      street: selectedStreet || prev.street,
+      additionalDetails: selectedAddress || prev.additionalDetails,
+    }))
+
+    if (googleMapRef.current && window.google?.maps) {
+      try {
+        googleMapRef.current.panTo({ lat: latitude, lng: longitude })
+        googleMapRef.current.setZoom(17)
+        if (greenMarkerRef.current) {
+          greenMarkerRef.current.setPosition({ lat: latitude, lng: longitude })
+        }
+      } catch (error) {
+        console.error("Error moving map to searched location:", error)
+      }
+    }
+
+    await handleMapMoveEnd(latitude, longitude)
+  }
 
   // Global error suppression for Ola Maps SDK errors (runs on component mount)
   useEffect(() => {
@@ -696,6 +1005,48 @@ export default function LocationSelectorOverlay({ isOpen, onClose }) {
   }, [isOpen])
 
   useEffect(() => {
+    const selectedPlace = selectedPlaceRef.current
+    if (!showAddressForm || !selectedPlace?.fullAddress) return
+
+    const selectedQuery = selectedSearchValueRef.current?.trim()
+    const activeQuery = searchValue.trim()
+    if (!selectedQuery || activeQuery !== selectedQuery) return
+
+    const currentAddressIsGeneric =
+      !currentAddress || /^current location\b/i.test(currentAddress.trim())
+    const additionalDetailsIsGeneric =
+      !addressFormData.additionalDetails ||
+      /^current location\b/i.test(addressFormData.additionalDetails.trim())
+    const streetIsGeneric =
+      !addressFormData.street ||
+      /^current location\b/i.test(addressFormData.street.trim())
+
+    if (!currentAddressIsGeneric && !additionalDetailsIsGeneric && !streetIsGeneric) {
+      return
+    }
+
+    if (currentAddressIsGeneric) {
+      setCurrentAddress(selectedPlace.fullAddress)
+    }
+
+    if (additionalDetailsIsGeneric || streetIsGeneric) {
+      setAddressFormData((prev) => ({
+        ...prev,
+        street: streetIsGeneric ? (selectedPlace.street || prev.street) : prev.street,
+        additionalDetails: additionalDetailsIsGeneric
+          ? selectedPlace.fullAddress
+          : prev.additionalDetails,
+      }))
+    }
+  }, [
+    showAddressForm,
+    searchValue,
+    currentAddress,
+    addressFormData.additionalDetails,
+    addressFormData.street,
+  ])
+
+  useEffect(() => {
     const handleEscape = (e) => {
       if (e.key === "Escape" && isOpen) {
         onClose()
@@ -752,7 +1103,7 @@ export default function LocationSelectorOverlay({ isOpen, onClose }) {
 
         // If timeout or error, try to use cached location as fallback
         const stored = localStorage.getItem("userLocation")
-        if (stored) {
+        if (!locationData && stored) {
           try {
             const cachedLocation = JSON.parse(stored)
             if (cachedLocation?.latitude && cachedLocation?.longitude) {
@@ -984,9 +1335,11 @@ export default function LocationSelectorOverlay({ isOpen, onClose }) {
         city: location.city || "",
         state: location.state || "",
         street: location.address || location.area || "",
+        receiverName: userProfile?.name || prev.receiverName || "",
         phone: userProfile?.phone || "",
       }))
     }
+    setShowReceiverDetailsEditor(false)
   }
 
   const handleAddressFormChange = (e) => {
@@ -995,6 +1348,16 @@ export default function LocationSelectorOverlay({ isOpen, onClose }) {
       [e.target.name]: e.target.value,
     })
   }
+
+  useEffect(() => {
+    if (!showAddressForm) return
+
+    setAddressFormData((prev) => ({
+      ...prev,
+      receiverName: prev.receiverName || userProfile?.name || "",
+      phone: prev.phone || userProfile?.phone || "",
+    }))
+  }, [showAddressForm, userProfile?.name, userProfile?.phone])
 
   // Google Maps loading is handled by the Loader in the initialization useEffect above
 
@@ -1577,6 +1940,11 @@ export default function LocationSelectorOverlay({ isOpen, onClose }) {
         let postalCode = ""
         let pointOfInterest = ""
         let premise = ""
+        const selectedPlace = selectedPlaceRef.current
+        const isSameAsSelectedPlace =
+          selectedPlace &&
+          Math.abs(Number(selectedPlace.latitude) - roundedLat) < 0.00001 &&
+          Math.abs(Number(selectedPlace.longitude) - roundedLng) < 0.00001
 
         // Use backend reverse geocoding (Node) instead of calling
         // Google Geocoding / Places APIs directly from the frontend.
@@ -1764,6 +2132,22 @@ export default function LocationSelectorOverlay({ isOpen, onClose }) {
             formattedAddress = formattedAddress.replace(', India', '').trim()
           }
 
+          if (
+            isSameAsSelectedPlace &&
+            selectedPlace?.fullAddress &&
+            (!formattedAddress || /^current location\b/i.test(formattedAddress))
+          ) {
+            formattedAddress = selectedPlace.fullAddress
+          }
+
+          if (
+            isSameAsSelectedPlace &&
+            selectedPlace?.street &&
+            (!street || /^current location\b/i.test(street))
+          ) {
+            street = selectedPlace.street
+          }
+
           console.log("✅ Final extracted address components:", {
             formattedAddress,
             street,
@@ -1775,31 +2159,98 @@ export default function LocationSelectorOverlay({ isOpen, onClose }) {
             premise
           })
 
+          const resolvedFullAddress = !isPlaceholderLocationValue(formattedAddress)
+            ? formattedAddress
+            : isSameAsSelectedPlace && !isPlaceholderLocationValue(selectedPlace?.fullAddress)
+              ? selectedPlace.fullAddress
+              : !isPlaceholderLocationValue(location?.formattedAddress)
+                ? location.formattedAddress
+                : !isPlaceholderLocationValue(currentAddress)
+                  ? currentAddress
+                  : ""
+
+          const resolvedStreet = !isPlaceholderLocationValue(street)
+            ? street
+            : isSameAsSelectedPlace && !isPlaceholderLocationValue(selectedPlace?.street)
+              ? selectedPlace.street
+              : !isPlaceholderLocationValue(location?.street)
+                ? location.street
+                : !isPlaceholderLocationValue(location?.area)
+                  ? location.area
+                  : !isPlaceholderLocationValue(location?.address)
+                    ? location.address
+                    : ""
+
+          const resolvedCity = !isPlaceholderLocationValue(city)
+            ? city
+            : !isPlaceholderLocationValue(location?.city)
+              ? location.city
+              : ""
+
+          const resolvedState = !isPlaceholderLocationValue(state)
+            ? state
+            : !isPlaceholderLocationValue(location?.state)
+              ? location.state
+              : ""
+
+          const resolvedPostalCode = !isPlaceholderLocationValue(postalCode)
+            ? postalCode
+            : !isPlaceholderLocationValue(location?.postalCode)
+              ? location.postalCode
+              : ""
+
           // Update current address display
-          setCurrentAddress(formattedAddress || `${roundedLat.toFixed(6)}, ${roundedLng.toFixed(6)}`)
+          setCurrentAddress(
+            resolvedFullAddress || `${roundedLat.toFixed(6)}, ${roundedLng.toFixed(6)}`,
+          )
 
           // Update form data
           // Store FULL formatted address in additionalDetails (Address details field) - this is what user sees
           // This should be the complete address with all parts: POI, Building, Floor, Area, City, State, Pincode
-          const fullAddressForField = formattedAddress ||
-            (pointOfInterest && city && state ? `${pointOfInterest}, ${city}, ${state}` : '') ||
-            (premise && city && state ? `${premise}, ${city}, ${state}` : '') ||
-            (street && city && state ? `${street}, ${city}, ${state}` : '') ||
-            (area && city && state ? `${area}, ${city}, ${state}` : '') ||
-            (city && state ? `${city}, ${state}` : '') ||
+          const fullAddressForField = resolvedFullAddress ||
+            (pointOfInterest && resolvedCity && resolvedState ? `${pointOfInterest}, ${resolvedCity}, ${resolvedState}` : '') ||
+            (premise && resolvedCity && resolvedState ? `${premise}, ${resolvedCity}, ${resolvedState}` : '') ||
+            (resolvedStreet && resolvedCity && resolvedState ? `${resolvedStreet}, ${resolvedCity}, ${resolvedState}` : '') ||
+            (area && resolvedCity && resolvedState ? `${area}, ${resolvedCity}, ${resolvedState}` : '') ||
+            (resolvedCity && resolvedState ? `${resolvedCity}, ${resolvedState}` : '') ||
             ''
 
           setAddressFormData(prev => ({
             ...prev,
-            street: street || prev.street,
-            city: city || prev.city,
-            state: state || prev.state,
-            zipCode: postalCode || prev.zipCode,
+            street: resolvedStreet || prev.street,
+            city: resolvedCity || prev.city,
+            state: resolvedState || prev.state,
+            zipCode: resolvedPostalCode || prev.zipCode,
             additionalDetails: fullAddressForField || prev.additionalDetails, // Store FULL address in Address details field
           }))
         } else {
           console.warn("⚠️ No address data found from Google Maps or backend")
-          setCurrentAddress(`${roundedLat.toFixed(6)}, ${roundedLng.toFixed(6)}`)
+          if (isSameAsSelectedPlace && selectedPlace?.fullAddress) {
+            setCurrentAddress(selectedPlace.fullAddress)
+            setAddressFormData(prev => ({
+              ...prev,
+              street: selectedPlace.street || prev.street,
+              additionalDetails: selectedPlace.fullAddress || prev.additionalDetails,
+            }))
+          } else if (!isPlaceholderLocationValue(location?.formattedAddress)) {
+            setCurrentAddress(location.formattedAddress)
+            setAddressFormData(prev => ({
+              ...prev,
+              street: !isPlaceholderLocationValue(location?.street)
+                ? location.street
+                : !isPlaceholderLocationValue(location?.area)
+                  ? location.area
+                  : !isPlaceholderLocationValue(location?.address)
+                    ? location.address
+                    : prev.street,
+              city: !isPlaceholderLocationValue(location?.city) ? location.city : prev.city,
+              state: !isPlaceholderLocationValue(location?.state) ? location.state : prev.state,
+              zipCode: !isPlaceholderLocationValue(location?.postalCode) ? location.postalCode : prev.zipCode,
+              additionalDetails: location.formattedAddress || prev.additionalDetails,
+            }))
+          } else {
+            setCurrentAddress(`${roundedLat.toFixed(6)}, ${roundedLng.toFixed(6)}`)
+          }
         }
       } catch (error) {
         console.error("❌ Error reverse geocoding:", error)
@@ -1808,7 +2259,32 @@ export default function LocationSelectorOverlay({ isOpen, onClose }) {
           response: error.response?.data,
           status: error.response?.status
         })
-        setCurrentAddress(`${roundedLat.toFixed(6)}, ${roundedLng.toFixed(6)}`)
+        if (isSameAsSelectedPlace && selectedPlace?.fullAddress) {
+          setCurrentAddress(selectedPlace.fullAddress)
+          setAddressFormData(prev => ({
+            ...prev,
+            street: selectedPlace.street || prev.street,
+            additionalDetails: selectedPlace.fullAddress || prev.additionalDetails,
+          }))
+        } else if (!isPlaceholderLocationValue(location?.formattedAddress)) {
+          setCurrentAddress(location.formattedAddress)
+          setAddressFormData(prev => ({
+            ...prev,
+            street: !isPlaceholderLocationValue(location?.street)
+              ? location.street
+              : !isPlaceholderLocationValue(location?.area)
+                ? location.area
+                : !isPlaceholderLocationValue(location?.address)
+                  ? location.address
+                  : prev.street,
+            city: !isPlaceholderLocationValue(location?.city) ? location.city : prev.city,
+            state: !isPlaceholderLocationValue(location?.state) ? location.state : prev.state,
+            zipCode: !isPlaceholderLocationValue(location?.postalCode) ? location.postalCode : prev.zipCode,
+            additionalDetails: location.formattedAddress || prev.additionalDetails,
+          }))
+        } else {
+          setCurrentAddress(`${roundedLat.toFixed(6)}, ${roundedLng.toFixed(6)}`)
+        }
         // Don't show error toast, just use coordinates
       } finally {
         setLoadingAddress(false)
@@ -1825,19 +2301,29 @@ export default function LocationSelectorOverlay({ isOpen, onClose }) {
 
       toast.loading("Getting your fresh location...", { id: "current-location" })
 
-      // Use Promise.race to get location within 2 seconds
-      const locationPromise = requestLocation(true, true) // forceFresh = true, updateDB = true
+      // Give GPS enough time, then fall back to the latest live coordinates if needed
+      const fallbackLocation = getBestKnownLocation()
+      const locationPromise = requestLocation()
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Location timeout")), 2000)
+        setTimeout(() => reject(new Error("Location timeout")), 12000)
       )
 
       let locationData
       try {
         locationData = await Promise.race([locationPromise, timeoutPromise])
       } catch (raceError) {
-        // If timeout, try to use cached location immediately
+        // If timeout, reuse the live location already shown on the map if available
+        if (fallbackLocation?.latitude && fallbackLocation?.longitude) {
+          locationData = fallbackLocation
+          toast.success("Using your latest known location", {
+            id: "current-location",
+            duration: 2000,
+          })
+        }
+
+        // Otherwise, try to use cached location immediately
         const stored = localStorage.getItem("userLocation")
-        if (stored) {
+        if (!locationData && stored) {
           try {
             const cachedLocation = JSON.parse(stored)
             if (cachedLocation?.latitude && cachedLocation?.longitude) {
@@ -1850,7 +2336,7 @@ export default function LocationSelectorOverlay({ isOpen, onClose }) {
             toast.error("Could not get location. Please try again.", { id: "current-location" })
             return
           }
-        } else {
+        } else if (!locationData) {
           toast.error("Could not get location. Please try again.", { id: "current-location" })
           return
         }
@@ -1859,8 +2345,13 @@ export default function LocationSelectorOverlay({ isOpen, onClose }) {
       console.log("📍 Current location data received:", locationData)
 
       if (!locationData?.latitude || !locationData?.longitude) {
-        toast.error("Could not get your location. Please try again.", { id: "current-location" })
-        return
+        const bestKnownLocation = getBestKnownLocation()
+        if (bestKnownLocation?.latitude && bestKnownLocation?.longitude) {
+          locationData = bestKnownLocation
+        } else {
+          toast.error("Could not get your location. Please try again.", { id: "current-location" })
+          return
+        }
       }
 
       const lat = parseFloat(locationData.latitude)
@@ -1875,6 +2366,32 @@ export default function LocationSelectorOverlay({ isOpen, onClose }) {
       console.log("📍 Location accuracy:", locationData.accuracy ? `${locationData.accuracy}m` : "unknown")
       console.log("📍 Location timestamp:", locationData.timestamp || new Date().toISOString())
       setMapPosition([lat, lng])
+
+      const fallbackFullAddress = !isPlaceholderLocationValue(locationData?.formattedAddress)
+        ? locationData.formattedAddress
+        : !isPlaceholderLocationValue(locationData?.address)
+          ? locationData.address
+          : ""
+      const fallbackStreet = !isPlaceholderLocationValue(locationData?.street)
+        ? locationData.street
+        : !isPlaceholderLocationValue(locationData?.area)
+          ? locationData.area
+          : !isPlaceholderLocationValue(locationData?.address)
+            ? locationData.address
+            : ""
+
+      if (fallbackFullAddress) {
+        setCurrentAddress(fallbackFullAddress)
+      }
+
+      setAddressFormData(prev => ({
+        ...prev,
+        street: fallbackStreet || prev.street,
+        city: !isPlaceholderLocationValue(locationData?.city) ? locationData.city : prev.city,
+        state: !isPlaceholderLocationValue(locationData?.state) ? locationData.state : prev.state,
+        zipCode: !isPlaceholderLocationValue(locationData?.postalCode) ? locationData.postalCode : prev.zipCode,
+        additionalDetails: fallbackFullAddress || prev.additionalDetails,
+      }))
 
       // Update Google Maps to new location
       if (googleMapRef.current && window.google && window.google.maps) {
@@ -2038,19 +2555,34 @@ export default function LocationSelectorOverlay({ isOpen, onClose }) {
       return
     }
 
+    const trimmedReceiverName = (addressFormData.receiverName || userProfile?.name || "").trim()
+    const trimmedPhone = (addressFormData.phone || userProfile?.phone || "").trim()
+    const normalizedPhone = trimmedPhone.replace(/\D/g, "")
+
+    if (!trimmedReceiverName) {
+      toast.error("Please enter the receiver name")
+      return
+    }
+
+    if (!trimmedPhone) {
+      toast.error("Phone number is required to save this address")
+      return
+    }
+
+    if (normalizedPhone.length < 10) {
+      toast.error("Please enter a valid phone number")
+      return
+    }
+
     setLoadingAddress(true)
     try {
       // Prepare address data matching backend format
-      // Backend expects: label, street, additionalDetails, city, state, zipCode, latitude, longitude
-      // Backend label enum: ['Home', 'Office', 'Other'] - not 'Work'
+      // Backend expects: label, street, additionalDetails, fullAddress, city, state, zipCode, latitude, longitude
       // mapPosition is [latitude, longitude]
 
       // Validate and normalize label to match backend enum
       let normalizedLabel = addressFormData.label || "Home"
-      if (normalizedLabel === "Work") {
-        normalizedLabel = "Office" // Convert Work to Office to match backend enum
-      }
-      if (!["Home", "Office", "Other"].includes(normalizedLabel)) {
+      if (!["Home", "Office", "Work", "Other"].includes(normalizedLabel)) {
         normalizedLabel = "Other" // Fallback to Other if invalid
       }
 
@@ -2065,31 +2597,75 @@ export default function LocationSelectorOverlay({ isOpen, onClose }) {
         return
       }
 
+      const resolvedFullAddress = (
+        currentAddress &&
+        !currentAddress.match(/^-?\d+\.\d+,\s*-?\d+\.\d+$/)
+          ? currentAddress
+          : addressFormData.additionalDetails
+      ) || [trimmedStreet, trimmedCity, trimmedState, addressFormData.zipCode].filter(Boolean).join(", ")
+
       const addressToSave = {
         label: normalizedLabel,
         street: trimmedStreet,
         additionalDetails: (addressFormData.additionalDetails || "").trim(),
+        fullAddress: resolvedFullAddress,
         city: trimmedCity,
         state: trimmedState,
         zipCode: (addressFormData.zipCode || "").trim(),
+        phone: trimmedPhone,
+        zoneId: localStorage.getItem("userZoneId") || "",
         latitude: mapPosition[0], // latitude from mapPosition[0]
         longitude: mapPosition[1], // longitude from mapPosition[1]
+        isDefault: addresses.length === 0,
       }
 
-      // Check if an address with the same label already exists
-      const existingAddressWithSameLabel = addresses.find(addr => addr.label === normalizedLabel)
-
-      if (existingAddressWithSameLabel) {
-        // Update existing address instead of creating a new one
-        console.log("🔄 Updating existing address with label:", normalizedLabel)
-        await updateAddress(existingAddressWithSameLabel.id, addressToSave)
-        toast.success(`Address updated for ${normalizedLabel}!`)
-      } else {
-        // Create new address
-        console.log("💾 Saving new address:", addressToSave)
-        await addAddress(addressToSave)
-        toast.success(`Address saved as ${normalizedLabel}!`)
+      console.log("💾 Saving new address:", addressToSave)
+      const savedAddress = await addAddress(addressToSave)
+      if (savedAddress?.id) {
+        selectAddress(savedAddress.id)
       }
+
+      const locationPayload = {
+        latitude: addressToSave.latitude,
+        longitude: addressToSave.longitude,
+        address: addressToSave.street,
+        city: addressToSave.city,
+        state: addressToSave.state,
+        area: addressToSave.additionalDetails || "",
+        formattedAddress: addressToSave.fullAddress,
+        postalCode: addressToSave.zipCode || "",
+        street: addressToSave.street,
+        zoneId: addressToSave.zoneId || "",
+      }
+      localStorage.setItem("userLocation", JSON.stringify(locationPayload))
+      window.dispatchEvent(new CustomEvent("userLocationUpdated", { detail: locationPayload }))
+
+      if (
+        trimmedReceiverName !== (userProfile?.name || "").trim() ||
+        trimmedPhone !== (userProfile?.phone || "").trim()
+      ) {
+        try {
+          const profileResponse = await userAPI.updateProfile({
+            name: trimmedReceiverName,
+            phone: trimmedPhone,
+          })
+          const updatedUser =
+            profileResponse?.data?.data?.user ||
+            profileResponse?.data?.user ||
+            profileResponse?.data ||
+            {}
+
+          updateUserProfile({
+            ...(userProfile || {}),
+            name: updatedUser.name || trimmedReceiverName,
+            phone: updatedUser.phone || trimmedPhone,
+          })
+        } catch (profileError) {
+          console.error("Failed to update receiver profile details:", profileError)
+        }
+      }
+
+      toast.success(`Address saved as ${normalizedLabel}!`)
 
       // Reset form
       setAddressFormData({
@@ -2099,9 +2675,11 @@ export default function LocationSelectorOverlay({ isOpen, onClose }) {
         zipCode: "",
         additionalDetails: "",
         label: "Home",
+        receiverName: "",
         phone: "",
       })
       setShowAddressForm(false)
+      setShowReceiverDetailsEditor(false)
       setLoadingAddress(false)
 
       // Close overlay and redirect back to caller (cart/home/etc.)
@@ -2140,9 +2718,10 @@ export default function LocationSelectorOverlay({ isOpen, onClose }) {
       zipCode: "",
       additionalDetails: "",
       label: "Home",
+      receiverName: "",
       phone: "",
     })
-    navigateAfterClose("/")
+    setShowReceiverDetailsEditor(false)
   }
 
   const handleSelectSavedAddress = async (address) => {
@@ -2152,16 +2731,20 @@ export default function LocationSelectorOverlay({ isOpen, onClose }) {
       const longitude = coordinates[0]
       const latitude = coordinates[1]
 
+      if (address?.id) {
+        selectAddress(address.id)
+      }
+
       if (latitude && longitude) {
         // Update location in backend
         await userAPI.updateLocation({
           latitude,
           longitude,
-          address: `${address.street}, ${address.city}`,
+          address: address.street || address.fullAddress || `${address.city || ""}`,
           city: address.city,
           state: address.state,
           area: address.additionalDetails || "",
-          formattedAddress: `${address.street}, ${address.city}, ${address.state}`
+          formattedAddress: address.fullAddress || `${address.street || ""}, ${address.city || ""}, ${address.state || ""}`.replace(/^,\s*|,\s*$/g, "")
         })
       }
 
@@ -2169,12 +2752,15 @@ export default function LocationSelectorOverlay({ isOpen, onClose }) {
       const locationData = {
         city: address.city,
         state: address.state,
-        address: `${address.street}, ${address.city}`,
+        address: address.street || address.fullAddress || "",
         area: address.additionalDetails || "",
         zipCode: address.zipCode,
+        postalCode: address.zipCode,
         latitude,
         longitude,
-        formattedAddress: `${address.street}, ${address.city}, ${address.state}`
+        formattedAddress: address.fullAddress || `${address.street || ""}, ${address.city || ""}, ${address.state || ""}`.replace(/^,\s*|,\s*$/g, ""),
+        zoneId: address.zoneId || localStorage.getItem("userZoneId") || "",
+        street: address.street || "",
       }
       localStorage.setItem("userLocation", JSON.stringify(locationData))
 
@@ -2198,6 +2784,7 @@ export default function LocationSelectorOverlay({ isOpen, onClose }) {
         zipCode: address.zipCode || "",
         additionalDetails: address.additionalDetails || "",
         label: address.label || "Home",
+        receiverName: userProfile?.name || "",
         phone: address.phone || "",
       })
 
@@ -2229,9 +2816,8 @@ export default function LocationSelectorOverlay({ isOpen, onClose }) {
         }, 300)
       }
 
-      // Don't close overlay - keep user on select location page
-      // onClose()
-      // window.location.reload()
+      onClose()
+      navigateAfterClose("/")
     } catch (error) {
       console.error("Error selecting saved address:", error)
       toast.error("Failed to update location. Please try again.")
@@ -2287,16 +2873,57 @@ export default function LocationSelectorOverlay({ isOpen, onClose }) {
 
         {/* Search Bar */}
         <div className="flex-shrink-0 bg-white dark:bg-[#1a1a1a] px-4 py-3 border-b border-gray-100 dark:border-gray-800">
-          <div className="relative">
-            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-green-600 z-10" />
-            <Input
-              value={searchValue}
-              onChange={(e) => setSearchValue(e.target.value)}
-              placeholder="Search for area, street name..."
-              className="pl-12 pr-4 h-12 w-full bg-gray-50 dark:bg-[#2a2a2a] border-gray-200 dark:border-gray-700 focus:border-green-600 dark:focus:border-green-600 rounded-xl"
-            />
-          </div>
+        <div className="relative" ref={searchContainerRef}>
+          <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-green-600 z-10" />
+          <Input
+            value={searchValue}
+            onChange={(e) => {
+              setSearchValue(e.target.value)
+              if (!e.target.value.trim()) {
+                setShowSearchDropdown(false)
+                setSearchSuggestions([])
+              }
+            }}
+            onFocus={() => {
+              if (searchSuggestions.length > 0 || searchLoading) {
+                setShowSearchDropdown(true)
+              }
+            }}
+            placeholder="Search for area, street name..."
+            className="pl-12 pr-4 h-12 w-full bg-gray-50 dark:bg-[#2a2a2a] border-gray-200 dark:border-gray-700 focus:border-green-600 dark:focus:border-green-600 rounded-xl"
+          />
+          {showSearchDropdown && (
+            <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-30 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-[#1a1a1a]">
+              {searchLoading ? (
+                <div className="flex items-center gap-3 px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-green-600" />
+                  Searching locations...
+                </div>
+              ) : searchSuggestions.length > 0 ? (
+                searchSuggestions.map((place) => (
+                  <button
+                    key={place.id}
+                    type="button"
+                    onClick={() => applySelectedLocation(place)}
+                    className="w-full border-b border-gray-100 px-4 py-3 text-left last:border-b-0 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800"
+                  >
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">
+                      {place.name || place.fullAddress}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {place.fullAddress || place.address}
+                    </p>
+                  </button>
+                ))
+              ) : (
+                <div className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
+                  No location found
+                </div>
+              )}
+            </div>
+          )}
         </div>
+      </div>
 
         {/* Map Section - Google Maps */}
         <div className="flex-shrink-0 relative" style={{ height: '40vh', minHeight: '300px' }}>
@@ -2361,9 +2988,14 @@ export default function LocationSelectorOverlay({ isOpen, onClose }) {
                 <MapPin className="h-5 w-5 text-green-600 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                    {loadingAddress ? "Locating..." : (currentAddress || addressFormData.city && addressFormData.state
-                      ? `${addressFormData.city}, ${addressFormData.state}`
-                      : "Select location on map")}
+                    {loadingAddress
+                      ? "Locating..."
+                      : currentAddress &&
+                          !/^current location\b/i.test(currentAddress.trim())
+                        ? currentAddress
+                        : addressFormData.city && addressFormData.state
+                          ? `${addressFormData.city}, ${addressFormData.state}`
+                          : "Select location on map"}
                   </p>
                 </div>
                 <ChevronRight className="h-5 w-5 text-gray-400 flex-shrink-0" />
@@ -2390,15 +3022,54 @@ export default function LocationSelectorOverlay({ isOpen, onClose }) {
               <Label className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 block">
                 Receiver details for this address
               </Label>
-              <div className="bg-white dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-700 rounded-lg p-3 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setShowReceiverDetailsEditor((prev) => !prev)}
+                className="w-full bg-white dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-700 rounded-lg p-3 flex items-center gap-3 text-left"
+              >
                 <Phone className="h-5 w-5 text-gray-600 dark:text-gray-400 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-900 dark:text-white">
-                    {userProfile?.name || "User"}, {addressFormData.phone || userProfile?.phone || "Add phone"}
+                    {addressFormData.receiverName || userProfile?.name || "Add name"}, {addressFormData.phone || userProfile?.phone || "Add phone"}
+                  </p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Tap to edit receiver name and phone number
                   </p>
                 </div>
-                <ChevronRight className="h-5 w-5 text-gray-400 flex-shrink-0" />
-              </div>
+                <ChevronRight className={`h-5 w-5 text-gray-400 flex-shrink-0 transition-transform ${showReceiverDetailsEditor ? "rotate-90" : ""}`} />
+              </button>
+              {showReceiverDetailsEditor && (
+                <div className="mt-3 space-y-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1a1a1a] p-3">
+                  <div>
+                    <Label htmlFor="receiverName" className="text-xs font-medium text-gray-600 dark:text-gray-300 mb-1 block">
+                      Receiver name*
+                    </Label>
+                    <Input
+                      id="receiverName"
+                      name="receiverName"
+                      placeholder="Enter receiver name"
+                      value={addressFormData.receiverName}
+                      onChange={handleAddressFormChange}
+                      className="bg-white dark:bg-[#0f0f0f] border-gray-200 dark:border-gray-700"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="phone" className="text-xs font-medium text-gray-600 dark:text-gray-300 mb-1 block">
+                      Phone number*
+                    </Label>
+                    <Input
+                      id="phone"
+                      name="phone"
+                      type="tel"
+                      inputMode="tel"
+                      placeholder="Enter phone number"
+                      value={addressFormData.phone}
+                      onChange={handleAddressFormChange}
+                      className="bg-white dark:bg-[#0f0f0f] border-gray-200 dark:border-gray-700"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Save Address As */}
@@ -2407,7 +3078,7 @@ export default function LocationSelectorOverlay({ isOpen, onClose }) {
                 Save address as
               </Label>
               <div className="flex gap-2">
-                {["Home", "Office", "Other"].map((label) => (
+                {["Home", "Work", "Other"].map((label) => (
                   <Button
                     key={label}
                     type="button"
@@ -2500,15 +3171,56 @@ export default function LocationSelectorOverlay({ isOpen, onClose }) {
 
       {/* Search Bar */}
       <div className="flex-shrink-0 bg-white dark:bg-[#1a1a1a] px-4 sm:px-6 lg:px-8 py-3 max-w-7xl mx-auto w-full">
-        <div className="relative">
+        <div className="relative" ref={searchContainerRef}>
           <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-primary-orange z-10" />
           <Input
             ref={inputRef}
             value={searchValue}
-            onChange={(e) => setSearchValue(e.target.value)}
+            onChange={(e) => {
+              setSearchValue(e.target.value)
+              if (!e.target.value.trim()) {
+                setShowSearchDropdown(false)
+                setSearchSuggestions([])
+              }
+            }}
+            onFocus={() => {
+              if (searchSuggestions.length > 0 || searchLoading) {
+                setShowSearchDropdown(true)
+              }
+            }}
             placeholder="Search for area, street name..."
             className="pl-12 pr-4 h-12 w-full bg-gray-50 dark:bg-[#2a2a2a] border-gray-200 dark:border-gray-700 focus:border-primary-orange dark:focus:border-primary-orange rounded-xl text-base dark:text-white placeholder:text-gray-500 dark:placeholder:text-gray-400"
           />
+          {showSearchDropdown && (
+            <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-30 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-[#1a1a1a]">
+              {searchLoading ? (
+                <div className="flex items-center gap-3 px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-primary-orange" />
+                  Searching locations...
+                </div>
+              ) : searchSuggestions.length > 0 ? (
+                searchSuggestions.map((place) => (
+                  <button
+                    key={place.id}
+                    type="button"
+                    onClick={() => applySelectedLocation(place)}
+                    className="w-full border-b border-gray-100 px-4 py-3 text-left last:border-b-0 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800"
+                  >
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">
+                      {place.name || place.fullAddress}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {place.fullAddress || place.address}
+                    </p>
+                  </button>
+                ))
+              ) : (
+                <div className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
+                  No location found
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -2567,11 +3279,6 @@ export default function LocationSelectorOverlay({ isOpen, onClose }) {
               </div>
               <div className="bg-white dark:bg-[#1a1a1a]">
                 {addresses
-                  .filter((address, index, self) => {
-                    // Filter out duplicate addresses with same label - keep only first occurrence
-                    const firstIndex = self.findIndex(addr => addr.label === address.label)
-                    return index === firstIndex
-                  })
                   .map((address, index) => {
                     const IconComponent = getAddressIcon(address)
                     return (
@@ -2597,7 +3304,7 @@ export default function LocationSelectorOverlay({ isOpen, onClose }) {
                                 {address.label || address.additionalDetails || "Home"}
                               </p>
                               <p className="text-sm text-gray-500 dark:text-gray-400">
-                                {[
+                                {address.fullAddress || [
                                   address.additionalDetails,
                                   address.street,
                                   address.city,
@@ -2708,6 +3415,3 @@ export default function LocationSelectorOverlay({ isOpen, onClose }) {
     </div>
   )
 }
-
-
-

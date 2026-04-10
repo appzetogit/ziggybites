@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
-import { Phone, User, AlertCircle, Loader2, Truck } from "lucide-react"
+import { Phone, User, Loader2, Truck } from "lucide-react"
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -330,22 +330,6 @@ export default function DeliverySignup() {
               Login
             </button>
           </div>
-
-          {/* Demo credentials / info bar */}
-          <div className="mt-8 w-full max-w-lg rounded-lg border border-orange-100 bg-orange-50 px-4 py-3 text-xs sm:text-sm text-gray-800 flex items-start gap-3">
-            <div className="mt-0.5 text-primary-orange">
-              <AlertCircle className="h-4 w-4" />
-            </div>
-            <div>
-              <div className="font-semibold mb-1">Demo Credentials</div>
-              <div>
-                <span className="font-semibold">Phone :</span> +91 9876543210
-              </div>
-              <div>
-                <span className="font-semibold">OTP :</span> 123456
-              </div>
-            </div>
-          </div>
         </div>
 
         {/* Simple keyframe animations */}
@@ -385,4 +369,3 @@ export default function DeliverySignup() {
     </div>
   )
 }
-

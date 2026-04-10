@@ -6,6 +6,15 @@ import path from "path";
 const apiBaseUrl = process.env.VITE_API_BASE_URL || "http://localhost:5000/api";
 
 function firebaseConfigPlugin() {
+  const getFirebaseConfig = () => ({
+    apiKey: process.env.VITE_FIREBASE_API_KEY || "",
+    authDomain: process.env.VITE_FIREBASE_AUTH_DOMAIN || "",
+    projectId: process.env.VITE_FIREBASE_PROJECT_ID || "",
+    storageBucket: process.env.VITE_FIREBASE_STORAGE_BUCKET || "",
+    messagingSenderId: process.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "",
+    appId: process.env.VITE_FIREBASE_APP_ID || "",
+  });
+
   return {
     name: "firebase-config",
     configureServer(server) {
@@ -33,6 +42,13 @@ function firebaseConfigPlugin() {
           return;
         }
         next();
+      });
+    },
+    generateBundle() {
+      this.emitFile({
+        type: "asset",
+        fileName: "firebase-config.json",
+        source: JSON.stringify(getFirebaseConfig()),
       });
     },
   };

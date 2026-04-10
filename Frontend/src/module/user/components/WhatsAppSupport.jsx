@@ -10,7 +10,7 @@ export default function WhatsAppSupport() {
       href={whatsappUrl}
       target="_blank"
       rel="noopener noreferrer"
-      className="fixed bottom-20 right-4 z-40 bg-red-500 text-white p-3 rounded-full shadow-lg hover:shadow-xl transition-all hover:scale-110 md:bottom-6"
+      className="fixed bottom-20 right-4 z-40 rounded-full bg-[#DC2626] p-3 text-white shadow-lg md:bottom-6"
       title="Contact WhatsApp Support"
     >
       <MessageCircle className="h-6 w-6" />

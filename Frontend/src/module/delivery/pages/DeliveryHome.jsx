@@ -31,6 +31,7 @@ import {
 import BottomPopup from "../components/BottomPopup"
 import DeliveryOrderChatModal from "../components/DeliveryOrderChatModal"
 import FeedNavbar from "../components/FeedNavbar"
+import ApprovalPendingPopup from "@/components/account/ApprovalPendingPopup"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useGigStore } from "../store/gigStore"
@@ -398,24 +399,20 @@ const normalizeBatchOrder = (order = {}) => {
   return normalized
 }
 
-const isLocalTestDeliveryOrder = (order = {}) => {
+const isRestaurantDemoAssignment = (order = {}) => {
   const primaryId = String(
     order?.id ||
-    order?._id ||
-    order?.orderMongoId ||
-    order?.mongoId ||
-    order?.orderDbId ||
-    ""
+      order?._id ||
+      order?.orderMongoId ||
+      order?.mongoId ||
+      order?.orderDbId ||
+      ""
   )
-  const displayOrderId = String(order?.orderId || order?.orderCode || "")
 
   return (
-    order?.isDemoOrder === true ||
-    primaryId.startsWith("DEMO-") ||
-    primaryId.startsWith("demo-") ||
-    displayOrderId.startsWith("DEMO-") ||
-    displayOrderId.startsWith("demo-") ||
-    (import.meta.env.DEV && /^THALI-/i.test(displayOrderId) && !primaryId)
+    order?.source === "restaurant-subscription-demo" ||
+    order?.isRestaurantDemoAssignment === true ||
+    primaryId.startsWith("demo-subscription-")
   )
 }
 
@@ -516,7 +513,6 @@ export default function DeliveryHome() {
     clearOrderReady,
     isConnected,
     deliveryBatchState,
-    injectDemoOrder,
   } = useDeliveryNotifications()
   
   // Default location - will be set from saved location or GPS, not hardcoded
@@ -526,6 +522,7 @@ export default function DeliveryHome() {
   const [deliveryStatus, setDeliveryStatus] = useState(null) // Store delivery partner status
   const [rejectionReason, setRejectionReason] = useState(null) // Store rejection reason
   const [isReverifying, setIsReverifying] = useState(false) // Loading state for reverify
+  const showApprovalPendingPopup = deliveryStatus === "pending"
   
   // Map refs and state (Ola Maps removed)
   const mapContainerRef = useRef(null)
@@ -934,28 +931,7 @@ export default function DeliveryHome() {
     )
   }, [batchOrders, selectedRestaurant, activeReceiptOrderKey])
 
-  const isDemoReceiptFlow = useMemo(() => {
-    const receiptFlowOrders = [
-      activeReceiptOrder,
-      selectedRestaurant,
-      ...(batchOrders || []),
-    ].filter(Boolean)
-
-    return receiptFlowOrders.some((order) => {
-      const orderKey = String(getOrderKey(order) || "")
-      const explicitOrderId = String(order?.orderId || order?.id || "")
-
-      return (
-        order?.isDemoOrder ||
-        orderKey.startsWith("DEMO-") ||
-        orderKey.startsWith("demo-") ||
-        explicitOrderId.startsWith("DEMO-") ||
-        explicitOrderId.startsWith("demo-")
-      )
-    })
-  }, [activeReceiptOrder, selectedRestaurant, batchOrders])
-
-  const activeReceiptUploaded = isDemoReceiptFlow || Boolean(
+  const activeReceiptUploaded = Boolean(
     activeReceiptOrder && batchReceiptUploads[getOrderKey(activeReceiptOrder)]?.billImageUrl,
   )
 
@@ -969,12 +945,10 @@ export default function DeliveryHome() {
   )
 
   const totalBatchReceiptCount = batchOrders.length || 1
-  const effectiveUploadedBatchReceiptCount = isDemoReceiptFlow
-    ? totalBatchReceiptCount
-    : uploadedBatchReceiptCount
+  const effectiveUploadedBatchReceiptCount = uploadedBatchReceiptCount
   const allBatchReceiptsUploaded = effectiveUploadedBatchReceiptCount >= totalBatchReceiptCount
   const pendingBatchReceiptCount = Math.max(totalBatchReceiptCount - effectiveUploadedBatchReceiptCount, 0)
-  const displayBillImageUploaded = isDemoReceiptFlow || billImageUploaded
+  const displayBillImageUploaded = billImageUploaded
 
   const incomingPopupOrders = useMemo(() => {
     if (Array.isArray(newOrder?.assignedOrders) && newOrder.assignedOrders.length > 0) {
@@ -2618,21 +2592,21 @@ export default function DeliveryHome() {
             orderStatus: newOrder?.status
           })
 
-          const isDemoOrder =
-            String(orderId).startsWith('demo-') ||
-            String(orderId).startsWith('DEMO-')
+          const isDemoAssignment =
+            isRestaurantDemoAssignment(selectedRestaurant) ||
+            isRestaurantDemoAssignment(newOrder)
 
-          if (isDemoOrder) {
+          if (isDemoAssignment) {
             const restaurantInfo = {
               ...(selectedRestaurant || {}),
               id: selectedRestaurant?.id || orderId,
               orderId: selectedRestaurant?.orderId || newOrder?.orderId || `DEMO-${Date.now()}`,
-              name: selectedRestaurant?.name || newOrder?.restaurantName || 'Demo Kitchen',
+              name: selectedRestaurant?.name || newOrder?.restaurantName || 'Subscription Demo Kitchen',
               address:
                 selectedRestaurant?.address ||
                 newOrder?.restaurantLocation?.address ||
                 newOrder?.restaurantAddress ||
-                'Demo Kitchen Address',
+                'Restaurant Address',
               lat:
                 selectedRestaurant?.lat ??
                 newOrder?.restaurantLocation?.latitude ??
@@ -2677,11 +2651,11 @@ export default function DeliveryHome() {
               customerName:
                 selectedRestaurant?.customerName ||
                 newOrder?.customerName ||
-                'Demo Customer',
+                'Customer',
               customerAddress:
                 selectedRestaurant?.customerAddress ||
                 newOrder?.customerLocation?.address ||
-                'Demo Customer Address',
+                'Customer Address',
               customerLat:
                 selectedRestaurant?.customerLat ??
                 newOrder?.customerLocation?.latitude,
@@ -2693,7 +2667,7 @@ export default function DeliveryHome() {
               paymentMethod:
                 selectedRestaurant?.paymentMethod ||
                 newOrder?.paymentMethod ||
-                'cash',
+                'subscription',
               orderStatus: 'ready',
               status: 'ready',
               deliveryState: {
@@ -2707,7 +2681,8 @@ export default function DeliveryHome() {
                 newOrder?.assignedOrders ||
                 deliveryBatchState?.assignedOrders ||
                 [],
-              isDemoOrder: true,
+              source: selectedRestaurant?.source || newOrder?.source,
+              isRestaurantDemoAssignment: true,
             }
 
             setSelectedRestaurant(restaurantInfo)
@@ -3570,11 +3545,6 @@ export default function DeliveryHome() {
         const orderStatus = selectedRestaurant?.orderStatus || selectedRestaurant?.status || ''
         const deliveryPhase = selectedRestaurant?.deliveryPhase || selectedRestaurant?.deliveryState?.currentPhase || ''
         const deliveryStateStatus = selectedRestaurant?.deliveryState?.status || ''
-        const isDemoOrder =
-          String(orderId || '').startsWith('DEMO-') ||
-          String(orderId || '').startsWith('demo-') ||
-          selectedRestaurant?.isDemoOrder
-        
         const isDelivered = orderStatus === 'delivered' || 
                             deliveryPhase === 'completed' || 
                             deliveryPhase === 'delivered' ||
@@ -3616,7 +3586,7 @@ export default function DeliveryHome() {
         }
         
         if (orderId) {
-          if (isDemoOrder) {
+          if (isRestaurantDemoAssignment(selectedRestaurant) || isRestaurantDemoAssignment(newOrder)) {
             setSelectedRestaurant(prev => ({
               ...prev,
               deliveryState: {
@@ -3624,7 +3594,8 @@ export default function DeliveryHome() {
                 currentPhase: 'at_pickup',
                 status: 'reached_pickup'
               },
-              deliveryPhase: 'at_pickup'
+              deliveryPhase: 'at_pickup',
+              isRestaurantDemoAssignment: true,
             }))
             setShowreachedPickupPopup(false)
             setTimeout(() => {
@@ -3799,12 +3770,6 @@ export default function DeliveryHome() {
                              newOrder?._id ||
                              selectedRestaurant?.orderId || 
                              newOrder?.orderId
-        const isDemoOrder = isLocalTestDeliveryOrder({
-          ...selectedRestaurant,
-          id: selectedRestaurant?.id || newOrder?.orderMongoId || newOrder?._id,
-          orderId: selectedRestaurant?.orderId || newOrder?.orderId,
-        })
-        
         console.log('🔍 Order ID lookup for reached drop:', {
           selectedRestaurantId: selectedRestaurant?.id,
           selectedRestaurantOrderId: selectedRestaurant?.orderId,
@@ -3814,84 +3779,8 @@ export default function DeliveryHome() {
         })
         
         if (orderIdForApi) {
-          if (isDemoOrder) {
-            console.log('✅ Demo reached drop confirmed locally')
-
-            // TESTING MOOD: After reaching B, show route B -> C and C -> D
-            // B = current drop (Scheme No. 54), C = next drop (Scheme No. 78), D = further drop (New Palasia)
-            if (window.google && window.deliveryMapInstance && directionsServiceRef.current) {
-              const b = { 
-                lat: selectedRestaurant?.customerLat || 22.7196, 
-                lng: selectedRestaurant?.customerLng || 75.8577 
-              };
-              const c = { lat: 22.7265, lng: 75.8811 }; // Scheme No. 78
-              const d = { lat: 22.7248, lng: 75.8826 }; // New Palasia (Saket Square)
-
-              directionsServiceRef.current.route(
-                {
-                  origin: b,
-                  destination: d,
-                  waypoints: [{ location: c, stopover: true }],
-                  travelMode: window.google.maps.TravelMode.DRIVING,
-                },
-                (result, status) => {
-                  if (status === window.google.maps.DirectionsStatus.OK) {
-                    console.log('✅ Testing route (B -> C -> D) calculated')
-                    setDirectionsResponse(result)
-                    directionsResponseRef.current = result
-                    
-                    // Update live tracking polyline immediately
-                    updateLiveTrackingPolyline(result, [b.lat, b.lng])
-                    
-                    // Center on current drop B to start visualization
-                    window.deliveryMapInstance.panTo(b)
-                    
-                    // Show entire sequence bounds
-                    const bounds = new window.google.maps.LatLngBounds()
-                    bounds.extend(b); bounds.extend(c); bounds.extend(d)
-                    window.deliveryMapInstance.fitBounds(bounds, { padding: 100 })
-
-                    // Add markers for B, C, D to visualize the testing points
-                    // Clean up any existing testing markers if any
-                    if (window.testingMarkers) {
-                      window.testingMarkers.forEach(m => m.setMap(null))
-                    }
-                    window.testingMarkers = []
-
-                    const markers = [
-                      { pos: b, label: 'B', color: '#10B981' }, // Green
-                      { pos: c, label: 'C', color: '#F59E0B' }, // Orange
-                      { pos: d, label: 'D', color: '#EF4444' }  // Red
-                    ]
-
-                    markers.forEach(m => {
-                      const marker = new window.google.maps.Marker({
-                        position: m.pos,
-                        map: window.deliveryMapInstance,
-                        label: {
-                          text: m.label,
-                          color: 'white',
-                          fontWeight: 'bold'
-                        },
-                        icon: {
-                          path: window.google.maps.SymbolPath.CIRCLE,
-                          scale: 14,
-                          fillColor: m.color,
-                          fillOpacity: 1,
-                          strokeWeight: 2,
-                          strokeColor: 'white'
-                        },
-                        zIndex: 100
-                      })
-                      window.testingMarkers.push(marker)
-                    })
-                    
-                    toast.info("Testing Mode: Route B → C → D updated")
-                    console.log('✅ Testing markers (B, C, D) added to map')
-                  }
-                }
-              )
-            }
+          if (isRestaurantDemoAssignment(selectedRestaurant) || isRestaurantDemoAssignment(newOrder)) {
+            console.log('Demo reached drop confirmed locally')
             return
           }
 
@@ -4202,11 +4091,6 @@ export default function DeliveryHome() {
         // Get order ID from selectedRestaurant
         const orderId = orderInReceiptFlow?.id || orderInReceiptFlow?.orderId
         const confirmedOrderId = orderInReceiptFlow?.orderId
-        const isDemoOrder =
-          String(orderId || '').startsWith('DEMO-') ||
-          String(orderId || '').startsWith('demo-') ||
-          orderInReceiptFlow?.isDemoOrder
-        
         // CRITICAL: Check if order is already delivered/completed - don't call API
         const orderStatus = orderInReceiptFlow?.orderStatus || orderInReceiptFlow?.status || ''
         const deliveryPhase = orderInReceiptFlow?.deliveryPhase || orderInReceiptFlow?.deliveryState?.currentPhase || ''
@@ -4285,13 +4169,9 @@ export default function DeliveryHome() {
         }
 
         try {
-          if (isDemoOrder) {
-            const customerLat =
-              orderInReceiptFlow?.customerLat ??
-              22.7196
-            const customerLng =
-              orderInReceiptFlow?.customerLng ??
-              75.8577
+          if (isRestaurantDemoAssignment(orderInReceiptFlow)) {
+            const customerLat = orderInReceiptFlow?.customerLat ?? 22.7196
+            const customerLng = orderInReceiptFlow?.customerLng ?? 75.8577
 
             setSelectedRestaurant(prev => ({
               ...prev,
@@ -4306,7 +4186,8 @@ export default function DeliveryHome() {
                 currentPhase: 'en_route_to_delivery',
                 status: 'order_confirmed',
                 orderIdConfirmedAt: new Date().toISOString(),
-              }
+              },
+              isRestaurantDemoAssignment: true,
             }))
             setRoutePolyline([
               currentLocation,
@@ -4727,12 +4608,6 @@ export default function DeliveryHome() {
               newOrder?._id ||
               selectedRestaurant?.orderId ||
               newOrder?.orderId
-            const isDemoOrder = isLocalTestDeliveryOrder({
-              ...selectedRestaurant,
-              id: selectedRestaurant?.id || newOrder?.orderMongoId || newOrder?._id,
-              orderId: selectedRestaurant?.orderId || newOrder?.orderId,
-            })
-
             if (!orderIdForApi) {
               console.error("❌ Order ID not available for completeDelivery", {
                 selectedRestaurant,
@@ -4746,7 +4621,7 @@ export default function DeliveryHome() {
               orderId: orderIdForApi,
             })
 
-            if (isDemoOrder) {
+            if (isRestaurantDemoAssignment(selectedRestaurant) || isRestaurantDemoAssignment(newOrder)) {
               const earningsSource =
                 selectedRestaurant?.amount ||
                 selectedRestaurant?.estimatedEarnings ||
@@ -4767,14 +4642,9 @@ export default function DeliveryHome() {
                   ...(prev.deliveryState || {}),
                   currentPhase: 'completed',
                   status: 'delivered'
-                }
+                },
+                isRestaurantDemoAssignment: true,
               } : prev)
-
-              // CLEANUP: testing markers
-              if (window.testingMarkers) {
-                window.testingMarkers.forEach(m => m.setMap(null))
-                window.testingMarkers = []
-              }
 
               const advancedToNextOrder = await advanceToNextBatchOrder(completedOrderKey, nextBatchOrder)
               if (!advancedToNextOrder) {
@@ -5151,6 +5021,8 @@ export default function DeliveryHome() {
       const restaurantData = {
         id: newOrder.orderMongoId || newOrder.orderId,
         orderId: newOrder.orderId,
+        source: newOrder.source,
+        isRestaurantDemoAssignment: isRestaurantDemoAssignment(newOrder),
         name: newOrder.restaurantName,
         address: restaurantAddress,
         lat: newOrder.restaurantLocation?.latitude,
@@ -5667,16 +5539,24 @@ export default function DeliveryHome() {
     }
 
     checkBankDetails()
+    const intervalId = setInterval(checkBankDetails, 30000)
 
     // Listen for profile updates
     const handleProfileRefresh = () => {
       checkBankDetails()
     }
 
+    const handleFocus = () => {
+      checkBankDetails()
+    }
+
     window.addEventListener('deliveryProfileRefresh', handleProfileRefresh)
+    window.addEventListener('focus', handleFocus)
     
     return () => {
+      clearInterval(intervalId)
       window.removeEventListener('deliveryProfileRefresh', handleProfileRefresh)
+      window.removeEventListener('focus', handleFocus)
     }
   }, [])
 
@@ -8410,7 +8290,6 @@ export default function DeliveryHome() {
         currentPhase: 'en_route_to_delivery',
         status: 'order_confirmed',
       },
-      isDemoOrder: isLocalTestDeliveryOrder(nextOrder) || isLocalTestDeliveryOrder(selectedRestaurant),
     }
 
     setSelectedRestaurant(nextActiveOrder)
@@ -9376,6 +9255,12 @@ export default function DeliveryHome() {
   // Render normal feed view when offline or no gig booked
   return (
     <div className="min-h-screen bg-[#f6e9dc] overflow-x-hidden flex flex-col" style={{ height: '100vh' }}>
+      {showApprovalPendingPopup && (
+        <ApprovalPendingPopup
+          title="Waiting for admin approval"
+          message="Your delivery account is under admin review. This popup will remain visible until approval is completed."
+        />
+      )}
       {/* Top Navigation Bar */}
       <FeedNavbar
         isOnline={isOnline}
@@ -9383,94 +9268,6 @@ export default function DeliveryHome() {
         onEmergencyClick={() => setShowEmergencyPopup(true)}
         onHelpClick={() => setShowHelpPopup(true)}
       />
-
-      {import.meta.env.DEV && !selectedRestaurant && (
-        <div className="fixed right-4 top-20 z-[95]">
-          <button
-            type="button"
-            onClick={() =>
-              injectDemoOrder({
-                restaurantName: 'Royal Thali House',
-                restaurantAddress: 'Palasia Square, Indore',
-                restaurantLocation: {
-                  latitude: 22.7252,
-                  longitude: 75.8839,
-                  address: 'Palasia Square, Indore',
-                  formattedAddress: 'Palasia Square, Indore',
-                },
-                customerLocation: {
-                  latitude: 22.7196,
-                  longitude: 75.8577,
-                  address: 'Scheme No. 54, Indore',
-                },
-                assignedOrders: [
-                  {
-                    orderId: `THALI-${Date.now()}-1`,
-                    orderCode: `THALI-${Date.now()}-1`,
-                    customerName: 'Rohan Verma',
-                    customerAddress: 'Scheme No. 78, Near Prestige College, Indore',
-                    customerLocation: { latitude: 22.7265, longitude: 75.8811, address: 'Scheme No. 78, Near Prestige College, Indore' },
-                    items: [{ name: 'Family Veg Thali', quantity: 1, price: 129 }],
-                    total: 129,
-                  },
-                  {
-                    orderId: `THALI-${Date.now()}-2`,
-                    orderCode: `THALI-${Date.now()}-2`,
-                    customerName: 'Priya Soni',
-                    customerAddress: 'Old Palasia, Geeta Bhawan Circle, Indore',
-                    customerLocation: { latitude: 22.7178, longitude: 75.8764, address: 'Old Palasia, Geeta Bhawan Circle, Indore' },
-                    items: [{ name: 'Paneer Deluxe Thali', quantity: 1, price: 149 }],
-                    total: 149,
-                  },
-                  {
-                    orderId: `THALI-${Date.now()}-3`,
-                    orderCode: `THALI-${Date.now()}-3`,
-                    customerName: 'Ananya Dubey',
-                    customerAddress: 'Tilak Nagar Main Road, Indore',
-                    customerLocation: { latitude: 22.7092, longitude: 75.8891, address: 'Tilak Nagar Main Road, Indore' },
-                    items: [{ name: 'Mini Thali', quantity: 2, price: 89 }],
-                    total: 178,
-                  },
-                  {
-                    orderId: `THALI-${Date.now()}-4`,
-                    orderCode: `THALI-${Date.now()}-4`,
-                    customerName: 'Harsh Gupta',
-                    customerAddress: 'Bhawarkuan Square, Indore',
-                    customerLocation: { latitude: 22.6924, longitude: 75.8672, address: 'Bhawarkuan Square, Indore' },
-                    items: [{ name: 'Dal Fry Combo', quantity: 1, price: 119 }],
-                    total: 119,
-                  },
-                  {
-                    orderId: `THALI-${Date.now()}-5`,
-                    orderCode: `THALI-${Date.now()}-5`,
-                    customerName: 'Meera Nair',
-                    customerAddress: 'Vijay Nagar, C21 Mall Road, Indore',
-                    customerLocation: { latitude: 22.7533, longitude: 75.8937, address: 'Vijay Nagar, C21 Mall Road, Indore' },
-                    items: [{ name: 'Executive Lunch Box', quantity: 1, price: 165 }],
-                    total: 165,
-                  },
-                ],
-                items: [
-                  {
-                    name: '5 separate batch orders',
-                    quantity: 1,
-                    price: 0,
-                  },
-                ],
-                total: 740,
-                deliveryFee: 65,
-                estimatedEarnings: 65,
-                pickupDistance: '1.30 km',
-                deliveryDistance: '4.80 km',
-                message: 'Demo batch order: 5 different customer orders',
-              })
-            }
-            className="rounded-full bg-red-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg transition-transform active:scale-95"
-          >
-            Demo 5 Order Batch
-          </button>
-        </div>
-      )}
 
       {/* Carousel - Only show if there are slides */}
       {carouselSlides.length > 0 && (
@@ -9797,19 +9594,14 @@ export default function DeliveryHome() {
           </motion.button>
 
           {/* Floating Banner - Status Message */}
-          {mapViewMode === "hotspot" && (deliveryStatus === "pending" || deliveryStatus === "blocked") && (
+          {mapViewMode === "hotspot" && deliveryStatus === "blocked" && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2 }}
               className="absolute bottom-20 left-1/2 -translate-x-1/2 bg-white rounded-2xl shadow-sm px-6 py-4 z-20 min-w-[96%] text-center"
             >
-              {deliveryStatus === "pending" ? (
-                <>
-                  <h3 className="text-lg font-bold text-gray-900 mb-1">Verification Done in 24 Hours</h3>
-                  <p className="text-sm text-gray-600">Your account is under verification. You'll be notified once approved.</p>
-                </>
-              ) : deliveryStatus === "blocked" ? (
+              {deliveryStatus === "blocked" ? (
                 <>
                   <h3 className="text-lg font-bold text-red-600 mb-2">Denied Verification</h3>
                   {rejectionReason && (

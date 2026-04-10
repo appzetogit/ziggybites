@@ -285,8 +285,11 @@ export const locationAPI = {
   },
   // Get nearby locations
   getNearbyLocations: (lat, lng, radius = 500, query = "") => {
+    const params = { radius, query };
+    if (lat != null) params.lat = lat;
+    if (lng != null) params.lng = lng;
     return apiClient.get(API_ENDPOINTS.LOCATION.NEARBY, {
-      params: { lat, lng, radius, query },
+      params,
     });
   },
 };
@@ -726,13 +729,13 @@ export const restaurantAPI = {
   },
 
   /** Subscription flow: restaurant updates preparationStatus (pending | preparing | ready). */
-  patchSubscriptionPreparationStatus: (orderId, preparationStatus) => {
+  patchSubscriptionPreparationStatus: (orderId, preparationStatus, assignmentMode = "single") => {
     return apiClient.patch(
       API_ENDPOINTS.RESTAURANT.SUBSCRIPTION_PREP_PATCH_STATUS.replace(
         ":orderId",
         orderId,
       ),
-      { preparationStatus },
+      { preparationStatus, assignmentMode },
     );
   },
 
@@ -778,6 +781,15 @@ export const restaurantAPI = {
   },
 
   // Get restaurants with dishes under ₹250
+  searchFoods: (query, params = {}) => {
+    return apiClient.get(API_ENDPOINTS.RESTAURANT.SEARCH_FOODS, {
+      params: {
+        query,
+        ...mergeRestaurantLocationParams(params),
+      },
+    });
+  },
+
   getRestaurantsUnder250: (zoneId) => {
     const params = zoneId ? { zoneId } : {};
     return apiClient.get(API_ENDPOINTS.RESTAURANT.UNDER_250, { params });
@@ -973,6 +985,22 @@ export const deliveryAPI = {
   },
   logout: () => {
     return apiClient.post(API_ENDPOINTS.DELIVERY.AUTH.LOGOUT);
+  },
+  registerFcmToken: (platform, fcmToken) => {
+    console.log("[FCM][Delivery] Sending token to backend", {
+      platform,
+      hasToken: !!fcmToken,
+    });
+    return apiClient.post(API_ENDPOINTS.DELIVERY.AUTH.FCM_TOKEN, {
+      platform,
+      fcmToken,
+    });
+  },
+  removeFcmToken: (platform = "web") => {
+    console.log("[FCM][Delivery] Removing token on backend for platform", platform);
+    return apiClient.delete(API_ENDPOINTS.DELIVERY.AUTH.FCM_TOKEN, {
+      data: { platform },
+    });
   },
   getCurrentDelivery: () => {
     return apiClient.get(API_ENDPOINTS.DELIVERY.AUTH.ME);
@@ -2019,13 +2047,18 @@ export const adminAPI = {
       { reason },
     );
   },
-  updateMenuItemMealCategory: (restaurantId, itemId, mealCategory) => {
+  updateMenuItemMealCategory: (restaurantId, itemId, mealCategoryOrCategories) => {
+    const mealCategories = Array.isArray(mealCategoryOrCategories)
+      ? mealCategoryOrCategories
+      : mealCategoryOrCategories
+        ? [mealCategoryOrCategories]
+        : []
     return apiClient.patch(
       API_ENDPOINTS.ADMIN.MENU_ITEM_MEAL_CATEGORY.replace(
         ":restaurantId",
         restaurantId,
       ).replace(":itemId", itemId),
-      { mealCategory },
+      { mealCategory: mealCategories[0] || null, mealCategories },
     );
   },
 

@@ -9,6 +9,7 @@ import {
   Truck,
   ArrowLeft,
   MessageCircle,
+  Plus,
   Sunrise,
   Sun,
   Coffee,
@@ -186,18 +187,22 @@ export default function SubscriptionManagementPage() {
                               <Icon className="h-6 w-6" />
                            </div>
                            <div>
-                              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-[1] mb-1">{cat.label}</p>
-                              <p className="text-sm font-black text-gray-900 dark:text-white leading-tight">
-                                {item ? (item.dishName || item.mealName || "Custom Pick") : "Not selected"}
+                             <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-[1] mb-1">{cat.label}</p>
+                              <p className={`text-sm font-black leading-tight ${item ? "text-gray-900 dark:text-white" : "text-[#DC2626]"}`}>
+                                {item ? (item.dishName || item.mealName || "Custom Pick") : "Add food"}
                               </p>
                            </div>
                         </div>
                         <Link 
                           to={`/subscription/browse/${cat.id}`} 
                           state={{ fromManage: true }}
-                          className="h-10 w-10 rounded-full bg-gray-50 dark:bg-gray-800 flex items-center justify-center text-gray-400 group-hover:text-[#DC2626] group-hover:bg-red-50 transition-colors"
+                          className={`flex items-center justify-center transition-colors ${
+                            item
+                              ? "h-10 w-10 rounded-full bg-gray-50 dark:bg-gray-800 text-gray-400 group-hover:text-[#DC2626] group-hover:bg-red-50"
+                              : "h-10 px-4 rounded-full bg-[#DC2626] text-white text-[11px] font-black uppercase tracking-[0.12em]"
+                          }`}
                         >
-                          <Pencil className="h-4 w-4" />
+                          {item ? <Pencil className="h-4 w-4" /> : <><Plus className="h-4 w-4 mr-1" />Add</>}
                         </Link>
                      </div>
                    );

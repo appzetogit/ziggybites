@@ -230,22 +230,22 @@ export const reverseGeocode = async (req, res) => {
 export const getNearbyLocations = async (req, res) => {
   try {
     const { lat, lng, radius = 500, query = "" } = req.query;
-
-    if (!lat || !lng) {
-      return res.status(400).json({
-        success: false,
-        message: "Latitude and longitude are required",
-      });
-    }
-
-    const latNum = parseFloat(lat);
-    const lngNum = parseFloat(lng);
+    const hasCoordinates = lat != null && lng != null;
+    const latNum = hasCoordinates ? parseFloat(lat) : null;
+    const lngNum = hasCoordinates ? parseFloat(lng) : null;
     const radiusNum = parseFloat(radius);
 
-    if (Number.isNaN(latNum) || Number.isNaN(lngNum)) {
+    if (hasCoordinates && (Number.isNaN(latNum) || Number.isNaN(lngNum))) {
       return res.status(400).json({
         success: false,
         message: "Invalid latitude or longitude",
+      });
+    }
+
+    if (!hasCoordinates && !String(query || "").trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Either coordinates or a search query is required",
       });
     }
 
@@ -266,20 +266,35 @@ export const getNearbyLocations = async (req, res) => {
 
     let response;
     try {
-      response = await axios.get(
-        "https://maps.googleapis.com/maps/api/place/nearbysearch/json",
-        {
-          params: {
-            location: `${latNum},${lngNum}`,
-            radius: radiusNum,
-            key: googleApiKey,
-            language: "en",
-            // Optional free-text filter
-            keyword: query || undefined,
+      if (String(query || "").trim()) {
+        response = await axios.get(
+          "https://maps.googleapis.com/maps/api/place/textsearch/json",
+          {
+            params: {
+              query: String(query).trim(),
+              key: googleApiKey,
+              language: "en",
+              region: "in",
+              location: hasCoordinates ? `${latNum},${lngNum}` : undefined,
+              radius: hasCoordinates ? radiusNum : undefined,
+            },
+            timeout: 8000,
           },
-          timeout: 8000,
-        },
-      );
+        );
+      } else {
+        response = await axios.get(
+          "https://maps.googleapis.com/maps/api/place/nearbysearch/json",
+          {
+            params: {
+              location: `${latNum},${lngNum}`,
+              radius: radiusNum,
+              key: googleApiKey,
+              language: "en",
+            },
+            timeout: 8000,
+          },
+        );
+      }
     } catch (apiError) {
       logger.error("Google Places nearby search failed", {
         error: apiError.message,
@@ -317,32 +332,33 @@ export const getNearbyLocations = async (req, res) => {
       });
     }
 
-    const nearbyPlaces = payload.results.slice(0, 10).map((place, index) => {
+    const nearbyPlaces = payload.results.slice(0, 4).map((place, index) => {
       const placeLat = place.geometry?.location?.lat;
       const placeLng = place.geometry?.location?.lng;
-      const distance = placeLat
+      const distance = hasCoordinates && placeLat
         ? calculateDistance(latNum, lngNum, placeLat, placeLng)
         : 0;
 
       return {
         id: place.place_id || place.id || `place_${index}`,
         name: place.name || "",
-        address:
-          place.vicinity ||
-          place.formatted_address ||
-          place.plus_code?.compound_code ||
-          "",
+        address: place.formatted_address || place.vicinity || place.plus_code?.compound_code || "",
+        fullAddress: place.formatted_address || place.vicinity || place.plus_code?.compound_code || "",
         distance:
-          distance < 1000
+          hasCoordinates && distance < 1000
             ? `${Math.round(distance)} m`
-            : `${(distance / 1000).toFixed(2)} km`,
+            : hasCoordinates
+              ? `${(distance / 1000).toFixed(2)} km`
+              : "",
         distanceMeters: Math.round(distance),
         latitude: placeLat,
         longitude: placeLng,
       };
     });
 
-    nearbyPlaces.sort((a, b) => a.distanceMeters - b.distanceMeters);
+    if (hasCoordinates) {
+      nearbyPlaces.sort((a, b) => a.distanceMeters - b.distanceMeters);
+    }
 
     return res.json({
       success: true,

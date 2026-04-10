@@ -23,7 +23,7 @@ export default function BottomNavigation() {
         {/* Home */}
         <Link
           to="/"
-          className={`flex flex-col items-center gap-1.5 px-3 sm:px-4 py-2 transition-all duration-200 relative ${isHome ? ZIGGY_ACTIVE : ZIGGY_INACTIVE}`}
+          className={`relative flex flex-col items-center gap-1.5 px-3 py-2 sm:px-4 ${isHome ? ZIGGY_ACTIVE : ZIGGY_INACTIVE}`}
         >
           <Home className={`h-5 w-5 ${isHome ? "text-[#DC2626] fill-[#DC2626]" : ZIGGY_INACTIVE}`} strokeWidth={2} />
           <span className={`text-xs sm:text-sm font-medium ${isHome ? "text-[#DC2626] font-semibold" : ZIGGY_INACTIVE}`}>
@@ -39,7 +39,7 @@ export default function BottomNavigation() {
         {/* Subscription */}
         <Link
           to="/subscription"
-          className={`flex flex-col items-center gap-1.5 px-3 sm:px-4 py-2 transition-all duration-200 relative ${isSubscription ? ZIGGY_ACTIVE : ZIGGY_INACTIVE}`}
+          className={`relative flex flex-col items-center gap-1.5 px-3 py-2 sm:px-4 ${isSubscription ? ZIGGY_ACTIVE : ZIGGY_INACTIVE}`}
         >
           <Repeat className={`h-5 w-5 ${isSubscription ? "text-[#DC2626] fill-[#DC2626]" : ZIGGY_INACTIVE}`} strokeWidth={2} />
           <span className={`text-xs sm:text-sm font-medium ${isSubscription ? "text-[#DC2626] font-semibold" : ZIGGY_INACTIVE}`}>
@@ -55,7 +55,7 @@ export default function BottomNavigation() {
         {/* History */}
         <Link
           to="/orders"
-          className={`flex flex-col items-center gap-1.5 px-3 sm:px-4 py-2 transition-all duration-200 relative ${isHistory ? ZIGGY_ACTIVE : ZIGGY_INACTIVE}`}
+          className={`relative flex flex-col items-center gap-1.5 px-3 py-2 sm:px-4 ${isHistory ? ZIGGY_ACTIVE : ZIGGY_INACTIVE}`}
         >
           <History className={`h-5 w-5 ${isHistory ? "text-[#DC2626] fill-[#DC2626]" : ZIGGY_INACTIVE}`} strokeWidth={2} />
           <span className={`text-xs sm:text-sm font-medium ${isHistory ? "text-[#DC2626] font-semibold" : ZIGGY_INACTIVE}`}>
@@ -71,7 +71,7 @@ export default function BottomNavigation() {
         {/* Profile */}
         <Link
           to="/profile"
-          className={`flex flex-col items-center gap-1.5 px-3 sm:px-4 py-2 transition-all duration-200 relative ${isProfile ? ZIGGY_ACTIVE : ZIGGY_INACTIVE}`}
+          className={`relative flex flex-col items-center gap-1.5 px-3 py-2 sm:px-4 ${isProfile ? ZIGGY_ACTIVE : ZIGGY_INACTIVE}`}
         >
           <User className={`h-5 w-5 ${isProfile ? "text-[#DC2626] fill-[#DC2626]" : ZIGGY_INACTIVE}`} />
           <span className={`text-xs sm:text-sm font-medium ${isProfile ? "text-[#DC2626] font-semibold" : ZIGGY_INACTIVE}`}>

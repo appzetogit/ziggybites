@@ -19,6 +19,22 @@ const MEAL_CATEGORY_LABELS = {
   dinner: "Dinner",
 }
 
+const MEAL_CATEGORY_OPTIONS = ["breakfast", "lunch", "snacks", "dinner"]
+
+function normalizeMealCategories(item) {
+  const values = Array.isArray(item?.mealCategories)
+    ? item.mealCategories
+    : item?.mealCategory
+      ? [item.mealCategory]
+      : []
+  return [...new Set(values.filter(Boolean))]
+}
+
+function formatMealCategories(categories) {
+  if (!Array.isArray(categories) || categories.length === 0) return "None"
+  return categories.map((category) => MEAL_CATEGORY_LABELS[category] || category).join(", ")
+}
+
 export default function FoodsList() {
   const [searchQuery, setSearchQuery] = useState("")
   const [foods, setFoods] = useState([])
@@ -26,7 +42,7 @@ export default function FoodsList() {
   const [deleting, setDeleting] = useState(false)
   const [editModalOpen, setEditModalOpen] = useState(false)
   const [editingFood, setEditingFood] = useState(null)
-  const [editingMealCategory, setEditingMealCategory] = useState("")
+  const [editingMealCategories, setEditingMealCategories] = useState([])
   const [updatingCategory, setUpdatingCategory] = useState(false)
 
   // Fetch all foods from all restaurants
@@ -75,7 +91,8 @@ export default function FoodsList() {
                       price: item.price || 0,
                       foodType: item.foodType || "Non-Veg",
                       approvalStatus: item.approvalStatus || 'pending',
-                      mealCategory: item.mealCategory || null,
+                      mealCategory: formatMealCategories(normalizeMealCategories(item)),
+                      mealCategories: normalizeMealCategories(item),
                       originalItem: item // Keep original item data
                     })
                   })
@@ -100,7 +117,8 @@ export default function FoodsList() {
                           price: item.price || 0,
                           foodType: item.foodType || "Non-Veg",
                           approvalStatus: item.approvalStatus || 'pending',
-                          mealCategory: item.mealCategory || null,
+                          mealCategory: formatMealCategories(normalizeMealCategories(item)),
+                          mealCategories: normalizeMealCategories(item),
                           originalItem: item // Keep original item data
                         })
                       })
@@ -272,8 +290,16 @@ export default function FoodsList() {
 
   const handleOpenEditMealCategory = (food) => {
     setEditingFood(food)
-    setEditingMealCategory(food.mealCategory || "")
+    setEditingMealCategories(normalizeMealCategories(food))
     setEditModalOpen(true)
+  }
+
+  const handleToggleMealCategory = (category) => {
+    setEditingMealCategories((prev) =>
+      prev.includes(category)
+        ? prev.filter((value) => value !== category)
+        : [...prev, category],
+    )
   }
 
   const handleUpdateMealCategory = async () => {
@@ -284,16 +310,20 @@ export default function FoodsList() {
       await adminAPI.updateMenuItemMealCategory(
         editingFood.restaurantId,
         itemId,
-        editingMealCategory || null,
+        editingMealCategories,
       )
       setFoods((prev) =>
         prev.map((f) =>
           f.id === editingFood.id
-            ? { ...f, mealCategory: editingMealCategory || null }
+            ? {
+                ...f,
+                mealCategory: formatMealCategories(editingMealCategories),
+                mealCategories: editingMealCategories,
+              }
             : f,
         ),
       )
-      toast.success("Meal category updated successfully")
+      toast.success("Meal categories updated successfully")
       setEditModalOpen(false)
       setEditingFood(null)
     } catch (error) {
@@ -463,25 +493,33 @@ export default function FoodsList() {
             <DialogTitle>Edit Meal Category</DialogTitle>
             <DialogDescription>
               {editingFood && (
-                <>Assign a meal category for &quot;{editingFood.name}&quot;</>
+                <>Assign meal categories for &quot;{editingFood.name}&quot;</>
               )}
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
             <label className="block text-sm font-medium text-slate-700 mb-2">
-              Meal Category
+              Meal Categories
             </label>
-            <select
-              value={editingMealCategory}
-              onChange={(e) => setEditingMealCategory(e.target.value)}
-              className="w-full px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400"
-            >
-              <option value="">None</option>
-              <option value="breakfast">Breakfast</option>
-              <option value="lunch">Lunch</option>
-              <option value="snacks">Evening Snacks</option>
-              <option value="dinner">Dinner</option>
-            </select>
+            <div className="grid grid-cols-2 gap-2">
+              {MEAL_CATEGORY_OPTIONS.map((category) => {
+                const active = editingMealCategories.includes(category)
+                return (
+                  <button
+                    key={category}
+                    type="button"
+                    onClick={() => handleToggleMealCategory(category)}
+                    className={`rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
+                      active
+                        ? "border-orange-500 bg-orange-50 text-orange-700"
+                        : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                    }`}
+                  >
+                    {MEAL_CATEGORY_LABELS[category]}
+                  </button>
+                )
+              })}
+            </div>
           </div>
           <DialogFooter>
             <button

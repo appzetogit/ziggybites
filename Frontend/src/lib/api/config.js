@@ -235,6 +235,7 @@ export const API_ENDPOINTS = {
     NEAREST: "/restaurant/nearest",
     LIST: "/restaurant/list",
     FOOD_FEED: "/restaurant/food-feed",
+    SEARCH_FOODS: "/restaurant/search/foods",
     FOODS_BY_CATEGORY: "/restaurant/foods",
     UNDER_250: "/restaurant/under-250",
     BY_ID: "/restaurant/:id",
@@ -248,6 +249,7 @@ export const API_ENDPOINTS = {
       REFRESH_TOKEN: "/delivery/auth/refresh-token",
       LOGOUT: "/delivery/auth/logout",
       ME: "/delivery/auth/me",
+      FCM_TOKEN: "/delivery/auth/fcm-token",
     },
     SIGNUP: {
       DETAILS: "/delivery/signup/details",

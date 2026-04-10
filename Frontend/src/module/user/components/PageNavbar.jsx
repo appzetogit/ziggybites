@@ -9,6 +9,16 @@ import { FaLocationDot } from "react-icons/fa6"
 import { getCachedSettings, loadBusinessSettings } from "@/lib/utils/businessSettings"
 import { DEFAULT_LOGO_PLACEHOLDER } from "@/lib/constants/defaultLogo"
 
+function isPlaceholderNavbarValue(value) {
+  if (typeof value !== "string") return !value
+  const normalized = value.trim()
+  if (!normalized) return true
+  if (/^select location\b/i.test(normalized)) return true
+  if (/^current location\b/i.test(normalized)) return true
+  if (/^-?\d+\.\d+,\s*-?\d+\.\d+$/.test(normalized)) return true
+  return false
+}
+
 export default function PageNavbar({
   textColor = "white",
   zIndex = 20,
@@ -921,12 +931,27 @@ export default function PageNavbar({
     }
   })()
 
-  const shortMainLocation =
-    (location?.area && !String(location.area).match(/^\d+(\.\d+)?\s*,\s*\d+(\.\d+)?$/) ? String(location.area).trim() : "") ||
-    (location?.city ? String(location.city).trim() : "") ||
+  const fullNavbarAddress =
+    (!isPlaceholderNavbarValue(location?.formattedAddress) ? String(location.formattedAddress).trim() : "") ||
+    (!isPlaceholderNavbarValue(location?.address) ? String(location.address).trim() : "") ||
+    (!isPlaceholderNavbarValue(locationDisplay.main) ? String(locationDisplay.main).trim() : "") ||
+    (!isPlaceholderNavbarValue(location?.area) ? String(location.area).trim() : "") ||
+    (!isPlaceholderNavbarValue(location?.city) ? String(location.city).trim() : "") ||
     "Select location"
-  const mainLocationName = shortMainLocation || locationDisplay.main
-  const subLocationName = ""
+
+  const compactPrimaryLocation =
+    (!isPlaceholderNavbarValue(location?.area) ? String(location.area).trim() : "") ||
+    (!isPlaceholderNavbarValue(location?.mainTitle) ? String(location.mainTitle).trim() : "") ||
+    (!isPlaceholderNavbarValue(locationDisplay.main) ? String(locationDisplay.main).split(",")[0].trim() : "") ||
+    fullNavbarAddress.split(",")[0].trim() ||
+    "Select location"
+
+  const compactSecondaryParts = [
+    !isPlaceholderNavbarValue(location?.city) ? String(location.city).trim() : "",
+    !isPlaceholderNavbarValue(location?.state) ? String(location.state).trim() : "",
+  ].filter(Boolean)
+
+  const compactSecondaryLocation = compactSecondaryParts.join(", ")
 
   const handleLocationClick = () => {
     // Open location selector overlay
@@ -946,33 +971,34 @@ export default function PageNavbar({
     >
       <div className="flex items-center justify-between gap-2 sm:gap-3 md:gap-4 lg:gap-6 max-w-7xl mx-auto">
         {/* Left: Location - Hidden on desktop, shown on mobile */}
-        <div className="flex md:hidden items-center gap-3 sm:gap-4 min-w-0">
+        <div className="flex md:hidden items-center gap-3 sm:gap-4 min-w-0 flex-1">
           {/* Location Button */}
           <Button
             variant="ghost"
             onClick={handleLocationClick}
             disabled={loading}
-            className="h-auto px-0 py-0 hover:bg-transparent transition-colors flex-shrink-0"
+            className="h-auto px-0 py-0 hover:bg-transparent transition-colors min-w-0 max-w-full"
           >
             {loading ? (
               <span className={`text-sm font-bold ${textColorClass} ${textColor === "white" ? "drop-shadow-lg" : ""}`}>
                 Loading...
               </span>
             ) : (
-              <div className="flex flex-col items-start min-w-0">
-                <div className="flex items-center gap-1.5">
-
-                  <span className="text-md sm:text-lg font-bold text-black whitespace-nowrap">
-                    {mainLocationName}
-                  </span>
-                  <ChevronDown className="h-4 w-4 sm:h-5 sm:w-5 text-black flex-shrink-0" strokeWidth={2.5} />
+              <div className="flex flex-col items-start min-w-0 max-w-full w-full">
+                <div className="flex items-start gap-1 min-w-0 max-w-full w-full">
+                  <FaLocationDot className="h-3.5 w-3.5 text-black flex-shrink-0 mt-0.5" />
+                  <div className="min-w-0 flex-1">
+                    <span className="block text-[13px] font-semibold text-black leading-none truncate">
+                      {compactPrimaryLocation}
+                    </span>
+                    {compactSecondaryLocation && (
+                      <span className="block text-[11px] font-medium text-black/60 leading-tight truncate mt-1">
+                        {compactSecondaryLocation}
+                      </span>
+                    )}
+                  </div>
+                  <ChevronDown className="h-4 w-4 text-black flex-shrink-0 mt-0.5" strokeWidth={2.5} />
                 </div>
-                {/* Show sub location (city, state) in second line */}
-                {subLocationName && (
-                  <span className={`text-xs font-bold ${textColorClass}${textColor === "white" ? "/90" : ""} whitespace-nowrap mt-0.5 ${textColor === "white" ? "drop-shadow-md" : ""}`}>
-                    {subLocationName}
-                  </span>
-                )}
               </div>
             )}
           </Button>

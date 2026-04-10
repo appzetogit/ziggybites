@@ -435,4 +435,3 @@ export default function OrdersTable({ orders, visibleColumns, onViewOrder, onPri
     </div>
   )
 }
-

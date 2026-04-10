@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import { useParams, useNavigate, useLocation, Link } from "react-router-dom"
-import { ArrowLeft, Star, Clock, MapPin, Loader2, AlertCircle, Leaf, ChevronRight, UtensilsCrossed } from "lucide-react"
+import { ArrowLeft, Star, Clock, MapPin, Loader2, AlertCircle, Leaf, ChevronRight } from "lucide-react"
 import { motion } from "framer-motion"
 import AnimatedPage from "../components/AnimatedPage"
 import AddToCartButton from "../components/AddToCartButton"
@@ -240,7 +240,7 @@ export default function FoodDetailPage() {
 
   return (
     <AnimatedPage>
-      <div className="min-h-screen bg-gray-100 dark:bg-[#0f0f0f] pb-24">
+      <div className="h-screen overflow-hidden bg-gray-100 dark:bg-[#0f0f0f] flex flex-col">
         {/* Header - floating back button */}
         <div className="fixed top-0 left-0 right-0 z-20 px-4 pt-4 pb-2">
           <div className="flex items-center justify-between">
@@ -255,7 +255,7 @@ export default function FoodDetailPage() {
         </div>
 
         {/* Hero Image */}
-        <div className="relative w-full aspect-[4/3] sm:aspect-[16/9] max-h-[320px] bg-gray-200 dark:bg-gray-800 overflow-hidden">
+        <div className="relative h-[33vh] min-h-[240px] max-h-[300px] w-full bg-gray-200 dark:bg-gray-800 overflow-hidden flex-shrink-0">
           <OptimizedImage
             src={foodImage}
             alt={foodName}
@@ -292,82 +292,70 @@ export default function FoodDetailPage() {
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.35, ease: "easeOut" }}
-          className="relative -mt-6 mx-4 rounded-2xl sm:rounded-3xl bg-white dark:bg-[#1a1a1a] shadow-xl border border-gray-200/50 dark:border-gray-800 overflow-hidden"
+          className="relative -mt-5 mx-3 mb-3 flex-1 min-h-0 rounded-2xl sm:rounded-3xl bg-white dark:bg-[#1a1a1a] shadow-xl border border-gray-200/50 dark:border-gray-800 overflow-hidden"
         >
-          <div className="p-5 sm:p-6 space-y-5">
-            {/* Title & Restaurant */}
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white tracking-tight">
-                {foodName}
-              </h1>
-              {restaurantName && (
-                <button
-                  onClick={() => navigate(`/restaurants/${restaurantSlug || (restaurantName || "").toLowerCase().replace(/\s+/g, "-")}`)}
-                  className="mt-2 inline-flex items-center gap-2 group"
-                >
-                  <UtensilsCrossed className="h-4 w-4 text-green-600 dark:text-green-400" />
-                  <span className="text-sm font-medium text-green-600 dark:text-green-400 group-hover:text-green-700 dark:group-hover:text-green-300 transition-colors">
-                    {restaurantName}
-                  </span>
-                  <ChevronRight className="h-4 w-4 text-green-600 dark:text-green-400 group-hover:translate-x-0.5 transition-transform" />
-                </button>
+          <div className="h-full flex flex-col p-4 sm:p-5 gap-4">
+            <div className="flex-shrink-0 space-y-4">
+              {/* Title */}
+              <div>
+                <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white tracking-tight">
+                  {foodName}
+                </h1>
+              </div>
+
+              {/* Delivery & Distance */}
+              {(foodEta || food?.distance_km != null) && (
+                <div className="flex flex-wrap gap-3">
+                  {foodEta && (
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-gray-100 dark:bg-gray-800/80">
+                      <Clock className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{foodEta}</span>
+                    </div>
+                  )}
+                  {food?.distance_km != null && (
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-gray-100 dark:bg-gray-800/80">
+                      <MapPin className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        {food.distance_km >= 1 ? `${food.distance_km.toFixed(1)} km` : `${Math.round((food.distance_km || 0) * 1000)} m`}
+                      </span>
+                    </div>
+                  )}
+                </div>
               )}
+
+              {/* Description */}
+              {food?.description && (
+                <div>
+                  <p className="text-gray-600 dark:text-gray-400 text-sm leading-relaxed line-clamp-2">
+                    {food.description}
+                  </p>
+                </div>
+              )}
+
+              {/* Nutrition link */}
+              <button
+                type="button"
+                onClick={() => setShowNutritionModal(true)}
+                className="flex items-center gap-2 w-full px-4 py-3 rounded-xl border border-green-200 dark:border-green-900/50 bg-green-50/50 dark:bg-green-900/10 text-green-700 dark:text-green-400 hover:bg-green-100/80 dark:hover:bg-green-900/20 transition-colors"
+              >
+                <Leaf className="h-5 w-5 flex-shrink-0" />
+                <span className="text-sm font-medium">Check nutrition value</span>
+                <ChevronRight className="h-4 w-4 ml-auto" />
+              </button>
             </div>
 
-            {/* Delivery & Distance */}
-            {(foodEta || food?.distance_km != null) && (
-              <div className="flex flex-wrap gap-3">
-                {foodEta && (
-                  <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-gray-100 dark:bg-gray-800/80">
-                    <Clock className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{foodEta}</span>
-                  </div>
-                )}
-                {food?.distance_km != null && (
-                  <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-gray-100 dark:bg-gray-800/80">
-                    <MapPin className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                      {food.distance_km >= 1 ? `${food.distance_km.toFixed(1)} km` : `${Math.round((food.distance_km || 0) * 1000)} m`}
-                    </span>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Description */}
-            {food?.description && (
-              <div>
-                <p className="text-gray-600 dark:text-gray-400 text-sm sm:text-base leading-relaxed">
-                  {food.description}
-                </p>
-              </div>
-            )}
-
-            {/* Nutrition link */}
-            <button
-              type="button"
-              onClick={() => setShowNutritionModal(true)}
-              className="flex items-center gap-2 w-full px-4 py-3 rounded-xl border border-green-200 dark:border-green-900/50 bg-green-50/50 dark:bg-green-900/10 text-green-700 dark:text-green-400 hover:bg-green-100/80 dark:hover:bg-green-900/20 transition-colors"
-            >
-              <Leaf className="h-5 w-5 flex-shrink-0" />
-              <span className="text-sm font-medium">Check nutrition value</span>
-              <ChevronRight className="h-4 w-4 ml-auto" />
-            </button>
-          </div>
-        </motion.div>
-
-        {/* Suggested for you */}
-        {suggestedFoods.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: 0.1 }}
-            className="mt-6 mx-4 mb-8"
-          >
-            <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-3 px-1">
-              You might also like
-            </h2>
-            <div className="flex gap-3 overflow-x-auto pb-2 -mx-1">
+            {/* Suggested for you */}
+            {suggestedFoods.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: 0.1 }}
+                className="flex-1 min-h-0 flex flex-col"
+              >
+                <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-3 px-1 flex-shrink-0">
+                  You might also like
+                </h2>
+                <div className="flex gap-3 overflow-x-auto pb-2 -mx-1">
               {suggestedFoods.map((item) => {
                 const itemId = item.id ?? item._id
                 const itemName = item.name ?? ""
@@ -407,18 +395,17 @@ export default function FoodDetailPage() {
                   </Link>
                 )
               })}
-            </div>
-          </motion.div>
-        )}
+                </div>
+              </motion.div>
+            )}
 
-        {/* Sticky Add to Cart */}
-        {cartItem && (
-          <div className="fixed bottom-0 left-0 right-0 z-10 p-4 bg-white/95 dark:bg-[#1a1a1a]/95 backdrop-blur-lg border-t border-gray-200 dark:border-gray-800">
-            <div className="max-w-lg mx-auto">
-              <AddToCartButton item={cartItem} className="w-full !h-12 text-base font-semibold rounded-xl" />
-            </div>
+            {cartItem && (
+              <div className="flex-shrink-0 pt-1 pb-[max(0.25rem,env(safe-area-inset-bottom))]">
+                <AddToCartButton item={cartItem} className="w-full !h-12 text-base font-semibold rounded-xl" />
+              </div>
+            )}
           </div>
-        )}
+        </motion.div>
 
         <NutritionModal
           open={showNutritionModal}

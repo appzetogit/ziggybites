@@ -40,7 +40,7 @@ export default function ItemDetailsPage() {
   const [itemSizeUnit, setItemSizeUnit] = useState("piece")
   const [itemDescription, setItemDescription] = useState("")
   const [foodType, setFoodType] = useState("Non-Veg")
-  const [mealCategory, setMealCategory] = useState("")
+  const [mealCategories, setMealCategories] = useState([])
   const [basePrice, setBasePrice] = useState("0")
   const [preparationTime, setPreparationTime] = useState("")
   const [gst, setGst] = useState("5.0")
@@ -93,6 +93,29 @@ export default function ItemDetailsPage() {
   const descriptionLength = itemDescription.length
   const minDescriptionLength = 5
   const nameLength = itemName.length
+  const mealCategoryOptions = [
+    { id: "breakfast", label: "Breakfast" },
+    { id: "lunch", label: "Lunch" },
+    { id: "snacks", label: "Evening Snacks" },
+    { id: "dinner", label: "Dinner" },
+  ]
+
+  const normalizeMealCategories = (item) => {
+    const values = Array.isArray(item?.mealCategories)
+      ? item.mealCategories
+      : item?.mealCategory
+        ? [item.mealCategory]
+        : []
+    return [...new Set(values.filter(Boolean))]
+  }
+
+  const toggleMealCategory = (categoryId) => {
+    setMealCategories((prev) =>
+      prev.includes(categoryId)
+        ? prev.filter((value) => value !== categoryId)
+        : [...prev, categoryId],
+    )
+  }
 
   // When variants exist, base price should always reflect the lowest
   // variant price and should not be manually editable (per QA spec).
@@ -137,7 +160,7 @@ export default function ItemDetailsPage() {
         setItemSizeUnit(item.itemSizeUnit || "piece")
         setItemDescription(item.description || "")
         setFoodType(item.foodType === "Veg" ? "Veg" : (item.foodType === "Egg" ? "Egg" : "Non-Veg"))
-        setMealCategory(item.mealCategory || "")
+        setMealCategories(normalizeMealCategories(item))
         setBasePrice(item.price?.toString() || "0")
         setPreparationTime(item.preparationTime || "")
         setGst(item.gst?.toString() || "5.0")
@@ -258,7 +281,7 @@ export default function ItemDetailsPage() {
             setItemSizeUnit(foundItem.itemSizeUnit || "piece")
             setItemDescription(foundItem.description || "")
             setFoodType(foundItem.foodType === "Veg" ? "Veg" : (foundItem.foodType === "Egg" ? "Egg" : "Non-Veg"))
-            setMealCategory(foundItem.mealCategory || "")
+            setMealCategories(normalizeMealCategories(foundItem))
             setBasePrice(foundItem.price?.toString() || "0")
             setPreparationTime(foundItem.preparationTime || "")
             setGst(foundItem.gst?.toString() || "5.0")
@@ -880,7 +903,8 @@ export default function ItemDetailsPage() {
         itemSizeQuantity: "",
         itemSizeUnit: "piece",
         gst: parseFloat(gst) || 0,
-        mealCategory: mealCategory || null,
+        mealCategories,
+        mealCategory: mealCategories[0] || null,
       }
 
       // Add or update item in target section
@@ -1258,21 +1282,29 @@ export default function ItemDetailsPage() {
             {/* Meal Category (for subscription flow) */}
             <div className="mt-4">
               <label className="block text-sm font-medium text-gray-900 mb-2">
-                Meal Category
+                Meal Categories
               </label>
-              <select
-                value={mealCategory}
-                onChange={(e) => setMealCategory(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-lg border border-gray-300 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
-              >
-                <option value="">Select meal category (optional)</option>
-                <option value="breakfast">Breakfast</option>
-                <option value="lunch">Lunch</option>
-                <option value="snacks">Evening Snacks</option>
-                <option value="dinner">Dinner</option>
-              </select>
+              <div className="grid grid-cols-2 gap-2">
+                {mealCategoryOptions.map((option) => {
+                  const active = mealCategories.includes(option.id)
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => toggleMealCategory(option.id)}
+                      className={`rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors ${
+                        active
+                          ? "border-slate-900 bg-slate-900 text-white"
+                          : "border-gray-300 bg-white text-gray-900 hover:bg-gray-50"
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  )
+                })}
+              </div>
               <p className="text-xs text-gray-500 mt-1">
-                Used for subscription plans. Users can browse food by this category.
+                Used for subscription plans. One food can appear in multiple meal categories.
               </p>
             </div>
           </div>

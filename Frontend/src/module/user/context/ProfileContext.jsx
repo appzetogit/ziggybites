@@ -3,6 +3,7 @@ import { authAPI, userAPI } from "@/lib/api"
 import { getModuleToken } from "@/lib/utils/auth"
 
 const ProfileContext = createContext(null)
+const SELECTED_ADDRESS_STORAGE_KEY = "userSelectedAddressId"
 
 export function ProfileProvider({ children }) {
   const [userProfile, setUserProfile] = useState(() => {
@@ -31,6 +32,9 @@ export function ProfileProvider({ children }) {
   const [loading, setLoading] = useState(true)
 
   const [addresses, setAddresses] = useState([])
+  const [selectedAddressId, setSelectedAddressId] = useState(() =>
+    localStorage.getItem(SELECTED_ADDRESS_STORAGE_KEY) || "",
+  )
 
   const [paymentMethods, setPaymentMethods] = useState(() => {
     const saved = localStorage.getItem("userPaymentMethods")
@@ -102,6 +106,14 @@ export function ProfileProvider({ children }) {
   }, [addresses])
 
   useEffect(() => {
+    if (selectedAddressId) {
+      localStorage.setItem(SELECTED_ADDRESS_STORAGE_KEY, selectedAddressId)
+    } else {
+      localStorage.removeItem(SELECTED_ADDRESS_STORAGE_KEY)
+    }
+  }, [selectedAddressId])
+
+  useEffect(() => {
     localStorage.setItem("userPaymentMethods", JSON.stringify(paymentMethods))
   }, [paymentMethods])
 
@@ -159,6 +171,14 @@ export function ProfileProvider({ children }) {
           const addressesData = addressesResponse?.data?.data?.addresses || addressesResponse?.data?.addresses || []
           setAddresses(addressesData)
           localStorage.setItem("userAddresses", JSON.stringify(addressesData))
+          const selectedExists = addressesData.some((addr) => addr.id === selectedAddressId)
+          if (!selectedExists) {
+            const nextSelectedId =
+              addressesData.find((addr) => addr.isDefault)?.id ||
+              addressesData[0]?.id ||
+              ""
+            setSelectedAddressId(nextSelectedId)
+          }
         } catch (addressError) {
           console.error("Error fetching addresses:", addressError)
           // Try to load from localStorage as fallback
@@ -214,6 +234,7 @@ export function ProfileProvider({ children }) {
           localStorage.setItem("userAddresses", JSON.stringify(updated))
           return updated
         })
+        setSelectedAddressId(newAddress.id || "")
         return newAddress
       }
     } catch (error) {
@@ -233,13 +254,16 @@ export function ProfileProvider({ children }) {
           localStorage.setItem("userAddresses", JSON.stringify(updated))
           return updated
         })
+        if (updatedAddr.isDefault || selectedAddressId === id) {
+          setSelectedAddressId(id)
+        }
         return updatedAddr
       }
     } catch (error) {
       console.error("Error updating address:", error)
       throw error
     }
-  }, [])
+  }, [selectedAddressId])
 
   const deleteAddress = useCallback(async (id) => {
     try {
@@ -247,13 +271,16 @@ export function ProfileProvider({ children }) {
       setAddresses((prev) => {
         const newAddresses = prev.filter((addr) => addr.id !== id)
         localStorage.setItem("userAddresses", JSON.stringify(newAddresses))
+        if (selectedAddressId === id) {
+          setSelectedAddressId(newAddresses.find((addr) => addr.isDefault)?.id || newAddresses[0]?.id || "")
+        }
         return newAddresses
       })
     } catch (error) {
       console.error("Error deleting address:", error)
       throw error
     }
-  }, [])
+  }, [selectedAddressId])
 
   const setDefaultAddress = useCallback((id) => {
     setAddresses((prev) =>
@@ -262,11 +289,21 @@ export function ProfileProvider({ children }) {
         isDefault: addr.id === id,
       }))
     )
+    setSelectedAddressId(id)
   }, [])
 
   const getDefaultAddress = useCallback(() => {
-    return addresses.find((addr) => addr.isDefault) || addresses[0] || null
-  }, [addresses])
+    return (
+      addresses.find((addr) => addr.id === selectedAddressId) ||
+      addresses.find((addr) => addr.isDefault) ||
+      addresses[0] ||
+      null
+    )
+  }, [addresses, selectedAddressId])
+
+  const selectAddress = useCallback((id) => {
+    setSelectedAddressId(id || "")
+  }, [])
 
   // Payment method functions - memoized with useCallback
   const addPaymentMethod = useCallback((payment) => {
@@ -429,6 +466,7 @@ export function ProfileProvider({ children }) {
       updateAddress,
       deleteAddress,
       setDefaultAddress,
+      selectAddress,
       getDefaultAddress,
       getAddressById,
       addPaymentMethod,
@@ -466,6 +504,7 @@ export function ProfileProvider({ children }) {
       updateAddress,
       deleteAddress,
       setDefaultAddress,
+      selectAddress,
       getDefaultAddress,
       getAddressById,
       addPaymentMethod,
@@ -510,6 +549,7 @@ export function useProfile() {
       updateAddress: () => console.warn("ProfileProvider not available"),
       deleteAddress: () => console.warn("ProfileProvider not available"),
       setDefaultAddress: () => console.warn("ProfileProvider not available"),
+      selectAddress: () => console.warn("ProfileProvider not available"),
       getDefaultAddress: () => null,
       getAddressById: () => null,
       addPaymentMethod: () => console.warn("ProfileProvider not available"),
@@ -538,4 +578,3 @@ export function useProfile() {
   }
   return context
 }
-

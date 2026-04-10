@@ -297,7 +297,6 @@ export const useRestaurantNotifications = () => {
       // Play notification sound
       playNotificationSound();
     });
-
     // Listen for sound notification event
     socketRef.current.on('play_notification_sound', (data) => {
       console.log('🔔 Sound notification:', data);
@@ -384,4 +383,3 @@ export const useRestaurantNotifications = () => {
     playNotificationSound
   };
 };
-

@@ -3,7 +3,148 @@ import Order from "../models/Order.js";
 import * as walletService from "../../wallet/services/walletService.js";
 import { getIO } from "../../../server.js";
 import Restaurant from "../../restaurant/models/Restaurant.js";
-import { findNearestDeliveryBoy, findNearestDeliveryBoys } from "./deliveryAssignmentService.js";
+import { assignOrderToDeliveryBoy, findNearestDeliveryBoy, findNearestDeliveryBoys } from "./deliveryAssignmentService.js";
+
+async function getRestaurantCoords(restaurantId) {
+  const restaurantDoc = await Restaurant.findById(restaurantId)
+    .select("location")
+    .lean();
+
+  const coords = restaurantDoc?.location?.coordinates;
+  const lng = Array.isArray(coords) && coords.length >= 2
+    ? Number(coords[0])
+    : Number(restaurantDoc?.location?.longitude);
+  const lat = Array.isArray(coords) && coords.length >= 2
+    ? Number(coords[1])
+    : Number(restaurantDoc?.location?.latitude);
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return { lat, lng };
+}
+
+async function assignSingleSubscriptionOrder(order) {
+  const coords = await getRestaurantCoords(order.restaurantId);
+  if (!coords) return order;
+
+  await assignOrderToDeliveryBoy(order, coords.lat, coords.lng, String(order.restaurantId));
+  return order;
+}
+
+async function assignSubscriptionSlotBatch(order) {
+  const center = new Date(order.scheduledMealAt).getTime();
+  const lower = new Date(center - 60 * 1000);
+  const upper = new Date(center + 60 * 1000);
+
+  const groupOrders = await Order.find({
+    restaurantId: order.restaurantId,
+    "source.type": "subscription",
+    scheduledMealAt: { $gte: lower, $lte: upper },
+    status: { $nin: ["cancelled", "skipped", "delivered"] },
+  })
+    .select("_id userId deliveryBoyId deliveryPartnerId status preparationStatus")
+    .lean();
+
+  const uniqueUserCount = new Set(
+    groupOrders
+      .map((o) => o.userId)
+      .filter(Boolean)
+      .map((id) => String(id)),
+  ).size;
+
+  const totalOrders = groupOrders.length;
+  const effectiveOrderCount = uniqueUserCount > 0 ? uniqueUserCount : totalOrders;
+  const desiredDeliveryPartners = Math.max(1, Math.ceil(effectiveOrderCount / 5));
+
+  const existingAssignedIds = Array.from(
+    new Set(
+      groupOrders
+        .map((o) => o.deliveryBoyId || o.deliveryPartnerId)
+        .filter(Boolean)
+        .map((id) => String(id)),
+    ),
+  );
+
+  const unassignedOrders = groupOrders.filter(
+    (o) => !(o.deliveryBoyId || o.deliveryPartnerId),
+  );
+
+  if (unassignedOrders.length === 0) return order;
+
+  const selectedDeliveryPartnerIds = [...existingAssignedIds];
+  if (selectedDeliveryPartnerIds.length < desiredDeliveryPartners) {
+    const coords = await getRestaurantCoords(order.restaurantId);
+    if (coords) {
+      const needed = desiredDeliveryPartners - selectedDeliveryPartnerIds.length;
+
+      let candidates = [];
+      try {
+        candidates = await findNearestDeliveryBoys(coords.lat, coords.lng, String(order.restaurantId), 50);
+      } catch (_) {
+        candidates = [];
+      }
+
+      const candidateIds = (candidates || [])
+        .map((c) => String(c?.deliveryPartnerId || ""))
+        .filter(Boolean)
+        .filter((id) => !selectedDeliveryPartnerIds.includes(id));
+
+      selectedDeliveryPartnerIds.push(...candidateIds.slice(0, needed));
+
+      while (selectedDeliveryPartnerIds.length < desiredDeliveryPartners) {
+        const nearest = await findNearestDeliveryBoy(
+          coords.lat,
+          coords.lng,
+          String(order.restaurantId),
+          50,
+          selectedDeliveryPartnerIds,
+        );
+        const id = String(nearest?.deliveryPartnerId || "");
+        if (!id || selectedDeliveryPartnerIds.includes(id)) break;
+        selectedDeliveryPartnerIds.push(id);
+      }
+    }
+  }
+
+  if (selectedDeliveryPartnerIds.length === 0) return order;
+
+  const partnerObjectIds = selectedDeliveryPartnerIds
+    .filter((id) => mongoose.Types.ObjectId.isValid(id))
+    .map((id) => new mongoose.Types.ObjectId(id));
+
+  if (partnerObjectIds.length === 0) return order;
+
+  const bulkOps = [];
+  for (let i = 0; i < unassignedOrders.length; i++) {
+    const assignedPartner = partnerObjectIds[i % partnerObjectIds.length];
+    bulkOps.push({
+      updateOne: {
+        filter: { _id: unassignedOrders[i]._id },
+        update: {
+          $set: {
+            deliveryBoyId: assignedPartner,
+            deliveryPartnerId: assignedPartner,
+            status: "assigned",
+          },
+          $inc: { subscriptionFlowVersion: 1 },
+        },
+      },
+    });
+  }
+  if (bulkOps.length) {
+    await Order.bulkWrite(bulkOps, { ordered: false });
+  }
+
+  const currentWasUnassigned = !(order.deliveryBoyId || order.deliveryPartnerId);
+  if (currentWasUnassigned) {
+    const index = unassignedOrders.findIndex((o) => String(o._id) === String(order._id));
+    if (index !== -1) {
+      order.deliveryBoyId = partnerObjectIds[index % partnerObjectIds.length];
+      order.deliveryPartnerId = partnerObjectIds[index % partnerObjectIds.length];
+    }
+  }
+
+  return order;
+}
 
 function nowInEditWindow(order) {
   const t = Date.now();
@@ -126,7 +267,7 @@ export async function changeMealForUser(orderId, userId, { items }) {
 /**
  * PATCH preparation — restaurant must own order.restaurantId
  */
-export async function updatePreparationStatus(orderId, restaurantId, { preparationStatus }) {
+export async function updatePreparationStatus(orderId, restaurantId, { preparationStatus, assignmentMode = "single" }) {
   const allowed = ["pending", "preparing", "ready"];
   if (!allowed.includes(preparationStatus)) {
     const err = new Error("Invalid preparationStatus");
@@ -155,147 +296,12 @@ export async function updatePreparationStatus(orderId, restaurantId, { preparati
   order.subscriptionFlowVersion = (order.subscriptionFlowVersion || 0) + 1;
   await order.save();
 
-  // When the restaurant marks a subscription order ready, assign the slot batch to N delivery partners:
-  // <=5 orders => 1, 6-10 => 2, 11-15 => 3 ... (every 5 orders add 1).
   if (preparationStatus === "ready" && order.source?.type === "subscription" && order.scheduledMealAt) {
     try {
-      const center = new Date(order.scheduledMealAt).getTime();
-      const lower = new Date(center - 60 * 1000);
-      const upper = new Date(center + 60 * 1000);
-
-      const groupOrders = await Order.find({
-        restaurantId: order.restaurantId,
-        "source.type": "subscription",
-        scheduledMealAt: { $gte: lower, $lte: upper },
-        status: { $nin: ["cancelled", "skipped", "delivered"] },
-      })
-        .select("_id userId deliveryBoyId deliveryPartnerId status preparationStatus")
-        .lean();
-
-      const uniqueUserCount = new Set(
-        groupOrders
-          .map((o) => o.userId)
-          .filter(Boolean)
-          .map((id) => String(id)),
-      ).size;
-
-      const totalOrders = groupOrders.length;
-      const effectiveOrderCount = uniqueUserCount > 0 ? uniqueUserCount : totalOrders;
-      // Rules: <=5 => 1, 6-10 => 2, 11-15 => 3 ... (every 5 orders add 1 delivery partner)
-      const desiredDeliveryPartners = Math.max(1, Math.ceil(effectiveOrderCount / 5));
-
-      const existingAssignedIds = Array.from(
-        new Set(
-          groupOrders
-            .map((o) => o.deliveryBoyId || o.deliveryPartnerId)
-            .filter(Boolean)
-            .map((id) => String(id)),
-        ),
-      );
-
-      // Only assign orders that are not assigned yet.
-      const unassignedOrders = groupOrders.filter(
-        (o) => !(o.deliveryBoyId || o.deliveryPartnerId),
-      );
-
-      if (unassignedOrders.length === 0) {
-        // Nothing to do (all orders already assigned)
-        // Still fall through to ready-notification below.
+      if (assignmentMode === "batch") {
+        await assignSubscriptionSlotBatch(order);
       } else {
-        // Build list of delivery partners to use (keep existing assignments, then top-up).
-        const selectedDeliveryPartnerIds = [...existingAssignedIds];
-
-        if (selectedDeliveryPartnerIds.length < desiredDeliveryPartners) {
-          const restaurantDoc = await Restaurant.findById(order.restaurantId)
-            .select("location")
-            .lean();
-
-          const coords = restaurantDoc?.location?.coordinates;
-          const lng = Array.isArray(coords) && coords.length >= 2
-            ? Number(coords[0])
-            : Number(restaurantDoc?.location?.longitude);
-          const lat = Array.isArray(coords) && coords.length >= 2
-            ? Number(coords[1])
-            : Number(restaurantDoc?.location?.latitude);
-
-          if (Number.isFinite(lat) && Number.isFinite(lng)) {
-            const needed = desiredDeliveryPartners - selectedDeliveryPartnerIds.length;
-
-            // Prefer getting a list, then fallback to single nearest if needed.
-            let candidates = [];
-            try {
-              candidates = await findNearestDeliveryBoys(lat, lng, String(order.restaurantId), 50);
-            } catch (_) {
-              candidates = [];
-            }
-
-            const candidateIds = (candidates || [])
-              .map((c) => String(c?._id || ""))
-              .filter(Boolean)
-              .filter((id) => !selectedDeliveryPartnerIds.includes(id));
-
-            selectedDeliveryPartnerIds.push(...candidateIds.slice(0, needed));
-
-            // Fallback: if list is not enough, ask for nearest repeatedly with exclusions.
-            while (selectedDeliveryPartnerIds.length < desiredDeliveryPartners) {
-              const nearest = await findNearestDeliveryBoy(
-                lat,
-                lng,
-                String(order.restaurantId),
-                50,
-                selectedDeliveryPartnerIds,
-              );
-              if (!nearest?._id) break;
-              const id = String(nearest._id);
-              if (!selectedDeliveryPartnerIds.includes(id)) {
-                selectedDeliveryPartnerIds.push(id);
-              } else {
-                break;
-              }
-            }
-          }
-        }
-
-        // If we still don't have any partner, bail out (non-fatal).
-        if (selectedDeliveryPartnerIds.length > 0) {
-          // Assign unassigned orders in round-robin across selected partners.
-          const partnerObjectIds = selectedDeliveryPartnerIds
-            .filter((id) => mongoose.Types.ObjectId.isValid(id))
-            .map((id) => new mongoose.Types.ObjectId(id));
-
-          if (partnerObjectIds.length > 0) {
-            const bulkOps = [];
-            for (let i = 0; i < unassignedOrders.length; i++) {
-              const assignedPartner = partnerObjectIds[i % partnerObjectIds.length];
-              bulkOps.push({
-                updateOne: {
-                  filter: { _id: unassignedOrders[i]._id },
-                  update: {
-                    $set: {
-                      deliveryBoyId: assignedPartner,
-                      deliveryPartnerId: assignedPartner,
-                      status: "assigned",
-                    },
-                    $inc: { subscriptionFlowVersion: 1 },
-                  },
-                },
-              });
-            }
-            if (bulkOps.length) {
-              await Order.bulkWrite(bulkOps, { ordered: false });
-            }
-
-            // If the current order was unassigned, set it locally so notification can be sent.
-            const currentWasUnassigned = !(order.deliveryBoyId || order.deliveryPartnerId);
-            if (currentWasUnassigned) {
-              const index = unassignedOrders.findIndex((o) => String(o._id) === String(order._id));
-              if (index !== -1) {
-                order.deliveryBoyId = partnerObjectIds[index % partnerObjectIds.length];
-                order.deliveryPartnerId = partnerObjectIds[index % partnerObjectIds.length];
-              }
-            }
-          }
-        }
+        await assignSingleSubscriptionOrder(order);
       }
     } catch (_) {
       /* non-fatal */

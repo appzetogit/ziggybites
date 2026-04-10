@@ -39,23 +39,29 @@ export default function AddToCartButton({ item, className = "" }) {
 
   if (inCart) {
     return (
-      <div className={`flex items-center gap-2 ${className}`} onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
-        <div className="flex items-center gap-1 border border-primary-orange rounded-md">
+      <div
+        className={`flex w-full items-center ${className}`.trim()}
+        onClick={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+        }}
+      >
+        <div className="flex h-full w-full items-center justify-between border border-primary-orange rounded-xl bg-white overflow-hidden">
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-6 hover:bg-gray-100"
+            className="h-full w-12 rounded-none hover:bg-gray-100 text-primary-orange"
             onClick={handleDecrease}
           >
             <Minus className="h-4 w-4" />
           </Button>
-          <span className="px-1 text-sm font-semibold min-w-[1rem] text-center">
+          <span className="flex-1 px-2 text-sm font-semibold text-center text-gray-900">
             {cartItem?.quantity || 0}
           </span>
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-6 hover:bg-gray-100"
+            className="h-full w-12 rounded-none hover:bg-gray-100 text-primary-orange"
             onClick={handleIncrease}
           >
             <Plus className="h-4 w-4" />

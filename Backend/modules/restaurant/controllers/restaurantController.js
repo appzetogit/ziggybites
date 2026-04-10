@@ -14,6 +14,12 @@ import { initializeCloudinary } from "../../../config/cloudinary.js";
 import asyncHandler from "../../../shared/middleware/asyncHandler.js";
 import mongoose from "mongoose";
 
+function itemHasMealCategory(item, category) {
+  if (!item || !category) return false;
+  if (Array.isArray(item.mealCategories) && item.mealCategories.includes(category)) return true;
+  return item.mealCategory === category;
+}
+
 /**
  * GET /api/restaurant/food-feed
  * Returns a flat list of food items from nearby restaurants.
@@ -182,7 +188,7 @@ export const getFoodsByCategory = asyncHandler(async (req, res) => {
     (sections || []).forEach((section) => {
       if (section.isEnabled === false) return;
       (section.items || []).forEach((item) => {
-        if (item.isAvailable !== false && item.mealCategory === category && (item.approvalStatus !== "rejected")) {
+        if (item.isAvailable !== false && itemHasMealCategory(item, category) && (item.approvalStatus !== "rejected")) {
           items.push({
             ...item,
             sectionName: section.name,
@@ -192,7 +198,7 @@ export const getFoodsByCategory = asyncHandler(async (req, res) => {
       });
       (section.subsections || []).forEach((subsection) => {
         (subsection.items || []).forEach((item) => {
-          if (item.isAvailable !== false && item.mealCategory === category && (item.approvalStatus !== "rejected")) {
+          if (item.isAvailable !== false && itemHasMealCategory(item, category) && (item.approvalStatus !== "rejected")) {
             items.push({
               ...item,
               sectionName: section.name,
@@ -536,6 +542,144 @@ function serializeNearestRestaurant(restaurant) {
   return restaurantData;
 }
 
+function getFoodSearchScore(itemName = "", query = "") {
+  const normalizedName = String(itemName).trim().toLowerCase();
+  const normalizedQuery = String(query).trim().toLowerCase();
+
+  if (!normalizedName || !normalizedQuery) return Number.POSITIVE_INFINITY;
+  if (normalizedName === normalizedQuery) return 0;
+  if (normalizedName.startsWith(normalizedQuery)) return 1;
+
+  const wordIndex = normalizedName.indexOf(` ${normalizedQuery}`);
+  if (wordIndex >= 0) return 2 + wordIndex;
+
+  const partialIndex = normalizedName.indexOf(normalizedQuery);
+  if (partialIndex >= 0) return 10 + partialIndex;
+
+  return Number.POSITIVE_INFINITY;
+}
+
+/**
+ * GET /api/restaurant/search/foods?query=keyword&lat=xx&lng=yy
+ * Returns top 4 matching food items across active restaurants.
+ */
+export const searchFoods = asyncHandler(async (req, res) => {
+  const query = String(req.query.query || "").trim();
+  const lat = parseFloat(req.query.lat ?? req.query.latitude);
+  const lng = parseFloat(req.query.lng ?? req.query.longitude);
+  const hasCoordinates = !Number.isNaN(lat) && !Number.isNaN(lng);
+
+  if (!query) {
+    return successResponse(res, 200, "Food search results retrieved", {
+      items: [],
+      total: 0,
+      query: "",
+    });
+  }
+
+  const regex = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+
+  const menus = await Menu.find({ isActive: true })
+    .populate({
+      path: "restaurant",
+      match: { isActive: true, isAcceptingOrders: { $ne: false } },
+      select:
+        "_id restaurantId name slug rating totalRatings profileImage estimatedDeliveryTime location",
+    })
+    .lean();
+
+  const matches = [];
+
+  for (const menu of menus) {
+    const restaurant = menu.restaurant;
+    if (!restaurant) continue;
+
+    const restaurantCoords = getRestaurantCoordinates(restaurant);
+    const distanceMeters =
+      hasCoordinates && restaurantCoords
+        ? calculateHaversineDistanceMeters(
+            lat,
+            lng,
+            restaurantCoords.latitude,
+            restaurantCoords.longitude,
+          )
+        : null;
+
+    const pushItem = (item, sectionName = "", subsectionName = "") => {
+      if (!item || item.isAvailable === false) return;
+      if (item.approvalStatus && item.approvalStatus !== "approved") return;
+      if (!regex.test(String(item.name || ""))) return;
+
+      matches.push({
+        foodId: item.id,
+        foodName: item.name,
+        image: item.image || item.images?.[0] || "",
+        price: item.price ?? 0,
+        restaurantId:
+          restaurant.restaurantId ||
+          restaurant._id?.toString?.() ||
+          "",
+        restaurantName: restaurant.name || "",
+        restaurantSlug: restaurant.slug || "",
+        category: item.category || subsectionName || sectionName || "",
+        isAvailable: item.isAvailable !== false,
+        searchScore: getFoodSearchScore(item.name, query),
+        restaurantRating: restaurant.rating || 0,
+        totalRatings: restaurant.totalRatings || 0,
+        distance: distanceMeters,
+      });
+    };
+
+    for (const section of menu.sections || []) {
+      if (section?.isEnabled === false) continue;
+
+      for (const item of section.items || []) {
+        pushItem(item, section.name);
+      }
+
+      for (const subsection of section.subsections || []) {
+        for (const item of subsection.items || []) {
+          pushItem(item, section.name, subsection.name);
+        }
+      }
+    }
+  }
+
+  matches.sort((a, b) => {
+    if (a.searchScore !== b.searchScore) return a.searchScore - b.searchScore;
+
+    if (hasCoordinates) {
+      const distanceA = a.distance ?? Number.POSITIVE_INFINITY;
+      const distanceB = b.distance ?? Number.POSITIVE_INFINITY;
+      if (distanceA !== distanceB) return distanceA - distanceB;
+    }
+
+    if ((b.restaurantRating || 0) !== (a.restaurantRating || 0)) {
+      return (b.restaurantRating || 0) - (a.restaurantRating || 0);
+    }
+
+    return (b.totalRatings || 0) - (a.totalRatings || 0);
+  });
+
+  const items = matches.slice(0, 4).map((item) => ({
+    foodId: item.foodId,
+    foodName: item.foodName,
+    image: item.image,
+    price: item.price,
+    restaurantId: item.restaurantId,
+    restaurantName: item.restaurantName,
+    restaurantSlug: item.restaurantSlug,
+    category: item.category,
+    isAvailable: item.isAvailable,
+  }));
+
+  return successResponse(res, 200, "Food search results retrieved", {
+    items,
+    total: items.length,
+    query,
+  });
+});
+
 /**
  * Get restaurant's zoneId based on location
  * @param {number} restaurantLat - Restaurant latitude
@@ -751,8 +895,12 @@ export const createRestaurantFromOnboarding = async (
       if (step4.offer) existing.offer = step4.offer;
     }
 
-    existing.isActive = true; // Ensure it's active
-    existing.isAcceptingOrders = true; // Ensure it's accepting orders
+    // Completing onboarding should submit the restaurant for admin review,
+    // not auto-approve it.
+    existing.isActive = false;
+    existing.isAcceptingOrders = false;
+    existing.approvedAt = null;
+    existing.approvedBy = null;
 
     try {
       await existing.save();

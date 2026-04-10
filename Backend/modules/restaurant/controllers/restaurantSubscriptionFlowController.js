@@ -7,7 +7,7 @@ import * as flow from "../../order/services/subscriptionFlowService.js";
  * Body: { preparationStatus: 'pending' | 'preparing' | 'ready' }
  */
 export const patchSubscriptionPreparationStatus = asyncHandler(async (req, res) => {
-  const { preparationStatus } = req.body;
+  const { preparationStatus, assignmentMode } = req.body;
   if (!preparationStatus) {
     return errorResponse(res, 400, "preparationStatus required");
   }
@@ -15,7 +15,7 @@ export const patchSubscriptionPreparationStatus = asyncHandler(async (req, res) 
     const { order, duplicate } = await flow.updatePreparationStatus(
       req.params.orderId,
       req.restaurant._id,
-      { preparationStatus },
+      { preparationStatus, assignmentMode },
     );
     return successResponse(res, 200, duplicate ? "No change" : "Preparation updated", {
       orderId: order._id,

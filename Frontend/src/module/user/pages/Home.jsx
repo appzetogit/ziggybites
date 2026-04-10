@@ -58,79 +58,6 @@ const placeholders = [
   "Search \"dosa\""
 ]
 
-const DEMO_FOODS = [
-  {
-    food_id: "demo-food-1",
-    isDemo: true,
-    restaurant_id: "demo-restaurant-1",
-    restaurant_name: "Demo Kitchen",
-    restaurantSlug: "demo-kitchen",
-    food_name: "Paneer Tikka Bowl",
-    price: 179,
-    rating: 4.5,
-    eta: "25-30 mins",
-    distance_km: 1.2,
-    foodType: "Veg",
-    food_image: "https://images.unsplash.com/photo-1565557623262-b51c2513a641?w=800&h=600&fit=crop",
-  },
-  {
-    food_id: "demo-food-2",
-    isDemo: true,
-    restaurant_id: "demo-restaurant-1",
-    restaurant_name: "Demo Kitchen",
-    restaurantSlug: "demo-kitchen",
-    food_name: "Classic Veg Burger",
-    price: 149,
-    rating: 4.3,
-    eta: "20-25 mins",
-    distance_km: 0.9,
-    foodType: "Veg",
-    food_image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=800&h=600&fit=crop",
-  },
-  {
-    food_id: "demo-food-3",
-    isDemo: true,
-    restaurant_id: "demo-restaurant-2",
-    restaurant_name: "Urban Spice",
-    restaurantSlug: "urban-spice",
-    food_name: "Chicken Biryani",
-    price: 229,
-    rating: 4.6,
-    eta: "30-35 mins",
-    distance_km: 2.1,
-    foodType: "Non-Veg",
-    food_image: "https://images.unsplash.com/photo-1701579231305-d84d8af9a3fd?w=800&h=600&fit=crop",
-  },
-  {
-    food_id: "demo-food-4",
-    isDemo: true,
-    restaurant_id: "demo-restaurant-3",
-    restaurant_name: "Pizza Point",
-    restaurantSlug: "pizza-point",
-    food_name: "Farmhouse Pizza",
-    price: 269,
-    rating: 4.4,
-    eta: "25-30 mins",
-    distance_km: 1.8,
-    foodType: "Veg",
-    food_image: "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=800&h=600&fit=crop",
-  },
-  {
-    food_id: "demo-food-5",
-    isDemo: true,
-    restaurant_id: "demo-restaurant-4",
-    restaurant_name: "Healthy Wraps",
-    restaurantSlug: "healthy-wraps",
-    food_name: "Peri Peri Wrap",
-    price: 159,
-    rating: 4.2,
-    eta: "15-20 mins",
-    distance_km: 0.7,
-    foodType: "Veg",
-    food_image: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=800&h=600&fit=crop",
-  },
-]
-
 // Restaurant Image Carousel Component
 const RestaurantImageCarousel = React.memo(({ restaurant, priority = false }) => {
   const images = useMemo(() => restaurant.images || [restaurant.image], [restaurant])
@@ -1197,7 +1124,7 @@ export default function Home() {
     }, [nearbyFoods, activeFilters, sortBy, foodPreference])
 
   const foodsForDisplay = useMemo(
-    () => (filteredFoods.length > 0 ? filteredFoods : DEMO_FOODS),
+    () => filteredFoods,
     [filteredFoods],
   )
 
@@ -1970,7 +1897,11 @@ export default function Home() {
               )}
             </AnimatePresence>
             <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 lg:gap-5 xl:gap-6 pt-1 sm:pt-1.5 lg:pt-2 items-stretch ${isLoadingFilterResults || loadingFoods ? 'opacity-50' : 'opacity-100'} transition-opacity duration-300`}>
-              {foodsForDisplay.map((food, index) => {
+              {foodsForDisplay.length === 0 && !isLoadingFilterResults && !loadingFoods ? (
+                <div className="col-span-full rounded-3xl border border-dashed border-gray-200 bg-white/70 p-8 text-center text-sm text-gray-500 dark:border-gray-800 dark:bg-[#1a1a1a] dark:text-gray-400">
+                  No live dishes available right now.
+                </div>
+              ) : foodsForDisplay.map((food, index) => {
                 const isDemoFood = Boolean(food.isDemo)
                 const restaurantSlug = food.restaurantSlug || (food.restaurant_name || "").toLowerCase().replace(/\s+/g, "-")
                 const foodImage = food.food_image || food.image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=800&h=600&fit=crop"

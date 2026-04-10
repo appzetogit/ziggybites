@@ -4,6 +4,22 @@ import { successResponse, errorResponse } from '../../../shared/utils/response.j
 import asyncHandler from '../../../shared/middleware/asyncHandler.js';
 import mongoose from 'mongoose';
 
+const VALID_MEAL_CATEGORIES = ['breakfast', 'lunch', 'snacks', 'dinner'];
+
+function normalizeMealCategories(value, fallback = null) {
+  const values = Array.isArray(value)
+    ? value
+    : value
+      ? [value]
+      : Array.isArray(fallback)
+        ? fallback
+        : fallback
+          ? [fallback]
+          : [];
+
+  return [...new Set(values.filter((category) => VALID_MEAL_CATEGORIES.includes(category)))];
+}
+
 // Get menu for a restaurant
 export const getMenu = asyncHandler(async (req, res) => {
   // Restaurant is attached by authenticate middleware
@@ -186,7 +202,18 @@ export const updateMenu = asyncHandler(async (req, res) => {
       approvedAt: existingItem?.approvedAt || item.approvedAt,
       approvedBy: existingItem?.approvedBy || item.approvedBy,
       rejectedAt: existingItem?.rejectedAt || item.rejectedAt,
-      mealCategory: item.mealCategory || existingItem?.mealCategory || null,
+      mealCategories: normalizeMealCategories(
+        item.mealCategories,
+        existingItem?.mealCategories?.length
+          ? existingItem.mealCategories
+          : (item.mealCategory || existingItem?.mealCategory || null),
+      ),
+      mealCategory: normalizeMealCategories(
+        item.mealCategories,
+        existingItem?.mealCategories?.length
+          ? existingItem.mealCategories
+          : (item.mealCategory || existingItem?.mealCategory || null),
+      )[0] || null,
     };
       }) : [],
     subsections: Array.isArray(section.subsections) ? section.subsections.map(subsection => {
@@ -281,7 +308,18 @@ export const updateMenu = asyncHandler(async (req, res) => {
         approvedAt: existingItem?.approvedAt || item.approvedAt,
         approvedBy: existingItem?.approvedBy || item.approvedBy,
         rejectedAt: existingItem?.rejectedAt || item.rejectedAt,
-        mealCategory: item.mealCategory || existingItem?.mealCategory || null,
+        mealCategories: normalizeMealCategories(
+          item.mealCategories,
+          existingItem?.mealCategories?.length
+            ? existingItem.mealCategories
+            : (item.mealCategory || existingItem?.mealCategory || null),
+        ),
+        mealCategory: normalizeMealCategories(
+          item.mealCategories,
+          existingItem?.mealCategories?.length
+            ? existingItem.mealCategories
+            : (item.mealCategory || existingItem?.mealCategory || null),
+        )[0] || null,
       };
         }) : [],
       };
@@ -1031,4 +1069,3 @@ export const deleteAddon = asyncHandler(async (req, res) => {
     },
   });
 });
-

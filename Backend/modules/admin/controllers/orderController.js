@@ -488,6 +488,10 @@ export const getOrderById = asyncHandler(async (req, res) => {
 });
 
 /**
+ * Approve pending order (admin)
+ * PATCH /api/admin/orders/:id/approve
+ */
+/**
  * Mark order as ready (admin) – so it shows on delivery partner side
  * PATCH /api/admin/orders/:id/mark-ready
  */

@@ -4,6 +4,8 @@ import { ArrowLeft, ChefHat, Loader2, Lock, Clock, UtensilsCrossed, Printer } fr
 import { restaurantAPI } from "@/lib/api"
 import { toast } from "sonner"
 
+const DELIVERY_DEMO_READY_EVENT = "delivery_demo_subscription_ready"
+
 export default function SubscriptionPrepPage() {
   const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
@@ -18,17 +20,16 @@ export default function SubscriptionPrepPage() {
     const start = new Date()
     const end = new Date(start.getTime() + 24 * 60 * 60 * 1000)
 
-    const breakfastSlot = new Date(start.getTime() + 8 * 60 * 60 * 1000)
-    breakfastSlot.setMinutes(30, 0, 0)
+    const createSlot = (hour, minute) => {
+      const slot = new Date(start)
+      slot.setHours(hour, minute, 0, 0)
+      return slot
+    }
 
-    const lunchSlot = new Date(start.getTime() + 13 * 60 * 60 * 1000)
-    lunchSlot.setMinutes(0, 0, 0)
-
-    const snacksSlot = new Date(start.getTime() + 17 * 60 * 60 * 1000)
-    snacksSlot.setMinutes(30, 0, 0)
-
-    const dinnerSlot = new Date(start.getTime() + 20 * 60 * 60 * 1000)
-    dinnerSlot.setMinutes(0, 0, 0)
+    const breakfastSlot = createSlot(8, 30)
+    const lunchSlot = createSlot(13, 0)
+    const snacksSlot = createSlot(17, 30)
+    const dinnerSlot = createSlot(20, 0)
 
     const orders = [
       {
@@ -490,10 +491,34 @@ export default function SubscriptionPrepPage() {
     { id: "dinner", label: "Dinner" },
   ]
 
+  const filteredOrders = useMemo(() => {
+    const orders = data?.orders || []
+    if (mealFilter === "all") return orders
+    return orders.filter((o) => mealKeyForTime(o?.scheduledMealAt) === mealFilter)
+  }, [data, mealFilter])
+
   const filteredSlotGroups = useMemo(() => {
-    if (mealFilter === "all") return slotGroups
-    return slotGroups.filter((g) => mealKeyForTime(g.scheduledMealAt) === mealFilter)
-  }, [mealFilter, slotGroups])
+    const map = new Map()
+
+    for (const o of filteredOrders) {
+      const t = o?.scheduledMealAt ? new Date(o.scheduledMealAt).getTime() : null
+      const minuteKey = t != null && !Number.isNaN(t) ? Math.floor(t / 60000) : "no-slot"
+      const key = String(minuteKey)
+      const group = map.get(key) || { key, slotMinute: minuteKey, scheduledMealAt: o?.scheduledMealAt || null, orders: [] }
+      group.orders.push(o)
+      if (!group.scheduledMealAt && o?.scheduledMealAt) group.scheduledMealAt = o.scheduledMealAt
+      map.set(key, group)
+    }
+
+    const list = Array.from(map.values())
+    list.sort((a, b) => {
+      const av = typeof a.slotMinute === "number" ? a.slotMinute : Number.MAX_SAFE_INTEGER
+      const bv = typeof b.slotMinute === "number" ? b.slotMinute : Number.MAX_SAFE_INTEGER
+      return av - bv
+    })
+
+    return list
+  }, [filteredOrders])
 
   const prepEntries = useMemo(() => {
     const totals = {}
@@ -517,15 +542,116 @@ export default function SubscriptionPrepPage() {
     return mealFilterOptions.find((o) => o.id === mealFilter)?.label || "This meal"
   }, [mealFilter, mealFilterOptions])
 
+  const pushDemoOrdersToDelivery = useCallback((orders, assignmentMode = "single") => {
+    const eligibleOrders = (orders || []).filter((order) => order?.mealDetailsVisible)
+    if (eligibleOrders.length === 0) return
+
+    const now = Date.now()
+    const assignedOrders = eligibleOrders.slice(0, assignmentMode === "batch" ? 5 : 1).map((order, index) => ({
+      orderId: order?.orderId || `SUB-DEMO-${now}-${index + 1}`,
+      orderCode: order?.orderId || `SUB-DEMO-${now}-${index + 1}`,
+      customerName: order?.contactName || order?.user?.name || `Subscription User ${index + 1}`,
+      customerPhone: order?.user?.phone || "9999999999",
+      customerAddress: order?.deliveryAddress || "Demo subscription delivery address",
+      customerLocation: {
+        latitude: 22.7196 + index * 0.004,
+        longitude: 75.8577 + index * 0.004,
+        address: order?.deliveryAddress || "Demo subscription delivery address",
+      },
+      items: (order?.items || []).map((item) => ({
+        name: item?.name || "Item",
+        quantity: Number(item?.quantity) || 1,
+        price: Number(item?.price) || 0,
+      })),
+      total: Number(order?.totalAmount) || 0,
+    }))
+
+    const allItems = assignedOrders.flatMap((order) => order.items || [])
+    const totalAmount = assignedOrders.reduce((sum, order) => sum + (Number(order?.total) || 0), 0)
+    const slotTime = eligibleOrders[0]?.scheduledMealAt ? new Date(eligibleOrders[0].scheduledMealAt) : new Date()
+
+    const payload = {
+      source: "restaurant-subscription-demo",
+      orderId: `DEMO-SUB-${now}`,
+      orderMongoId: `demo-subscription-${now}`,
+      status: "preparing",
+      restaurantName: "Demo Kitchen",
+      restaurantAddress: "Demo Kitchen, Vijay Nagar, Indore",
+      restaurantLocation: {
+        latitude: 22.7533,
+        longitude: 75.8937,
+        address: "Demo Kitchen, Vijay Nagar, Indore",
+        formattedAddress: "Demo Kitchen, Vijay Nagar, Indore",
+      },
+      customerName: assignedOrders[0]?.customerName || "Subscription Customer",
+      customerPhone: assignedOrders[0]?.customerPhone || "9999999999",
+      customerLocation: assignedOrders[0]?.customerLocation || {
+        latitude: 22.7196,
+        longitude: 75.8577,
+        address: "Demo subscription delivery address",
+      },
+      assignedOrders,
+      items: allItems,
+      total: totalAmount,
+      deliveryFee: Math.max(20, assignedOrders.length * 10),
+      estimatedEarnings: Math.max(20, assignedOrders.length * 10),
+      deliveryDistance: "4.20 km",
+      pickupDistance: "1.10 km",
+      paymentMethod: "subscription",
+      message:
+        assignmentMode === "batch"
+          ? `${assignedOrders.length} ${activeMealLabel.toLowerCase()} subscription deliveries are ready`
+          : `${assignedOrders[0]?.customerName || "Subscription customer"}'s meal is ready`,
+      timestamp: slotTime.toISOString(),
+    }
+
+    try {
+      localStorage.setItem(DELIVERY_DEMO_READY_EVENT, JSON.stringify({ ...payload, emittedAt: new Date().toISOString() }))
+      window.dispatchEvent(new CustomEvent(DELIVERY_DEMO_READY_EVENT, { detail: payload }))
+    } catch (error) {
+      console.error("Failed to push demo delivery assignment", error)
+    }
+  }, [activeMealLabel])
+
+  const updateDemoOrders = useCallback((matcher) => {
+    setData((current) => {
+      if (!current?.orders) return current
+      const nextOrders = current.orders.map((order) =>
+        matcher(order)
+          ? {
+              ...order,
+              preparationStatus: "ready",
+              status: "ready",
+            }
+          : order,
+      )
+      return {
+        ...current,
+        orders: nextOrders,
+      }
+    })
+  }, [])
+
   const markOrderReady = async (orderId) => {
     if (!orderId || updatingOrderId) return
+    if (String(orderId).startsWith("subscription-")) {
+      toast.info("This meal is still a preview. Ready action will work after the order is generated.")
+      return
+    }
     if (isDemoData || String(orderId).startsWith("demo-")) {
-      toast.info("Demo mode: cannot mark ready")
+      const targetOrder = (data?.orders || []).find((order) => String(order?._id) === String(orderId))
+      if (!targetOrder?.mealDetailsVisible) {
+        toast.info("Nothing to mark ready")
+        return
+      }
+      updateDemoOrders((order) => String(order?._id) === String(orderId))
+      pushDemoOrdersToDelivery([targetOrder], "single")
+      toast.success("Demo order sent to delivery")
       return
     }
     try {
       setUpdatingOrderId(String(orderId))
-      await restaurantAPI.patchSubscriptionPreparationStatus(orderId, "ready")
+      await restaurantAPI.patchSubscriptionPreparationStatus(orderId, "ready", "single")
       toast.success("Marked as ready")
       await load()
     } catch (e) {
@@ -538,30 +664,85 @@ export default function SubscriptionPrepPage() {
 
   const markMealReadyForSlot = async (slotKey, orders) => {
     if (!slotKey || updatingSlotKey || updatingOrderId) return
-    if (isDemoData) {
-      toast.info("Demo mode: cannot mark ready")
-      return
-    }
-
-    const eligible = (orders || []).filter((o) => o?.mealDetailsVisible && (o.preparationStatus || "pending") !== "ready")
+    const eligible = (orders || []).filter(
+      (o) =>
+        o?.mealDetailsVisible &&
+        !String(o?._id || "").startsWith("subscription-") &&
+        (o.preparationStatus || "pending") !== "ready",
+    )
     if (eligible.length === 0) {
       toast.info("Nothing to mark ready")
+      return
+    }
+    if (isDemoData) {
+      updateDemoOrders((order) =>
+        eligible.some((eligibleOrder) => String(eligibleOrder?._id) === String(order?._id)),
+      )
+      pushDemoOrdersToDelivery(eligible, "batch")
+      toast.success("Demo meal slot sent to delivery")
       return
     }
 
     try {
       setUpdatingSlotKey(String(slotKey))
-      for (const o of eligible) {
-        // Mark each order ready; backend will handle delivery assignment rules for the slot.
-        // Sequential to avoid spamming API.
-        // eslint-disable-next-line no-await-in-loop
-        await restaurantAPI.patchSubscriptionPreparationStatus(o._id, "ready")
-      }
-      toast.success("Meal marked ready")
+      await restaurantAPI.patchSubscriptionPreparationStatus(eligible[0]._id, "ready", "batch")
+      toast.success("Meal slot marked ready")
       await load()
     } catch (e) {
       console.error(e)
       toast.error(e.response?.data?.message || "Failed to mark meal as ready")
+    } finally {
+      setUpdatingSlotKey("")
+    }
+  }
+
+  const markAllFilteredReady = async () => {
+    if (updatingSlotKey || updatingOrderId) return
+    const eligibleGroups = filteredSlotGroups
+      .map((group) => ({
+        key: group.key,
+        eligibleOrders: (group.orders || []).filter(
+          (order) =>
+            order?.mealDetailsVisible &&
+            !String(order?._id || "").startsWith("subscription-") &&
+            (order.preparationStatus || "pending") !== "ready",
+        ),
+        firstEligibleOrder: (group.orders || []).find(
+          (order) =>
+            order?.mealDetailsVisible &&
+            !String(order?._id || "").startsWith("subscription-") &&
+            (order.preparationStatus || "pending") !== "ready",
+        ),
+      }))
+      .filter((group) => group.firstEligibleOrder)
+
+    if (eligibleGroups.length === 0) {
+      toast.info("Nothing to mark ready")
+      return
+    }
+    if (isDemoData) {
+      const readyIds = new Set(
+        eligibleGroups.flatMap((group) => group.eligibleOrders.map((order) => String(order?._id))),
+      )
+      updateDemoOrders((order) => readyIds.has(String(order?._id)))
+      for (const group of eligibleGroups) {
+        pushDemoOrdersToDelivery(group.eligibleOrders, "batch")
+      }
+      toast.success(`${activeMealLabel} sent to delivery in demo mode`)
+      return
+    }
+
+    try {
+      setUpdatingSlotKey("__all__")
+      for (const group of eligibleGroups) {
+        // eslint-disable-next-line no-await-in-loop
+        await restaurantAPI.patchSubscriptionPreparationStatus(group.firstEligibleOrder._id, "ready", "batch")
+      }
+      toast.success(`${activeMealLabel} marked ready`)
+      await load()
+    } catch (e) {
+      console.error(e)
+      toast.error(e.response?.data?.message || "Failed to mark all ready")
     } finally {
       setUpdatingSlotKey("")
     }
@@ -616,21 +797,6 @@ export default function SubscriptionPrepPage() {
                 Showing demo data (development only).
               </div>
             )}
-            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-              <p className="text-sm text-slate-600">
-                <span className="font-semibold text-slate-900">
-                  {data.window?.start
-                    ? new Date(data.window.start).toLocaleString()
-                    : data.date}
-                </span>
-                {" · "}
-                <span>{data.orderCount} subscription order{data.orderCount !== 1 ? "s" : ""}</span>
-              </p>
-              <p className="text-xs text-slate-500 mt-1">
-                Dish names appear only after the customer&apos;s 30-minute meal-change period ends, so you prepare the final choice.
-              </p>
-            </div>
-
             {prepEntries.length > 0 && (
               <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
                 <h2 className="text-sm font-bold text-slate-900 mb-3 flex items-center gap-2">
@@ -667,6 +833,33 @@ export default function SubscriptionPrepPage() {
                 >
                   <Printer className="w-4 h-4" />
                   Print
+                </button>
+              </div>
+
+              <div className="px-1">
+                  <button
+                    type="button"
+                    onClick={markAllFilteredReady}
+                    disabled={
+                      filteredSlotGroups.length === 0 ||
+                      updatingOrderId ||
+                      updatingSlotKey === "__all__" ||
+                      !filteredSlotGroups.some((group) =>
+                        (group.orders || []).some(
+                          (order) =>
+                            order?.mealDetailsVisible &&
+                            !String(order?._id || "").startsWith("subscription-") &&
+                            (order.preparationStatus || "pending") !== "ready",
+                        ),
+                      )
+                    }
+                  className={`w-full text-xs px-3 py-2.5 rounded-lg font-semibold transition-colors ${
+                    filteredSlotGroups.length === 0 || updatingOrderId
+                      ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                      : "bg-emerald-600 text-white hover:bg-emerald-700"
+                  }`}
+                >
+                  {updatingSlotKey === "__all__" ? "Marking..." : `Mark all ${activeMealLabel.toLowerCase()} ready`}
                 </button>
               </div>
 
@@ -712,7 +905,14 @@ export default function SubscriptionPrepPage() {
                         : "Meal slot"
                   const visibleCount = g.orders.filter((o) => o?.mealDetailsVisible).length
                   const readyCount = g.orders.filter((o) => (o?.preparationStatus || "pending") === "ready").length
-                  const canMark = visibleCount > 0 && readyCount < visibleCount && !isDemoData
+                  const canMark =
+                    !isDemoData &&
+                    (g.orders || []).some(
+                      (order) =>
+                        order?.mealDetailsVisible &&
+                        !String(order?._id || "").startsWith("subscription-") &&
+                        (order.preparationStatus || "pending") !== "ready",
+                    )
                   const uniqueUsers = new Set(
                     g.orders
                       .map((o) => o?.user?._id)
@@ -745,7 +945,7 @@ export default function SubscriptionPrepPage() {
                           <button
                             type="button"
                             onClick={() => markMealReadyForSlot(g.key, g.orders)}
-                            disabled={!canMark || updatingSlotKey === String(g.key)}
+                            disabled={!canMark || updatingSlotKey === String(g.key) || updatingSlotKey === "__all__"}
                             className={`shrink-0 text-xs px-3 py-2 rounded-lg font-semibold transition-colors ${
                               canMark
                                 ? "bg-emerald-600 text-white hover:bg-emerald-700"
@@ -780,6 +980,18 @@ export default function SubscriptionPrepPage() {
                                 <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
                                   {o.preparationStatus || "pending"}
                                 </span>
+                                {o?.mealDetailsVisible &&
+                                  !String(o?._id || "").startsWith("subscription-") &&
+                                  (o.preparationStatus || "pending") !== "ready" && (
+                                  <button
+                                    type="button"
+                                    onClick={() => markOrderReady(o._id)}
+                                    disabled={updatingOrderId === String(o._id) || updatingSlotKey === "__all__"}
+                                    className="px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white text-[11px] font-semibold hover:bg-emerald-700 disabled:opacity-50"
+                                  >
+                                    {updatingOrderId === String(o._id) ? "Marking..." : "Mark ready"}
+                                  </button>
+                                )}
                                 <button
                                   type="button"
                                   onClick={() =>

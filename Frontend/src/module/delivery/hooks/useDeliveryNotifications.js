@@ -5,6 +5,8 @@ import { deliveryAPI } from '@/lib/api';
 import alertSound from '@/assets/audio/alert.mp3';
 import originalSound from '@/assets/audio/original.mp3';
 
+const DELIVERY_DEMO_READY_EVENT = 'delivery_demo_subscription_ready';
+
 export const useDeliveryNotifications = () => {
   // CRITICAL: All hooks must be called unconditionally and in the same order every render
   // Order: useRef -> useState -> useEffect -> useCallback
@@ -452,104 +454,39 @@ export const useDeliveryNotifications = () => {
     setOrderReady(null);
   };
 
-  const injectDemoOrder = useCallback((overrides = {}) => {
-    const now = Date.now();
-    const defaultAssignedOrders = [
-      {
-        orderId: `DEMO-${now}-1`,
-        orderCode: `DEMO-${now}-1`,
-        customerName: 'Aarav Mehta',
-        customerPhone: '9999999901',
-        customerAddress: 'Scheme No. 54, Near Medanta Hospital, Indore',
-        customerLocation: { latitude: 22.7196, longitude: 75.8577, address: 'Scheme No. 54, Near Medanta Hospital, Indore' },
-        items: [{ name: 'Family Veg Thali', quantity: 1, price: 129 }],
-        total: 129,
-      },
-      {
-        orderId: `DEMO-${now}-2`,
-        orderCode: `DEMO-${now}-2`,
-        customerName: 'Siya Jain',
-        customerPhone: '9999999902',
-        customerAddress: 'New Palasia, Saket Square, Indore',
-        customerLocation: { latitude: 22.7248, longitude: 75.8826, address: 'New Palasia, Saket Square, Indore' },
-        items: [{ name: 'Paneer Lababdar Combo', quantity: 1, price: 189 }],
-        total: 189,
-      },
-      {
-        orderId: `DEMO-${now}-3`,
-        orderCode: `DEMO-${now}-3`,
-        customerName: 'Kabir Khan',
-        customerPhone: '9999999903',
-        customerAddress: 'Vijay Nagar, Sector B, Indore',
-        customerLocation: { latitude: 22.7533, longitude: 75.8937, address: 'Vijay Nagar, Sector B, Indore' },
-        items: [{ name: 'Dal Bafla Meal', quantity: 2, price: 99 }],
-        total: 198,
-      },
-      {
-        orderId: `DEMO-${now}-4`,
-        orderCode: `DEMO-${now}-4`,
-        customerName: 'Myra Sharma',
-        customerPhone: '9999999904',
-        customerAddress: 'LIG Colony, A.B. Road, Indore',
-        customerLocation: { latitude: 22.7004, longitude: 75.8756, address: 'LIG Colony, A.B. Road, Indore' },
-        items: [{ name: 'Tawa Roti Meal Box', quantity: 3, price: 79 }],
-        total: 237,
-      },
-      {
-        orderId: `DEMO-${now}-5`,
-        orderCode: `DEMO-${now}-5`,
-        customerName: 'Vivaan Patel',
-        customerPhone: '9999999905',
-        customerAddress: 'Bhanwar Kuan, Tower Square, Indore',
-        customerLocation: { latitude: 22.6924, longitude: 75.8672, address: 'Bhanwar Kuan, Tower Square, Indore' },
-        items: [{ name: 'Mini Lunch Pack', quantity: 1, price: 149 }],
-        total: 149,
-      },
-    ];
+  useEffect(() => {
+    const applyDemoAssignment = (payload) => {
+      if (!payload || typeof payload !== 'object') return;
 
-    const demoOrder = {
-      orderId: `DEMO-${now}`,
-      orderMongoId: `demo-${now}`,
-      status: 'preparing',
-      restaurantName: 'Demo Kitchen',
-      restaurantAddress: 'Demo Kitchen, Vijay Nagar, Indore',
-      restaurantLocation: {
-        latitude: 22.7533,
-        longitude: 75.8937,
-        address: 'Demo Kitchen, Vijay Nagar, Indore',
-        formattedAddress: 'Demo Kitchen, Vijay Nagar, Indore',
-      },
-      customerName: 'Demo Customer',
-      customerPhone: '9999999999',
-      customerLocation: {
-        latitude: 22.7196,
-        longitude: 75.8577,
-        address: 'Scheme No. 54, Indore',
-      },
-      assignedOrders: defaultAssignedOrders,
-      items: [
-        {
-          name: 'Special Veg Thali',
-          quantity: 5,
-          price: 120,
-        },
-      ],
-      total: 600,
-      deliveryFee: 60,
-      estimatedEarnings: 60,
-      deliveryDistance: '4.20 km',
-      pickupDistance: '1.10 km',
-      paymentMethod: 'cash',
-      message: 'Demo order: 5 Special Veg Thali',
-      timestamp: new Date().toISOString(),
-      activeAssignedOrderCount: deliveryBatchState?.activeAssignedOrderCount || 0,
-      nextDeliveryLocation: deliveryBatchState?.nextDeliveryLocation || null,
-      ...overrides,
+      setNewOrder({
+        ...payload,
+        activeAssignedOrderCount: deliveryBatchState?.activeAssignedOrderCount || 0,
+        nextDeliveryLocation: deliveryBatchState?.nextDeliveryLocation || null,
+      });
+      playNotificationSound();
     };
 
-    setNewOrder(demoOrder);
-    playNotificationSound();
-    return demoOrder;
+    const handleStorage = (event) => {
+      if (event.key !== DELIVERY_DEMO_READY_EVENT || !event.newValue) return;
+
+      try {
+        applyDemoAssignment(JSON.parse(event.newValue));
+      } catch (error) {
+        console.warn('Failed to parse restaurant demo assignment:', error);
+      }
+    };
+
+    const handleWindowEvent = (event) => {
+      applyDemoAssignment(event?.detail);
+    };
+
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener(DELIVERY_DEMO_READY_EVENT, handleWindowEvent);
+
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener(DELIVERY_DEMO_READY_EVENT, handleWindowEvent);
+    };
   }, [deliveryBatchState, playNotificationSound]);
 
   return {
@@ -560,6 +497,5 @@ export const useDeliveryNotifications = () => {
     isConnected,
     playNotificationSound,
     deliveryBatchState,
-    injectDemoOrder,
   };
 };

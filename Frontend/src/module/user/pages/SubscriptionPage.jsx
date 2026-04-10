@@ -1,23 +1,17 @@
 import { useState, useEffect, useMemo } from "react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
 import {
-  Repeat,
-  Loader2,
   Calendar,
   Package,
   Check,
   MessageCircle,
   Info,
-  Pencil,
   ChevronRight,
   PauseCircle,
-  Plus,
-  Wallet,
-  CreditCard,
   Truck,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Switch } from "@/components/ui/switch"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   Dialog,
   DialogContent,
@@ -42,6 +36,16 @@ const FALLBACK_PLANS = [
 ]
 
 const WHATSAPP_SUPPORT = "https://wa.me/919769203828?text=" + encodeURIComponent("Hi, I need help with my subscription on Ziggybites.")
+const REQUEST_TIMEOUT_MS = 8000
+
+function withRequestTimeout(promise, fallback) {
+  return Promise.race([
+    promise.catch(() => fallback),
+    new Promise((resolve) => {
+      window.setTimeout(() => resolve(fallback), REQUEST_TIMEOUT_MS)
+    }),
+  ])
+}
 
 function getValidityLabel(days) {
   if (days === 15) return "Valid for 15 days"
@@ -75,6 +79,106 @@ function formatNextDeliveryLabel(iso) {
   }
 }
 
+function SubscriptionPageSkeleton() {
+  return (
+    <div className="min-h-screen bg-[#FDFDFD] pb-32 pt-6">
+      <div className="mx-auto max-w-md px-6">
+        <header className="mb-8">
+          <Skeleton className="mb-3 h-3 w-28 rounded-full bg-red-100" />
+          <Skeleton className="h-14 w-64 rounded-2xl bg-black/10" />
+        </header>
+
+        <div className="mb-6 flex flex-wrap gap-2">
+          <Skeleton className="h-10 w-40 rounded-full bg-black/10" />
+          <Skeleton className="h-10 w-32 rounded-full bg-red-100" />
+        </div>
+
+        <div className="mb-12 space-y-5">
+          <section className="rounded-[2.5rem] border border-black/10 bg-white p-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+            <div className="mb-8 flex items-start justify-between">
+              <div className="space-y-3">
+                <Skeleton className="h-8 w-36 rounded-xl bg-black/10" />
+                <Skeleton className="h-4 w-24 rounded-full bg-black/10" />
+              </div>
+              <Skeleton className="h-9 w-20 rounded-full bg-red-100" />
+            </div>
+            <div className="mb-8 space-y-4">
+              <Skeleton className="h-16 w-40 rounded-2xl bg-red-100" />
+              <Skeleton className="h-2 w-full rounded-full bg-black/10" />
+            </div>
+            <div className="flex items-end justify-between border-t border-black/10 pt-6">
+              <div className="space-y-2">
+                <Skeleton className="h-3 w-20 rounded-full bg-black/10" />
+                <Skeleton className="h-5 w-24 rounded-full bg-black/10" />
+              </div>
+              <Skeleton className="h-12 w-36 rounded-2xl bg-red-100" />
+            </div>
+          </section>
+
+          <div className="flex items-center justify-between rounded-[2rem] border border-black/10 bg-white p-6">
+            <div className="flex items-center gap-4">
+              <Skeleton className="h-12 w-12 rounded-xl bg-red-100" />
+              <div className="space-y-2">
+                <Skeleton className="h-3 w-24 rounded-full bg-black/10" />
+                <Skeleton className="h-8 w-32 rounded-xl bg-black/10" />
+              </div>
+            </div>
+            <Skeleton className="h-4 w-24 rounded-full bg-red-100" />
+          </div>
+
+          <div className="flex items-center gap-5 rounded-[2rem] border border-black/10 bg-white p-6 shadow-sm">
+            <Skeleton className="h-14 w-14 rounded-full bg-red-100" />
+            <div className="space-y-2">
+              <Skeleton className="h-3 w-32 rounded-full bg-black/10" />
+              <Skeleton className="h-6 w-40 rounded-xl bg-black/10" />
+            </div>
+          </div>
+
+          <div className="pt-4">
+            <div className="mb-4 flex items-center justify-between">
+              <Skeleton className="h-7 w-40 rounded-xl bg-black/10" />
+              <Skeleton className="h-3 w-14 rounded-full bg-black/10" />
+            </div>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between rounded-3xl border border-black/10 bg-white p-5">
+                <div className="flex items-center gap-4">
+                  <Skeleton className="h-10 w-10 rounded-full bg-black/10" />
+                  <div className="space-y-2">
+                    <Skeleton className="h-4 w-28 rounded-full bg-black/10" />
+                    <Skeleton className="h-3 w-36 rounded-full bg-black/10" />
+                  </div>
+                </div>
+                <Skeleton className="h-4 w-14 rounded-full bg-black/10" />
+              </div>
+              <div className="flex items-center justify-between rounded-3xl border border-black/10 bg-white p-5">
+                <div className="flex items-center gap-4">
+                  <Skeleton className="h-10 w-10 rounded-full bg-black/10" />
+                  <div className="space-y-2">
+                    <Skeleton className="h-4 w-32 rounded-full bg-black/10" />
+                    <Skeleton className="h-3 w-28 rounded-full bg-black/10" />
+                  </div>
+                </div>
+                <Skeleton className="h-4 w-16 rounded-full bg-black/10" />
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between rounded-3xl border border-black/10 bg-white p-6">
+            <div className="flex items-center gap-5">
+              <Skeleton className="h-14 w-14 rounded-full bg-red-100" />
+              <div className="space-y-2">
+                <Skeleton className="h-5 w-32 rounded-xl bg-black/10" />
+                <Skeleton className="h-3 w-36 rounded-full bg-black/10" />
+              </div>
+            </div>
+            <Skeleton className="h-5 w-5 rounded-full bg-red-100" />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /**
  * ZigZagLite – Subscription Plan
  * Plans shown as cards with price, validity, description. Active plan on top when subscribed.
@@ -101,6 +205,7 @@ export default function SubscriptionPage() {
 
   const { userProfile: profileFromContext } = useProfile()
   const displayProfile = profile || profileFromContext
+  const skipMealRedirect = Boolean(location.state?.skipMealRedirect)
 
   const hasActive = activeSubscriptions.length > 0
   /** Prefer active sub if user has multiple rows; API sorts active before paused */
@@ -127,36 +232,34 @@ export default function SubscriptionPage() {
   }, [])
 
   useEffect(() => {
+    let cancelled = false
+
     const fetchData = async () => {
       try {
         setLoading(true)
         setError(null)
-        const [profileRes, activeRes, plansRes, purchasedRes, dashboardRes, ordersRes, walletRes] = await Promise.all([
-          userAPI.getProfile().catch(() => ({ data: { success: false, data: null } })),
-          api.get("/subscription/active").catch(() => ({ data: { success: false, data: [] } })),
-          api.get("/subscription/plans").catch(() => ({ data: { success: false, data: [] } })),
-          api.get("/subscription/purchased-plans").catch(() => ({ data: { success: false, data: [] } })),
-          api.get("/subscription/dashboard").catch(() => ({ data: { success: false, data: null } })),
-          api.get("/order?limit=10").catch(() => ({ data: { success: false, data: { orders: [] } } })),
-          userAPI.getWallet().catch(() => ({ data: { success: false, data: { balance: 0 } } })),
+        const [profileRes, activeRes, plansRes, purchasedRes, dashboardRes] = await Promise.all([
+          withRequestTimeout(userAPI.getProfile(), { data: { success: false, data: null } }),
+          withRequestTimeout(api.get("/subscription/active"), { data: { success: false, data: [] } }),
+          withRequestTimeout(api.get("/subscription/plans"), { data: { success: false, data: [] } }),
+          withRequestTimeout(api.get("/subscription/purchased-plans"), { data: { success: false, data: [] } }),
+          withRequestTimeout(api.get("/subscription/dashboard"), { data: { success: false, data: null } }),
         ])
+
+        if (cancelled) return
+
         if (profileRes?.data?.success) {
           const u = profileRes.data.data?.user || profileRes.data.data || profileRes.data
           if (u && typeof u === 'object') setProfile(u)
         }
+
         if (activeRes?.data?.success) {
           const subs = Array.isArray(activeRes.data.data) ? activeRes.data.data : (Array.isArray(activeRes.data) ? activeRes.data : [])
           setActiveSubscriptions(subs)
+        } else {
+          setActiveSubscriptions([])
         }
-        if (walletRes?.data?.success) {
-          const walletData = walletRes.data.data?.wallet || walletRes.data.data
-          setWalletBalance(walletData?.balance ?? 0)
-        }
-        if (ordersRes?.data?.success) {
-          const resData = ordersRes.data.data || ordersRes.data
-          const allOrders = resData?.orders || (Array.isArray(resData) ? resData : [])
-          setRecentOrders(allOrders.filter(o => o.source?.type === "subscription" || o.source?.subscriptionId))
-        }
+
         if (plansRes?.data?.success) {
           const p = Array.isArray(plansRes.data.data) ? plansRes.data.data : (Array.isArray(plansRes.data) ? plansRes.data : [])
           setPlans(p.length ? p : FALLBACK_PLANS)
@@ -175,8 +278,7 @@ export default function SubscriptionPage() {
         } else {
           setDashboard(null)
         }
-        
-        // Redirect if no active sub
+
         if (!activeRes?.data?.success || (Array.isArray(activeRes.data.data) && activeRes.data.data.length === 0)) {
            navigate("/subscription/plans")
         }
@@ -184,14 +286,37 @@ export default function SubscriptionPage() {
           setShowMandatePrompt(true)
           navigate(location.pathname, { replace: true, state: { planPurchased: location.state?.planPurchased } })
         }
+
+        void Promise.all([
+          withRequestTimeout(api.get("/order?limit=10"), { data: { success: false, data: { orders: [] } } }),
+          withRequestTimeout(userAPI.getWallet(), { data: { success: false, data: { balance: 0 } } }),
+        ]).then(([ordersRes, walletRes]) => {
+          if (cancelled) return
+
+          if (walletRes?.data?.success) {
+            const walletData = walletRes.data.data?.wallet || walletRes.data.data
+            setWalletBalance(walletData?.balance ?? 0)
+          }
+
+          if (ordersRes?.data?.success) {
+            const resData = ordersRes.data.data || ordersRes.data
+            const allOrders = resData?.orders || (Array.isArray(resData) ? resData : [])
+            setRecentOrders(allOrders.filter((o) => o.source?.type === "subscription" || o.source?.subscriptionId))
+          }
+        })
       } catch (e) {
+        if (cancelled) return
         setError(e.message)
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     }
+
     fetchData()
-  }, [])
+    return () => {
+      cancelled = true
+    }
+  }, [location.pathname, location.state?.planPurchased, location.state?.showMandatePrompt, navigate])
 
   /** New users: land on Edit meal first until all categories have a pick (per-user draft, not shared). */
   useEffect(() => {
@@ -199,12 +324,19 @@ export default function SubscriptionPage() {
     if (!isModuleAuthenticated("user")) return
     if (hasActive) return
     if (hasCompleteMealSelection(draftItems)) return
+    if (skipMealRedirect) return
     navigate("/subscription/edit-meal", { replace: true, state: { mealSetupFirst: true } })
-  }, [loading, hasActive, draftItems, navigate])
+  }, [loading, hasActive, draftItems, navigate, skipMealRedirect])
 
   useEffect(() => {
     if (!location.state?.requireMealsFirst) return
     const { requireMealsFirst: _skip, ...rest } = location.state || {}
+    navigate(location.pathname, { replace: true, state: Object.keys(rest).length ? rest : undefined })
+  }, [location.state, location.pathname, navigate])
+
+  useEffect(() => {
+    if (!location.state?.skipMealRedirect) return
+    const { skipMealRedirect: _skip, ...rest } = location.state || {}
     navigate(location.pathname, { replace: true, state: Object.keys(rest).length ? rest : undefined })
   }, [location.state, location.pathname, navigate])
 
@@ -435,24 +567,13 @@ export default function SubscriptionPage() {
 
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-stone-100 dark:bg-gray-950">
-        <Loader2 className="h-9 w-9 animate-spin text-[#DC2626]" />
-      </div>
-    )
+    return <SubscriptionPageSkeleton />
   }
 
   const sendToEditMealFirst =
     isModuleAuthenticated("user") && !hasActive && !hasCompleteMealSelection(draftItems)
   if (sendToEditMealFirst) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-stone-100 dark:bg-gray-950 px-6">
-        <Loader2 className="h-9 w-9 animate-spin text-[#DC2626]" />
-        <p className="text-center text-sm text-gray-600 dark:text-gray-400 max-w-xs">
-          Choose your meals first — opening meal setup…
-        </p>
-      </div>
-    )
+    return <SubscriptionPageSkeleton />
   }
 
   return (
@@ -460,7 +581,7 @@ export default function SubscriptionPage() {
       <div className="max-w-md mx-auto px-6">
         <header className="mb-8">
            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#DC2626] mb-1">Your Subscription</p>
-           <h1 className="text-[3.2rem] font-[900] text-gray-900 leading-[1.1] tracking-[-0.03em] mb-8 animate-in fade-in slide-in-from-left duration-700">
+           <h1 className="text-[3.2rem] font-[900] text-black leading-[1.1] tracking-[-0.03em] mb-8">
           Hello, {displayProfile?.name || "User"}
         </h1>
         </header>
@@ -470,7 +591,7 @@ export default function SubscriptionPage() {
           <button
             type="button"
             onClick={() => setShowPolicy(true)}
-            className="inline-flex items-center gap-2 rounded-full border border-gray-200/80 bg-white/90 dark:bg-gray-900/60 dark:border-gray-700 px-3.5 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 shadow-sm hover:border-[#DC2626]/30 hover:bg-white dark:hover:bg-gray-900 transition-colors"
+            className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white px-3.5 py-2 text-xs font-semibold text-black shadow-sm"
           >
             <Info className="h-3.5 w-3.5 text-[#DC2626]" />
             7-day cancellation
@@ -479,7 +600,7 @@ export default function SubscriptionPage() {
             href={WHATSAPP_SUPPORT}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 rounded-full border border-emerald-200/80 bg-emerald-50/90 dark:bg-emerald-950/40 dark:border-emerald-800/50 px-3.5 py-2 text-xs font-semibold text-emerald-800 dark:text-emerald-200 shadow-sm hover:bg-emerald-100/90 dark:hover:bg-emerald-900/30 transition-colors"
+            className="inline-flex items-center gap-2 rounded-full border border-[#DC2626]/20 bg-white px-3.5 py-2 text-xs font-semibold text-[#DC2626] shadow-sm"
           >
             <MessageCircle className="h-3.5 w-3.5" />
             WhatsApp
@@ -487,7 +608,7 @@ export default function SubscriptionPage() {
         </div>
 
         {planPurchased && !showMandatePrompt && (
-          <div className="mb-4 p-3 rounded-lg bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 text-sm">
+          <div className="mb-4 rounded-lg border border-[#DC2626]/10 bg-white p-3 text-sm text-black">
             Plan purchased successfully. You can view it below.
           </div>
         )}
@@ -500,24 +621,24 @@ export default function SubscriptionPage() {
 
 
         {hasActive && primarySubscription ? (
-          <div className="space-y-5 mb-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="space-y-5 mb-12">
             {/* Plan Card */}
-            <section className="relative overflow-hidden rounded-[2.5rem] bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-[0_8px_30px_rgb(0,0,0,0.04)] p-8">
+            <section className="relative overflow-hidden rounded-[2.5rem] border border-black/10 bg-white p-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
                <div className="flex justify-between items-start mb-6">
                  <div>
-                   <h2 className="text-2xl font-black text-gray-900 dark:text-white leading-tight">
+                   <h2 className="text-2xl font-black text-black leading-tight">
                      {totalPurchasedDays > 0 
                        ? `${totalPurchasedDays} Days` 
                        : (primarySubscription.planName?.replace(/ plan$/i, '') || `${primarySubscription.planDays} Days`)}
                    </h2>
-                   <p className="text-sm font-medium text-gray-500 mt-1 italic">
+                   <p className="mt-1 text-sm font-medium italic text-black/60">
                      {primarySubscription.restaurantName || "Nutritious Daily Meals"}
                    </p>
                  </div>
                  <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${
                    primarySubscription.status === 'active' 
-                   ? 'bg-[#7CFCD5] text-[#1E3A34]' 
-                   : 'bg-amber-100 text-amber-800'
+                   ? 'bg-[#DC2626] text-white' 
+                   : 'bg-black text-white'
                  }`}>
                    {primarySubscription.status}
                  </span>
@@ -528,31 +649,31 @@ export default function SubscriptionPage() {
                    <span className="text-6xl font-black text-[#DC2626] tabular-nums tracking-tighter">
                      {displayRemainingDays}
                    </span>
-                   <span className="text-xs font-black text-gray-400 uppercase tracking-widest">Days Left</span>
+                   <span className="text-xs font-black uppercase tracking-widest text-black/45">Days Left</span>
                  </div>
                </div>
 
-               <div className="h-2 w-full bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden mb-8">
+               <div className="mb-8 h-2 w-full overflow-hidden rounded-full bg-black/10">
                    <div 
-                    className="h-full bg-[#DC2626] transition-all duration-1000" 
+                    className="h-full bg-[#DC2626]" 
                     style={{ width: `${Math.min(100, Math.max(0, ((typeof displayRemainingDays === 'number' ? displayRemainingDays : 0) / (totalPurchasedDays > 0 ? totalPurchasedDays : (primarySubscription.planDays || 30))) * 100))}%` }} 
                   />
                </div>
 
-               <div className="flex items-center justify-between border-t border-gray-100 dark:border-gray-800 pt-6">
+               <div className="flex items-center justify-between border-t border-black/10 pt-6">
                  <div>
-                   <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 leading-none">Valid Until</p>
-                   <p className="text-sm font-black text-gray-900 dark:text-white leading-none">
+                   <p className="mb-1 text-[10px] font-black uppercase leading-none tracking-widest text-black/45">Valid Until</p>
+                   <p className="text-sm font-black leading-none text-black">
                      {displayEndDate}
                    </p>
                  </div>
                  <Button 
                    variant={dashboard?.cancellationRequestedAt ? "outline" : "default"}
                    onClick={dashboard?.cancellationRequestedAt ? () => {} : () => navigate("/subscription/plans")}
-                   className={`h-12 px-8 rounded-2xl font-black text-sm transition-transform active:scale-95 ${
+                   className={`h-12 px-8 rounded-2xl font-black text-sm ${
                      dashboard?.cancellationRequestedAt 
-                     ? "border-red-200 text-red-500" 
-                     : "bg-[#DC2626] hover:bg-[#B91C1C] text-white shadow-lg shadow-red-500/20"
+                     ? "border-[#DC2626] bg-white text-[#DC2626]" 
+                     : "bg-[#DC2626] text-white hover:bg-[#B91C1C]"
                    }`}
                  >
                    {dashboard?.cancellationRequestedAt ? "Cancellation Pending" : "Extend Plan"}
@@ -561,9 +682,9 @@ export default function SubscriptionPage() {
             </section>
 
             {/* Wallet Card */}
-            <div className="bg-[#F8F8F8] dark:bg-gray-900 rounded-[2rem] p-6 flex items-center justify-between border border-transparent dark:border-gray-800">
+            <div className="flex items-center justify-between rounded-[2rem] border border-black/10 bg-white p-6">
                <div className="flex items-center gap-4">
-                 <div className="h-12 w-12 rounded-xl bg-red-100 dark:bg-red-900/20 flex items-center justify-center">
+                 <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-red-50">
                     <div className="h-8 w-8 rounded-lg bg-[#DC143C] flex items-center justify-center text-white">
                        <div className="h-4 w-4 border-2 border-white rounded-[2px] flex items-center justify-center">
                           <div className="h-1 w-2 bg-white rounded-full translate-x-1" />
@@ -571,25 +692,25 @@ export default function SubscriptionPage() {
                     </div>
                  </div>
                  <div>
-                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-0.5">Wallet Balance</p>
-                    <p className="text-2xl font-black text-gray-900 dark:text-white">
+                    <p className="mb-0.5 text-[10px] font-black uppercase tracking-widest text-black/45">Wallet Balance</p>
+                    <p className="text-2xl font-black text-black">
                        ₹{walletBalance != null ? Number(walletBalance).toFixed(2) : "0.00"}
                     </p>
                  </div>
                </div>
-               <Link to="/wallet" className="text-xs font-black text-[#DC2626] uppercase tracking-widest hover:underline">
+               <Link to="/wallet" className="text-xs font-black uppercase tracking-widest text-[#DC2626]">
                  Add Money
                </Link>
             </div>
 
             {/* Deliveries Card */}
-            <Link to="/subscription/manage" className="bg-white dark:bg-gray-900 rounded-[2rem] p-6 flex items-center gap-5 border border-gray-100 dark:border-gray-800 shadow-sm transition-transform active:scale-[0.98]">
-               <div className="h-14 w-14 rounded-full bg-[#E6F3F1] flex items-center justify-center text-[#2D7A6E]">
+            <Link to="/subscription/manage" className="flex items-center gap-5 rounded-[2rem] border border-black/10 bg-white p-6 shadow-sm">
+               <div className="flex h-14 w-14 items-center justify-center rounded-full bg-red-50 text-[#DC2626]">
                   <Truck className="h-6 w-6" strokeWidth={2.5} />
                </div>
                 <div>
-                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-0.5">Remaining Deliveries</p>
-                   <p className="text-lg font-black text-gray-900 dark:text-white">
+                  <p className="mb-0.5 text-[10px] font-black uppercase tracking-widest text-black/45">Remaining Deliveries</p>
+                   <p className="text-lg font-black text-black">
                      {remainingDeliveries} Meals Total
                    </p>
                 </div>
@@ -598,21 +719,21 @@ export default function SubscriptionPage() {
             {/* Recent Activity */}
             <div className="pt-4">
                <div className="flex items-center justify-between mb-4">
-                 <h3 className="text-xl font-extrabold text-gray-900 dark:text-white">Recent Activity</h3>
-                 <Link to="/orders" className="text-[10px] font-black text-gray-400 uppercase tracking-widest hover:text-[#DC2626]">View All</Link>
+                 <h3 className="text-xl font-extrabold text-black">Recent Activity</h3>
+                 <Link to="/orders" className="text-[10px] font-black uppercase tracking-widest text-black/45">View All</Link>
                </div>
                <div className="space-y-3">
                  {recentActivity.length > 0 ? recentActivity.map((activity) => (
-                   <div key={activity.id} className="bg-[#F8F8F8] dark:bg-gray-900 rounded-3xl p-5 flex items-center justify-between border border-transparent dark:border-gray-800">
+                   <div key={activity.id} className="flex items-center justify-between rounded-3xl border border-black/10 bg-white p-5">
                     <div className="flex items-center gap-4">
-                       <div className={`h-10 w-10 rounded-full bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 flex items-center justify-center ${
+                       <div className={`flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white ${
                          activity.icon === 'delivered'
-                           ? 'text-emerald-500'
+                           ? 'text-[#DC2626]'
                            : activity.icon === 'plan'
                              ? 'text-[#DC2626]'
-                             : activity.icon === 'paused'
-                               ? 'text-amber-500'
-                               : 'text-sky-500'
+                           : activity.icon === 'paused'
+                               ? 'text-black'
+                               : 'text-black'
                        }`}>
                           {activity.icon === 'delivered' ? (
                             <Check className="h-5 w-5" strokeWidth={3} />
@@ -627,21 +748,21 @@ export default function SubscriptionPage() {
                           )}
                        </div>
                        <div>
-                          <p className="text-sm font-black text-gray-900 dark:text-white leading-tight capitalize">
+                          <p className="text-sm font-black leading-tight capitalize text-black">
                             {activity.title}
                           </p>
-                          <p className="text-[10px] font-bold text-gray-400 mt-1 leading-none">
+                          <p className="mt-1 text-[10px] font-bold leading-none text-black/45">
                             {activity.subtitle}
                           </p>
                        </div>
                     </div>
-                    <span className="text-xs font-black text-gray-900 dark:text-white uppercase tracking-widest">
+                    <span className="text-xs font-black uppercase tracking-widest text-black">
                       {activity.value}
                     </span>
                   </div>
                  )) : (
-                   <div className="bg-[#F8F8F8] dark:bg-gray-900 rounded-3xl p-8 text-center border border-dashed border-gray-200 dark:border-gray-800">
-                      <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">No recent subscription activity</p>
+                   <div className="rounded-3xl border border-dashed border-black/15 bg-white p-8 text-center">
+                      <p className="text-xs font-bold uppercase tracking-widest text-black/45">No recent subscription activity</p>
                    </div>
                  )}
                </div>
@@ -652,18 +773,18 @@ export default function SubscriptionPage() {
               href={WHATSAPP_SUPPORT}
               target="_blank"
               rel="noopener noreferrer"
-              className="bg-[#F0FAF7] dark:bg-[#0D2A24] rounded-3xl p-6 flex items-center justify-between border border-[#E0F2EE] dark:border-[#1E3A34] transition-transform active:scale-[0.98]"
+              className="flex items-center justify-between rounded-3xl border border-black/10 bg-white p-6"
             >
                <div className="flex items-center gap-5">
-                 <div className="h-14 w-14 rounded-full bg-[#24D366] flex items-center justify-center text-white shadow-lg shadow-green-200/50">
+                 <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[#DC2626] text-white">
                     <MessageCircle className="h-7 w-7 fill-white" strokeWidth={1} />
                  </div>
                  <div>
-                    <p className="font-extrabold text-gray-900 dark:text-white leading-tight">Need any help?</p>
-                    <p className="text-[11px] font-bold text-gray-500 mt-1">Chat with us on WhatsApp</p>
+                    <p className="font-extrabold leading-tight text-black">Need any help?</p>
+                    <p className="mt-1 text-[11px] font-bold text-black/60">Chat with us on WhatsApp</p>
                  </div>
                </div>
-               <ChevronRight className="h-5 w-5 text-gray-400" />
+               <ChevronRight className="h-5 w-5 text-[#DC2626]" />
             </a>
           </div>
         ) : (
@@ -684,13 +805,13 @@ export default function SubscriptionPage() {
       {/* Payment success popup - shown right after purchase */}
       <Dialog open={showMandatePrompt} onOpenChange={setShowMandatePrompt}>
         <DialogContent className="sm:max-w-md rounded-3xl p-0 overflow-hidden border-0">
-          <div className="bg-gradient-to-b from-emerald-50 to-white dark:from-emerald-950/30 dark:to-gray-900 p-6">
-            <div className="mx-auto mb-4 h-14 w-14 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-200/60">
+          <div className="bg-white p-6">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[#DC2626] text-white">
               <Check className="h-7 w-7" strokeWidth={3} />
             </div>
             <DialogHeader>
-              <DialogTitle className="text-center text-2xl font-black text-gray-900 dark:text-white">Payment Successful</DialogTitle>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
+              <DialogTitle className="text-center text-2xl font-black text-black">Payment Successful</DialogTitle>
+              <p className="text-sm text-black/60">
                 Your subscription plan is active now. You can manage auto-pay anytime from subscription settings.
               </p>
             </DialogHeader>

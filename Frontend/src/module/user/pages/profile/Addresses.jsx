@@ -11,6 +11,7 @@ export default function Addresses() {
   const { openLocationSelector } = useLocationSelector()
 
   const formatAddressLine = (addr) => {
+    if (addr.fullAddress) return addr.fullAddress
     const parts = [addr.street, addr.additionalDetails, addr.city, addr.state, addr.zipCode].filter(Boolean)
     return parts.join(", ") || "—"
   }

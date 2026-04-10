@@ -267,6 +267,10 @@ export default function SubscriptionPlanDetailPage() {
   const hasPositivePrice = isDynamicPlan ? (priceBreakdown?.totalPrice > 0) : (plan.price > 0)
   const mealsReady = hasAnyMealSelection(displayItems)
   const canPay = !alreadyPurchased && hasPositivePrice && mealsReady
+  const mealRestaurantId =
+    displayItems?.find((item) => item?.restaurantId)?.restaurantId || "ziggybites"
+  const mealRestaurantName =
+    displayItems?.find((item) => item?.restaurantName)?.restaurantName || "Ziggybites"
   const payLabel = paying
     ? "Redirecting to Razorpay…"
     : !isModuleAuthenticated("user")
@@ -319,8 +323,8 @@ export default function SubscriptionPlanDetailPage() {
               /** Creates / updates meal delivery subscription (UserSubscription) for pause/skip — same flow as Edit meal → Pay plan */
               mealItems: displayItems,
               deliverySlot: "veg",
-              mealRestaurantId: "ziggybites",
-              mealRestaurantName: "Ziggybites",
+              mealRestaurantId,
+              mealRestaurantName,
             })
             navigate("/subscription", { state: { planPurchased: true, showMandatePrompt: true } })
           } catch (verifyErr) {

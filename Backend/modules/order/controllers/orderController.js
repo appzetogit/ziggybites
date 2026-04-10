@@ -574,14 +574,14 @@ export const createOrder = async (req, res) => {
         try {
           await notifyRestaurantNewOrder(order, assignedRestaurantId, "wallet");
           logger.info(
-            "✅ Wallet payment order notification sent to restaurant",
+            "âœ… Wallet payment order notification sent to restaurant",
             {
               orderId: order.orderId,
             },
           );
         } catch (notifyError) {
           logger.error(
-            "❌ Error notifying restaurant about wallet payment order:",
+            "âŒ Error notifying restaurant about wallet payment order:",
             notifyError,
           );
         }
@@ -662,7 +662,6 @@ export const createOrder = async (req, res) => {
       };
       await order.save();
 
-      // Calculate order settlement and hold escrow for COD payment
       await confirmOrderSettlement(order, userId);
 
       // Notify restaurant about new COD order via Socket.IO (non-blocking)
@@ -672,14 +671,14 @@ export const createOrder = async (req, res) => {
           assignedRestaurantId,
           "cash",
         );
-        logger.info("✅ COD order notification sent to restaurant", {
+        logger.info("âœ… COD order notification sent to restaurant", {
           orderId: order.orderId,
           restaurantId: assignedRestaurantId,
           notifyRestaurantResult,
         });
       } catch (notifyError) {
         logger.error(
-          "❌ Error notifying restaurant about COD order (order still created):",
+          "âŒ Error notifying restaurant about COD order (order still created):",
           {
             error: notifyError.message,
             stack: notifyError.stack,
@@ -907,7 +906,6 @@ export const verifyOrderPayment = async (req, res) => {
       notifyUserOrderStatus(order);
     } catch (_) {}
 
-    // Calculate order settlement and hold escrow
     await confirmOrderSettlement(order, userId);
 
     // Notify restaurant about confirmed order (payment verified)
@@ -917,7 +915,7 @@ export const verifyOrderPayment = async (req, res) => {
 
       // CRITICAL: Log detailed info before notification
       logger.info(
-        "🔔 CRITICAL: Attempting to notify restaurant about confirmed order:",
+        "ðŸ”” CRITICAL: Attempting to notify restaurant about confirmed order:",
         {
           orderId: order.orderId,
           orderMongoId: order._id.toString(),
@@ -938,7 +936,7 @@ export const verifyOrderPayment = async (req, res) => {
       // Verify order has restaurantId before notifying
       if (!restaurantId) {
         logger.error(
-          "❌ CRITICAL: Cannot notify restaurant - order.restaurantId is missing!",
+          "âŒ CRITICAL: Cannot notify restaurant - order.restaurantId is missing!",
           {
             orderId: order.orderId,
             order: {
@@ -953,7 +951,7 @@ export const verifyOrderPayment = async (req, res) => {
 
       // Verify order has restaurantName before notifying
       if (!restaurantName) {
-        logger.warn("⚠️ Order restaurantName is missing:", {
+        logger.warn("âš ï¸ Order restaurantName is missing:", {
           orderId: order.orderId,
           restaurantId: restaurantId,
         });
@@ -965,7 +963,7 @@ export const verifyOrderPayment = async (req, res) => {
       );
 
       logger.info(
-        `✅ Successfully notified restaurant about confirmed order:`,
+        `âœ… Successfully notified restaurant about confirmed order:`,
         {
           orderId: order.orderId,
           restaurantId: restaurantId,
@@ -975,7 +973,7 @@ export const verifyOrderPayment = async (req, res) => {
       );
     } catch (notificationError) {
       logger.error(
-        `❌ CRITICAL: Error notifying restaurant after payment verification:`,
+        `âŒ CRITICAL: Error notifying restaurant after payment verification:`,
         {
           error: notificationError.message,
           stack: notificationError.stack,

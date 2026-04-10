@@ -150,6 +150,24 @@ export function NearestRestaurantProvider({ children }) {
   }, [location]);
 
   useEffect(() => {
+    const handleLocationUpdated = (event) => {
+      const nextLocation = event?.detail || null;
+      if (!nextLocation) return;
+
+      setUserLocation(nextLocation);
+      setStoredJson(USER_LOCATION_STORAGE_KEY, nextLocation);
+      setNearestRestaurant(null);
+      setStoredJson(NEAREST_RESTAURANT_STORAGE_KEY, null);
+      lastFetchedLocationRef.current = null;
+      fetchNearestRestaurant(nextLocation, { force: true });
+    };
+
+    window.addEventListener("userLocationUpdated", handleLocationUpdated);
+    return () =>
+      window.removeEventListener("userLocationUpdated", handleLocationUpdated);
+  }, [fetchNearestRestaurant]);
+
+  useEffect(() => {
     const currentCoords = getCoordinates(location);
 
     if (!currentCoords) {

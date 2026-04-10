@@ -379,10 +379,23 @@ export const getUserAddresses = asyncHandler(async (req, res) => {
  */
 export const addUserAddress = asyncHandler(async (req, res) => {
   try {
-    const { label, street, additionalDetails, city, state, zipCode, latitude, longitude, isDefault } = req.body;
+    const {
+      label,
+      street,
+      additionalDetails,
+      fullAddress,
+      city,
+      state,
+      zipCode,
+      phone,
+      zoneId,
+      latitude,
+      longitude,
+      isDefault,
+    } = req.body;
 
-    if (!street || !city || !state) {
-      return errorResponse(res, 400, 'Street, city, and state are required');
+    if (!fullAddress && !street && !city && !state) {
+      return errorResponse(res, 400, 'Address details are required');
     }
 
     const user = await User.findById(req.user._id);
@@ -394,11 +407,14 @@ export const addUserAddress = asyncHandler(async (req, res) => {
     // Prepare address object
     const newAddress = {
       label: label || 'Other',
-      street,
+      street: street || '',
       additionalDetails: additionalDetails || '',
-      city,
-      state,
+      fullAddress: fullAddress || [street, additionalDetails, city, state, zipCode].filter(Boolean).join(', '),
+      city: city || '',
+      state: state || '',
       zipCode: zipCode || '',
+      phone: phone || '',
+      zoneId: zoneId || '',
       isDefault: isDefault === true || (user.addresses || []).length === 0
     };
 
@@ -452,7 +468,20 @@ export const addUserAddress = asyncHandler(async (req, res) => {
 export const updateUserAddress = asyncHandler(async (req, res) => {
   try {
     const { id } = req.params;
-    const { label, street, additionalDetails, city, state, zipCode, latitude, longitude, isDefault } = req.body;
+    const {
+      label,
+      street,
+      additionalDetails,
+      fullAddress,
+      city,
+      state,
+      zipCode,
+      phone,
+      zoneId,
+      latitude,
+      longitude,
+      isDefault,
+    } = req.body;
 
     const user = await User.findById(req.user._id);
 
@@ -469,9 +498,12 @@ export const updateUserAddress = asyncHandler(async (req, res) => {
     if (label !== undefined) address.label = label;
     if (street !== undefined) address.street = street;
     if (additionalDetails !== undefined) address.additionalDetails = additionalDetails;
+    if (fullAddress !== undefined) address.fullAddress = fullAddress;
     if (city !== undefined) address.city = city;
     if (state !== undefined) address.state = state;
     if (zipCode !== undefined) address.zipCode = zipCode;
+    if (phone !== undefined) address.phone = phone;
+    if (zoneId !== undefined) address.zoneId = zoneId;
 
     // Update location coordinates if provided
     if (latitude !== undefined && longitude !== undefined) {

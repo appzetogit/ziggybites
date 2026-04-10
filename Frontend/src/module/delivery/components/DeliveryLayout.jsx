@@ -2,6 +2,8 @@ import { useLocation } from "react-router-dom"
 import { useEffect, useState } from "react"
 import BottomNavigation from "./BottomNavigation"
 import { getUnreadDeliveryNotificationCount } from "../utils/deliveryNotifications"
+import { isModuleAuthenticated } from "@/lib/utils/auth"
+import { registerFcmTokenForDelivery } from "@/lib/notifications/fcmWeb"
 
 export default function DeliveryLayout({
   children,
@@ -14,6 +16,28 @@ export default function DeliveryLayout({
   const [requestBadgeCount, setRequestBadgeCount] = useState(() =>
     getUnreadDeliveryNotificationCount()
   )
+
+  useEffect(() => {
+    let timeoutId = null
+
+    const tryRegisterFcm = () => {
+      if (!isModuleAuthenticated("delivery")) return
+
+      if (timeoutId) clearTimeout(timeoutId)
+      timeoutId = setTimeout(() => {
+        registerFcmTokenForDelivery().catch(() => {})
+        timeoutId = null
+      }, 300)
+    }
+
+    tryRegisterFcm()
+    window.addEventListener("deliveryAuthChanged", tryRegisterFcm)
+
+    return () => {
+      window.removeEventListener("deliveryAuthChanged", tryRegisterFcm)
+      if (timeoutId) clearTimeout(timeoutId)
+    }
+  }, [])
 
   // Update badge count when location changes
   useEffect(() => {
@@ -58,4 +82,3 @@ export default function DeliveryLayout({
     </>
   )
 }
-
