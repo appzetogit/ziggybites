@@ -12,23 +12,58 @@ const firebaseConfig = {
   appId: "",
 };
 
-async function loadFirebaseConfig() {
+function applyFirebaseConfig(data = {}) {
+  data = data || {};
+
+  firebaseConfig.apiKey = data.apiKey || data.FIREBASE_API_KEY || "";
+  firebaseConfig.authDomain = data.authDomain || data.FIREBASE_AUTH_DOMAIN || "";
+  firebaseConfig.projectId = data.projectId || data.FIREBASE_PROJECT_ID || "";
+  firebaseConfig.storageBucket = data.storageBucket || data.FIREBASE_STORAGE_BUCKET || "";
+  firebaseConfig.messagingSenderId =
+    data.messagingSenderId || data.FIREBASE_MESSAGING_SENDER_ID || "";
+  firebaseConfig.appId = data.appId || data.FIREBASE_APP_ID || "";
+
+  return Boolean(firebaseConfig.projectId && firebaseConfig.appId);
+}
+
+async function fetchJson(url) {
   try {
-    const response = await fetch("/firebase-config.json", { cache: "no-store" });
-    if (!response.ok) return false;
-
-    const data = await response.json();
-    firebaseConfig.apiKey = data.apiKey || "";
-    firebaseConfig.authDomain = data.authDomain || "";
-    firebaseConfig.projectId = data.projectId || "";
-    firebaseConfig.storageBucket = data.storageBucket || "";
-    firebaseConfig.messagingSenderId = data.messagingSenderId || "";
-    firebaseConfig.appId = data.appId || "";
-
-    return Boolean(firebaseConfig.projectId && firebaseConfig.appId);
+    const response = await fetch(url, { cache: "no-store" });
+    if (!response.ok) return null;
+    return response.json();
   } catch {
-    return false;
+    return null;
   }
+}
+
+function getRuntimeEnvUrls() {
+  const urls = ["/api/env/public"];
+  const host = self.location.hostname || "";
+  const protocol = self.location.protocol || "https:";
+
+  if (host.includes("foods.appzeto.com")) {
+    urls.push(`${protocol}//api.foods.appzeto.com/api/env/public`);
+  } else if (host.includes("appzeto.com")) {
+    urls.push(`${protocol}//api.${host}/api/env/public`);
+  }
+
+  return [...new Set(urls)];
+}
+
+async function loadFirebaseConfig() {
+  const staticConfig = await fetchJson("/firebase-config.json");
+  if (applyFirebaseConfig(staticConfig)) {
+    return true;
+  }
+
+  for (const url of getRuntimeEnvUrls()) {
+    const envResponse = await fetchJson(url);
+    if (applyFirebaseConfig(envResponse?.data || envResponse)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function buildNotificationFromPayload(payload) {

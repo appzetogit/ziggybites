@@ -3,10 +3,46 @@
  * Centralized configuration for API base URL and endpoints
  */
 
-// Get API base URL from environment variable or use default
-// IMPORTANT: Backend runs on port 5000, frontend on port 5173
-let rawApiBaseUrl =
-  import.meta.env.VITE_API_BASE_URL || "http://localhost:5000/api";
+function isLocalHostname(hostname) {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "";
+}
+
+function isLocalApiUrl(url) {
+  return /\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(url || "");
+}
+
+function inferRuntimeApiBaseUrl(configuredUrl) {
+  const fallbackLocalUrl = "http://localhost:5000/api";
+  const trimmedUrl = typeof configuredUrl === "string" ? configuredUrl.trim() : "";
+
+  if (typeof window === "undefined") {
+    return trimmedUrl || fallbackLocalUrl;
+  }
+
+  const frontendHost = window.location.hostname;
+  const frontendProtocol = window.location.protocol || "https:";
+  const frontendIsLocal = isLocalHostname(frontendHost);
+  const shouldInferProductionUrl =
+    !frontendIsLocal && (!trimmedUrl || isLocalApiUrl(trimmedUrl));
+
+  if (!shouldInferProductionUrl) {
+    return trimmedUrl || fallbackLocalUrl;
+  }
+
+  if (frontendHost.includes("foods.appzeto.com")) {
+    return `${frontendProtocol}//api.foods.appzeto.com/api`;
+  }
+
+  if (frontendHost.includes("appzeto.com")) {
+    return `${frontendProtocol}//api.${frontendHost}/api`;
+  }
+
+  return `${window.location.origin}/api`;
+}
+
+// Get API base URL from environment variable or infer it at runtime for deployed builds.
+// IMPORTANT: Backend runs on port 5000 locally, frontend on port 5173.
+let rawApiBaseUrl = inferRuntimeApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
 
 // Normalize URL - fix common issues like double slashes, missing protocols
 if (rawApiBaseUrl && typeof rawApiBaseUrl === "string") {

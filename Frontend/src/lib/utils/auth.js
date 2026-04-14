@@ -181,6 +181,60 @@ export function clearAuthData() {
  * @param {Object} [options] - { rememberMe: boolean } for user module; when false, use sessionStorage (session only)
  * @throws {Error} If storage is not available or quota exceeded
  */
+const fcmEnabledModules = new Set(["user", "restaurant", "delivery"]);
+
+function getFcmRegistrationFunction(fcmModule, module) {
+  if (module === "restaurant") return fcmModule.registerFcmTokenForRestaurant;
+  if (module === "delivery") return fcmModule.registerFcmTokenForDelivery;
+  return fcmModule.registerFcmTokenForLoggedInUser;
+}
+
+export function scheduleFcmTokenRegistration(module, options = {}) {
+  if (!fcmEnabledModules.has(module)) return;
+  if (typeof window === "undefined") return;
+
+  const attempts = options.attempts ?? 4;
+  const delayMs = options.delayMs ?? 400;
+  const retryDelayMs = options.retryDelayMs ?? 2500;
+
+  const run = async (attempt = 1) => {
+    if (!isModuleAuthenticated(module)) {
+      console.warn(`[FCM][${module}] Skipping token sync because module is not authenticated`);
+      return;
+    }
+
+    try {
+      const fcmModule = await import("../notifications/fcmWeb.js");
+      const register = getFcmRegistrationFunction(fcmModule, module);
+      const token = await register();
+
+      if (token) {
+        console.log(`[FCM][${module}] Token generated and synced with backend`);
+        return;
+      }
+
+      const permission =
+        typeof Notification === "undefined" ? "unsupported" : Notification.permission;
+
+      console.warn(`[FCM][${module}] Token sync did not return a token`, {
+        attempt,
+        permission,
+      });
+
+      if (attempt < attempts && permission !== "denied" && permission !== "unsupported") {
+        window.setTimeout(() => run(attempt + 1), retryDelayMs);
+      }
+    } catch (error) {
+      console.error(`[FCM][${module}] Token sync failed`, error);
+      if (attempt < attempts) {
+        window.setTimeout(() => run(attempt + 1), retryDelayMs);
+      }
+    }
+  };
+
+  window.setTimeout(() => run(1), delayMs);
+}
+
 export function setAuthData(module, token, user, options = {}) {
   try {
     if (typeof Storage === "undefined" || !localStorage) {
@@ -219,6 +273,7 @@ export function setAuthData(module, token, user, options = {}) {
       throw new Error(`Token storage verification failed for module: ${module}`);
     }
     console.log(`[setAuthData] Successfully stored auth for ${module} (${useSession ? "session" : "persistent"})`);
+    scheduleFcmTokenRegistration(module);
   } catch (error) {
     // If quota exceeded, try to clear some space
     if (error.name === "QuotaExceededError" || error.code === 22) {
@@ -241,6 +296,7 @@ export function setAuthData(module, token, user, options = {}) {
         if (storedToken !== token) {
           throw new Error("Token storage failed even after clearing space");
         }
+        scheduleFcmTokenRegistration(module);
       } catch (retryError) {
         console.error(
           "Failed to store auth data after clearing space:",

@@ -54,6 +54,28 @@ function getNotificationDebounceKey(payload, title) {
   return `fcm_notif_shown_${tag}`;
 }
 
+function waitForServiceWorkerActivation(registration) {
+  if (registration.active) {
+    return Promise.resolve(registration);
+  }
+
+  const worker = registration.installing || registration.waiting;
+  if (!worker) {
+    return Promise.resolve(registration);
+  }
+
+  return new Promise((resolve) => {
+    const timeoutId = setTimeout(() => resolve(registration), 5000);
+
+    worker.addEventListener("statechange", () => {
+      if (worker.state === "activated") {
+        clearTimeout(timeoutId);
+        resolve(registration);
+      }
+    });
+  });
+}
+
 async function ensureServiceWorkerRegistered() {
   if (typeof window === "undefined" || !("serviceWorker" in navigator)) {
     console.warn("[FCM] Service Worker API not available");
@@ -72,8 +94,7 @@ async function ensureServiceWorkerRegistered() {
           }
         }
 
-        await navigator.serviceWorker.ready;
-        return registration;
+        return waitForServiceWorkerActivation(registration);
       })
       .catch((error) => {
         serviceWorkerRegistrationPromise = null;
