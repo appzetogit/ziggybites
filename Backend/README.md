@@ -1,6 +1,6 @@
-# Tastizo Food Backend API
+# ZiggyBites Food Backend API
 
-Backend API for Tastizo Food Delivery Platform built with Node.js, Express, and MongoDB.
+Backend API for ZiggyBites Food Delivery Platform built with Node.js, Express, and MongoDB.
 
 ## Features
 

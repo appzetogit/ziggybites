@@ -200,7 +200,7 @@ function BookingDetailsModal({ booking, onClose, onBookingUpdate }) {
                                                     return
                                                 }
                                                 onClose?.()
-                                                const companyName = await getCompanyNameAsync().catch(() => "Tastizo")
+                                                const companyName = await getCompanyNameAsync().catch(() => "ZiggyBites")
                                                 await initRazorpayPayment({
                                                     key: data.key_id,
                                                     amount: data.amount,

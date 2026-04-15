@@ -241,4 +241,4 @@ Backend automatically multiple fallback methods try करता है:
 ---
 
 **Last Updated**: 2024
-**Maintained By**: Tastizo Development Team
+**Maintained By**: ZiggyBites Development Team

@@ -37,7 +37,7 @@ const dayTimingSchema = Joi.object({
 
 const upsertOutletTimingsSchema = Joi.object({
   outletType: Joi.string()
-    .valid("Tastizo delivery", "Dining", "Takeaway", "All")
+    .valid("ZiggyBites delivery", "Dining", "Takeaway", "All")
     .optional(),
   timings: Joi.array().items(dayTimingSchema).length(7).optional(),
 });

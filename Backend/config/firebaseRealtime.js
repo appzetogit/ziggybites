@@ -7,7 +7,7 @@
  * 1. Firebase Console → Project Settings → Service Accounts → Generate new private key
  * 2. Save the JSON as Backend/config/serviceAccountKey.json (or Backend/firebaseconfig.json)
  * 3. Add to .gitignore: serviceAccountKey.json, firebaseconfig.json
- * 4. Set in .env (optional): FIREBASE_DATABASE_URL (default: tastizoo Asia Southeast 1)
+ * 4. Set in .env (optional): FIREBASE_DATABASE_URL (default: ziggybites Asia Southeast 1)
  */
 
 import admin from "firebase-admin";
@@ -40,7 +40,7 @@ function getCredentialsSync() {
   const cwd = process.cwd();
   const pathsToTry = [
     path.resolve(cwd, "config", "serviceAccountKey.json"),
-    path.resolve(cwd, "config", "tastizoo-default-rtdb-firebase-adminsdk.json"),
+    path.resolve(cwd, "config", "ziggybites-default-rtdb-firebase-adminsdk.json"),
     path.resolve(
       cwd,
       "config",

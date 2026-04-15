@@ -679,7 +679,7 @@ export default function RestaurantOnboarding() {
   const fillDummyData = () => {
     if (step === 1) {
       setStep1({
-        restaurantName: "Tastizo Premium Bakes",
+        restaurantName: "ZiggyBites Premium Bakes",
         ownerName: "Akash Sharma",
         ownerEmail: "akash.sharma@example.com",
         ownerPhone: "9876543210",
@@ -715,7 +715,7 @@ export default function RestaurantOnboarding() {
         panImage: "https://res.cloudinary.com/dbv5id2cy/image/upload/v1707212003/pan_placeholder.jpg",
         gstRegistered: true,
         gstNumber: "07ABCDE1234F1Z5",
-        gstLegalName: "Tastizo Premium Ventures",
+        gstLegalName: "ZiggyBites Premium Ventures",
         gstAddress: "Sector 18, Noida, Uttar Pradesh 201301",
         gstImage: "https://res.cloudinary.com/dbv5id2cy/image/upload/v1707212004/gst_placeholder.jpg",
         fssaiNumber: "12345678901234",
@@ -1816,7 +1816,7 @@ export default function RestaurantOnboarding() {
             <div className="w-8 h-8 bg-black rounded-lg flex items-center justify-center">
               <Sparkles className="w-4 h-4 text-white" />
             </div>
-            <div className="text-sm font-bold text-black tracking-tight">Tastizo Backend</div>
+            <div className="text-sm font-bold text-black tracking-tight">ZiggyBites Backend</div>
           </div>
           <div className="flex items-center gap-3">
             {import.meta.env.DEV && (

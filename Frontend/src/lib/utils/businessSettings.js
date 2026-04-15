@@ -87,7 +87,7 @@ export const getCachedSettings = () => {
  */
 export const getCompanyName = () => {
   const cached = getCachedSettings();
-  return cached?.companyName || "Tastizo";
+  return cached?.companyName || "ZiggyBites";
 };
 
 /**
@@ -97,8 +97,8 @@ export const getCompanyName = () => {
 export const getCompanyNameAsync = async () => {
   try {
     const settings = await loadBusinessSettings(); // Assuming fetchBusinessSettingsCached was a typo and loadBusinessSettings is intended
-    return settings?.companyName || "Tastizo";
+    return settings?.companyName || "ZiggyBites";
   } catch {
-    return "Tastizo";
+    return "ZiggyBites";
   }
 };

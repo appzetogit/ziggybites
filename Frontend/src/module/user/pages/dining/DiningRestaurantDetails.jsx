@@ -60,8 +60,8 @@ export default function DiningRestaurantDetails() {
         if (!restaurant) return
 
         const shareUrl = window.location.href
-        const shareTitle = `${restaurant.name || "Dining"} - Tastizo`
-        const shareText = `Book your table at ${restaurant.name || "this restaurant"} on Tastizo.`
+        const shareTitle = `${restaurant.name || "Dining"} - ZiggyBites`
+        const shareText = `Book your table at ${restaurant.name || "this restaurant"} on ZiggyBites.`
 
         if (navigator.share) {
             try {
@@ -386,7 +386,7 @@ export default function DiningRestaurantDetails() {
                 <div className="bg-[#FFF8E8] border border-[#F5D8A0] rounded-xl p-4 relative overflow-hidden">
                     <div className="flex flex-col items-center justify-center text-center z-10 relative">
                         <span className="text-2xl font-black text-[#2D2D2D] tracking-tight">Book your table</span>
-                        <span className="text-sm font-medium text-gray-700 mt-1">Reserve through Tastizo for a smooth dining experience</span>
+                        <span className="text-sm font-medium text-gray-700 mt-1">Reserve through ZiggyBites for a smooth dining experience</span>
                     </div>
 
                     {/* Decorative Elements */}
@@ -439,7 +439,7 @@ export default function DiningRestaurantDetails() {
                             <>
                                 <p className="text-gray-600 text-sm">Pre-book your table to enjoy dining offers and a seamless experience.</p>
                                 <div className="bg-[#F0FDF4] border border-[#2B9C64]/30 rounded-xl p-4 mt-2">
-                                    <p className="text-sm font-medium text-[#2B9C64]">Reserve through Tastizo for a smooth dining experience.</p>
+                                    <p className="text-sm font-medium text-[#2B9C64]">Reserve through ZiggyBites for a smooth dining experience.</p>
                                 </div>
                             </>
                         )}

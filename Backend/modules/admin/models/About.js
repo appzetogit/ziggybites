@@ -61,7 +61,7 @@ const aboutSchema = new mongoose.Schema(
     appName: {
       type: String,
       required: true,
-      default: "Tastizo",
+      default: "ZiggyBites",
       trim: true,
     },
     version: {

@@ -1,6 +1,16 @@
 const VOICE_RESULT_TIMEOUT_MS = 45000
+const FLUTTER_BRIDGE_READY_TIMEOUT_MS = 1500
 
 let activeBrowserRecognition = null
+
+function isFlutterBridgeAvailable() {
+  if (typeof window === "undefined") return false
+
+  return Boolean(
+    window.flutter_inappwebview &&
+      typeof window.flutter_inappwebview.callHandler === "function",
+  )
+}
 
 function getVoiceSearchChannel() {
   if (typeof window === "undefined") return null
@@ -170,10 +180,9 @@ export async function stopVoiceSearch() {
 export async function requestNativeGoogleSignIn() {
   if (typeof window === "undefined") return null
 
-  if (
-    window.flutter_inappwebview &&
-    typeof window.flutter_inappwebview.callHandler === "function"
-  ) {
+  const isReady = await waitForFlutterInAppWebView()
+
+  if (isReady) {
     try {
       const result = await window.flutter_inappwebview.callHandler("nativeGoogleSignIn")
       return result || { success: false }
@@ -186,10 +195,55 @@ export async function requestNativeGoogleSignIn() {
 }
 
 export function hasFlutterInAppWebView() {
+  return isFlutterBridgeAvailable()
+}
+
+export async function waitForFlutterInAppWebView(
+  timeoutMs = FLUTTER_BRIDGE_READY_TIMEOUT_MS,
+) {
+  if (isFlutterBridgeAvailable()) return true
   if (typeof window === "undefined") return false
 
-  return Boolean(
-    window.flutter_inappwebview &&
-      typeof window.flutter_inappwebview.callHandler === "function",
-  )
+  return await new Promise((resolve) => {
+    let settled = false
+    let pollId = null
+
+    const cleanup = () => {
+      if (pollId) {
+        window.clearInterval(pollId)
+      }
+      window.clearTimeout(timeoutId)
+      window.removeEventListener(
+        "flutterInAppWebViewPlatformReady",
+        handleReadyEvent,
+      )
+    }
+
+    const finish = (value) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      resolve(value)
+    }
+
+    const handleReadyEvent = () => {
+      finish(isFlutterBridgeAvailable())
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      finish(isFlutterBridgeAvailable())
+    }, timeoutMs)
+
+    pollId = window.setInterval(() => {
+      if (isFlutterBridgeAvailable()) {
+        finish(true)
+      }
+    }, 50)
+
+    window.addEventListener(
+      "flutterInAppWebViewPlatformReady",
+      handleReadyEvent,
+      { once: true },
+    )
+  })
 }

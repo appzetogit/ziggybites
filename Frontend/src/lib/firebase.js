@@ -1,6 +1,9 @@
 import { initializeApp, getApps } from "firebase/app";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
-import { hasFlutterInAppWebView, requestNativeGoogleSignIn } from "./mobileBridge";
+import {
+  requestNativeGoogleSignIn,
+  waitForFlutterInAppWebView,
+} from "./mobileBridge";
 
 // Firebase configuration - will be populated from backend
 const firebaseConfig = {
@@ -124,7 +127,7 @@ export async function signInWithGoogleBridge() {
   }
 
   const { GoogleAuthProvider, signInWithCredential, signInWithPopup } = await import("firebase/auth");
-  const isFlutterWebView = hasFlutterInAppWebView();
+  const isFlutterWebView = await waitForFlutterInAppWebView();
 
   if (isFlutterWebView) {
     const nativeResult = await requestNativeGoogleSignIn();

@@ -52,7 +52,7 @@ export default function FoodDetailPage() {
       if (navigator.share) {
         await navigator.share({
           title: foodData.name,
-          text: `Check out this ${foodData.name} on Tastizo!`,
+          text: `Check out this ${foodData.name} on ZiggyBites!`,
           url: window.location.href,
         })
       } else {

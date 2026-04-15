@@ -40,13 +40,13 @@ if (projectId && clientEmail && privateKey) {
 if (databaseUrl) {
   checks.push({ ok: true, msg: `✅ .env: FIREBASE_DATABASE_URL = ${databaseUrl}` });
 } else {
-  checks.push({ ok: true, msg: "⚠️  .env: FIREBASE_DATABASE_URL not set (will use default: tastizoo Asia Southeast 1)" });
+  checks.push({ ok: true, msg: "⚠️  .env: FIREBASE_DATABASE_URL not set (will use default: ziggybites Asia Southeast 1)" });
 }
 
 // 2. Check service account JSON files
 const jsonPaths = [
   path.join(backendRoot, "config", "serviceAccountKey.json"),
-  path.join(backendRoot, "config", "tastizoo-default-rtdb-firebase-adminsdk.json"),
+  path.join(backendRoot, "config", "ziggybites-default-rtdb-firebase-adminsdk.json"),
   path.join(backendRoot, "config", "zomato-607fa-firebase-adminsdk-fbsvc-f5f782c2cc.json"),
   path.join(backendRoot, "firebaseconfig.json"),
 ];

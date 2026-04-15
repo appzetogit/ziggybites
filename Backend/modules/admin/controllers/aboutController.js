@@ -22,7 +22,7 @@ export const getAboutPublic = asyncHandler(async (req, res) => {
         200,
         "About page data retrieved successfully",
         {
-          appName: "Tastizo",
+          appName: "ZiggyBites",
           version: "1.0.0",
           description:
             "Your trusted food delivery partner, bringing delicious meals right to your doorstep. Experience the convenience of ordering from your favorite restaurants with fast, reliable delivery.",
@@ -112,7 +112,7 @@ export const getAbout = asyncHandler(async (req, res) => {
     if (!about) {
       // Create default about page if it doesn't exist
       about = await About.create({
-        appName: "Tastizo",
+        appName: "ZiggyBites",
         version: "1.0.0",
         description:
           "Your trusted food delivery partner, bringing delicious meals right to your doorstep. Experience the convenience of ordering from your favorite restaurants with fast, reliable delivery.",

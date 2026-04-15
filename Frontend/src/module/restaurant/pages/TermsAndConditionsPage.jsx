@@ -214,7 +214,7 @@ export default function TermsAndConditionsPage() {
                 If you have any questions about these Terms and Conditions, please contact us at:
               </p>
               <p className="mt-2">
-                <strong>Email:</strong> legal@tastizo.com<br />
+                <strong>Email:</strong> legal@ziggybites.com<br />
                 <strong>Phone:</strong> +91 (555) 123-4567<br />
                 <strong>Address:</strong> India
               </p>

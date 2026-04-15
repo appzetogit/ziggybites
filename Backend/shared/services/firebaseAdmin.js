@@ -18,7 +18,7 @@ async function resolveServiceAccount() {
   const root = process.cwd();
   const files = [
     path.resolve(root, "config", "serviceAccountKey.json"),
-    path.resolve(root, "config", "tastizoo-default-rtdb-firebase-adminsdk.json"),
+    path.resolve(root, "config", "ziggybites-default-rtdb-firebase-adminsdk.json"),
     path.resolve(root, "config", "zomato-607fa-firebase-adminsdk-fbsvc-f5f782c2cc.json"),
     path.resolve(root, "firebaseconfig.json"),
   ];

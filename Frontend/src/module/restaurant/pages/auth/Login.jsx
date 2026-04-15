@@ -393,7 +393,7 @@ export default function RestaurantLogin() {
 
       {/* Top Section - Logo and Badge */}
       <div className="flex flex-col items-center pt-8 pb-8 px-6">
-        {/* Tastizo Logo */}
+        {/* ZiggyBites Logo */}
         <div>
           <h1
             className="text-3xl italic md:text-4xl tracking-wide font-extrabold text-black"

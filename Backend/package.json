@@ -1,7 +1,7 @@
 {
-  "name": "tastizo-backend",
+  "name": "ziggybites-backend",
   "version": "1.0.0",
-  "description": "Backend API for Tastizo Food Delivery Platform",
+  "description": "Backend API for ZiggyBites Food Delivery Platform",
   "main": "server.js",
   "type": "module",
   "scripts": {

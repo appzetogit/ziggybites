@@ -31,9 +31,9 @@ class SMSHubService {
         await import("../../admin/models/BusinessSettings.js")
       ).default;
       const settings = await BusinessSettings.getSettings();
-      return settings?.companyName || "Tastizo";
+      return settings?.companyName || "ZiggyBites";
     } catch (error) {
-      return "Tastizo";
+      return "ZiggyBites";
     }
   }
 

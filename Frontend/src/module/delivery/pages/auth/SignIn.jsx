@@ -153,7 +153,7 @@ export default function DeliverySignIn() {
     <div className="max-h-screen h-screen bg-white flex flex-col">
       {/* Top Section - Logo and Badge */}
       <div className="flex flex-col items-center pt-8 pb-6 px-6">
-        {/* Tastizo wordmark styled like logo font */}
+        {/* ZiggyBites wordmark styled like logo font */}
         <div>
           <h1 className="text-3xl font-black tracking-tight lowercase text-black">
             {companyName.toLowerCase()}

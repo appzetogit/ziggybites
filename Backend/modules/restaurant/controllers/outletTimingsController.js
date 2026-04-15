@@ -19,7 +19,7 @@ export const getOutletTimings = asyncHandler(async (req, res) => {
   if (!outletTimings) {
     outletTimings = await OutletTimings.create({
       restaurantId,
-      outletType: "Tastizo delivery",
+      outletType: "ZiggyBites delivery",
       timings: [
         {
           day: "Monday",
@@ -95,7 +95,7 @@ export const getOutletTimingsByRestaurantId = asyncHandler(async (req, res) => {
     return successResponse(res, 200, "Outlet timings retrieved successfully", {
       outletTimings: {
         restaurantId,
-        outletType: "Tastizo delivery",
+        outletType: "ZiggyBites delivery",
         timings: [
           {
             day: "Monday",

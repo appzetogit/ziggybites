@@ -17,7 +17,7 @@ import { firebaseAuth, ensureFirebaseInitialized, signInWithGoogleBridge } from 
 import { setAuthData } from "@/lib/utils/auth"
 import { syncSubscriptionDraftAfterUserLogin } from "@/module/user/utils/subscriptionDraftStorage.js"
 import { registerFcmTokenForLoggedInUser } from "@/lib/notifications/fcmWeb"
-import tastizoLogo from "@/assets/tastizologo.png"
+import ziggybitesLogo from "@/assets/ziggybiteslogo.png"
 
 // Common country codes
 const countryCodes = [
@@ -464,7 +464,7 @@ export default function SignIn() {
             src="/image.png"
             alt="ZiggyBites"
             className="w-64 h-auto object-contain"
-            onError={(e) => { e.target.onerror = null; e.target.src = tastizoLogo }}
+            onError={(e) => { e.target.onerror = null; e.target.src = ziggybitesLogo }}
           />
         </div>
        </div>
@@ -476,7 +476,7 @@ export default function SignIn() {
             src="/image.png"
             alt="ZiggyBites"
             className="w-80 lg:w-96 h-auto object-contain"
-            onError={(e) => { e.target.onerror = null; e.target.src = tastizoLogo }}
+            onError={(e) => { e.target.onerror = null; e.target.src = ziggybitesLogo }}
           />
         </div>
        </div>
