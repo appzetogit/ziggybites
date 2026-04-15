@@ -1,4 +1,5 @@
 import { getIO } from "../../../server.js";
+import { sendEntityPushNotification } from "./pushNotificationService.js";
 
 const STATUS_MESSAGES = {
   confirmed: "Your order has been confirmed!",
@@ -36,6 +37,16 @@ export function notifyUserOrderStatus(order) {
     };
 
     io.to(`user:${userId}`).emit("order_status_update", payload);
+    void sendEntityPushNotification(userId, "user", {
+      title: "Order Update",
+      body: message,
+      data: {
+        type: "order_status_update",
+        orderId: payload.orderId,
+        status,
+        restaurantName: payload.restaurantName,
+      },
+    });
   } catch (err) {
     console.error("Error emitting user order status notification:", err);
   }

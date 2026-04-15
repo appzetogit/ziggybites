@@ -168,7 +168,13 @@ export default function App() {
           }
         />
 
-        <Route element={<UserMainRestaurantLayout />}>
+        <Route
+          element={
+            <ProtectedRoute requiredRole="user" loginPath="/user/auth/sign-in">
+              <UserMainRestaurantLayout />
+            </ProtectedRoute>
+          }
+        >
           <Route path="/usermain" element={<HomePage />} />
           <Route path="/usermain/categories" element={<CategoriesPage />} />
           <Route path="/usermain/category/:categoryName" element={<CategoryFoodsPage />} />

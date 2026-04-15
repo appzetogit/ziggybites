@@ -2,6 +2,7 @@ import Order from '../models/Order.js';
 import Payment from '../../payment/models/Payment.js';
 import Restaurant from '../../restaurant/models/Restaurant.js';
 import mongoose from 'mongoose';
+import { sendEntityPushNotification } from './pushNotificationService.js';
 
 // Dynamic import to avoid circular dependency
 let getIO = null;
@@ -202,6 +203,19 @@ export async function notifyRestaurantNewOrder(order, restaurantId, paymentMetho
       };
     }
 
+    await sendEntityPushNotification(normalizedRestaurantId, "restaurant", {
+      title: "New Order Received",
+      body: `Order ${order.orderId} is ready for review`,
+      data: {
+        type: "restaurant_new_order",
+        orderId: order.orderId,
+        orderMongoId: order._id?.toString(),
+        status: order.status,
+        restaurantId: normalizedRestaurantId,
+        paymentMethod: resolvedPaymentMethod,
+      },
+    });
+
     return {
       success: true,
       restaurantId,
@@ -238,6 +252,17 @@ export async function notifyRestaurantOrderUpdate(orderId, status) {
       orderId: order.orderId,
       status,
       updatedAt: new Date()
+    });
+
+    await sendEntityPushNotification(order.restaurantId?.toString() || order.restaurantId, "restaurant", {
+      title: "Order Status Updated",
+      body: `Order ${order.orderId} is now ${status.replace(/_/g, " ")}`,
+      data: {
+        type: "restaurant_order_status_update",
+        orderId: order.orderId,
+        orderMongoId: order._id?.toString(),
+        status,
+      },
     });
 
     console.log(`📢 Notified restaurant ${order.restaurantId} about order ${order.orderId} status: ${status}`);

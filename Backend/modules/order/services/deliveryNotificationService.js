@@ -3,6 +3,7 @@ import Delivery from "../../delivery/models/Delivery.js";
 import Restaurant from "../../restaurant/models/Restaurant.js";
 import { getActiveAssignedOrderCount } from "../../delivery/services/batchAssignmentService.js";
 import mongoose from "mongoose";
+import { sendEntityPushNotification } from "./pushNotificationService.js";
 
 // Dynamic import to avoid circular dependency
 let getIO = null;
@@ -405,6 +406,18 @@ export async function notifyDeliveryBoyNewOrder(order, deliveryPartnerId) {
       console.error(`❌ Failed to send notification`);
     }
 
+    await sendEntityPushNotification(normalizedDeliveryPartnerId, "delivery", {
+      title: "New Delivery Assignment",
+      body: `${order.restaurantName || "A restaurant"} assigned order ${order.orderId}`,
+      data: {
+        type: "delivery_new_order",
+        orderId: order.orderId,
+        orderMongoId: order._id?.toString(),
+        status: order.status,
+        restaurantName: order.restaurantName || "",
+      },
+    });
+
     return {
       success: true,
       deliveryPartnerId,
@@ -749,6 +762,25 @@ export async function notifyMultipleDeliveryBoys(
           });
           notifiedCount++;
         }
+
+        await sendEntityPushNotification(normalizedId, "delivery", {
+          title:
+            phase === "priority"
+              ? "Priority Order Nearby"
+              : phase === "expanded"
+                ? "More Orders Available"
+                : "New Order Available",
+          body: `${orderWithUser.restaurantName || "A restaurant"} has order ${orderWithUser.orderId || orderWithUser._id} available`,
+          data: {
+            type: "delivery_new_order_available",
+            orderId: orderWithUser.orderId || orderWithUser._id,
+            orderMongoId: orderWithUser._id?.toString(),
+            phase,
+            status: orderWithUser.status || "preparing",
+            restaurantName:
+              orderWithUser.restaurantName || orderWithUser.restaurantId?.name || "",
+          },
+        });
       } catch (partnerError) {
         console.error(
           `❌ Error notifying delivery partner ${deliveryPartnerId}:`,
@@ -844,6 +876,18 @@ export async function notifyDeliveryBoyOrderReady(order, deliveryPartnerId) {
       deliveryNamespace.emit("order_ready", orderReadyNotification);
       notificationSent = true;
     }
+
+    await sendEntityPushNotification(normalizedDeliveryPartnerId, "delivery", {
+      title: "Order Ready for Pickup",
+      body: `Order ${order.orderId || order._id} is ready at ${order.restaurantName || order.restaurantId?.name || "the restaurant"}`,
+      data: {
+        type: "delivery_order_ready",
+        orderId: order.orderId || order._id,
+        orderMongoId: order._id?.toString(),
+        status: "ready",
+        restaurantName: order.restaurantName || order.restaurantId?.name || "",
+      },
+    });
 
     return {
       success: notificationSent,

@@ -100,7 +100,7 @@ function HomeGate() {
   const isAuthenticated = isModuleAuthenticated("user")
 
   if (!isAuthenticated) {
-    return <Home />
+    return <Navigate to="/auth/sign-in" replace />
   }
 
   if (loading) {
