@@ -1,6 +1,7 @@
 import { initializeApp, getApps } from "firebase/app";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
 import {
+  isLikelyFlutterWebView,
   requestNativeGoogleSignIn,
   waitForFlutterInAppWebView,
 } from "./mobileBridge";
@@ -127,6 +128,7 @@ export async function signInWithGoogleBridge() {
   }
 
   const { GoogleAuthProvider, signInWithCredential, signInWithPopup } = await import("firebase/auth");
+  const likelyFlutterWebView = isLikelyFlutterWebView();
   const isFlutterWebView = await waitForFlutterInAppWebView();
 
   if (isFlutterWebView) {
@@ -156,6 +158,12 @@ export async function signInWithGoogleBridge() {
     }
 
     throw new Error(nativeMessage);
+  }
+
+  if (likelyFlutterWebView) {
+    throw new Error(
+      "Flutter Google sign-in bridge was not available in the app. Please reopen the app and try again.",
+    );
   }
 
   const result = await signInWithPopup(firebaseAuth, googleProvider);

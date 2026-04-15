@@ -1,5 +1,5 @@
 const VOICE_RESULT_TIMEOUT_MS = 45000
-const FLUTTER_BRIDGE_READY_TIMEOUT_MS = 1500
+const FLUTTER_BRIDGE_READY_TIMEOUT_MS = 4000
 
 let activeBrowserRecognition = null
 
@@ -9,6 +9,25 @@ function isFlutterBridgeAvailable() {
   return Boolean(
     window.flutter_inappwebview &&
       typeof window.flutter_inappwebview.callHandler === "function",
+  )
+}
+
+function isLikelyAndroidWebView() {
+  if (typeof navigator === "undefined") return false
+
+  const userAgent = navigator.userAgent || ""
+  return /; wv\)/i.test(userAgent) || /\bVersion\/[\d.]+ Chrome\/[\d.]+ Mobile\b/i.test(userAgent)
+}
+
+function hasFlutterSpecificGlobals() {
+  if (typeof window === "undefined") return false
+
+  return Boolean(
+    window.FlutterChannel ||
+      window.flutterChannel ||
+      window.flutterApp ||
+      window.__flutter_inappwebview_ready__ ||
+      window.__flutter_webview__,
   )
 }
 
@@ -196,6 +215,13 @@ export async function requestNativeGoogleSignIn() {
 
 export function hasFlutterInAppWebView() {
   return isFlutterBridgeAvailable()
+}
+
+export function isLikelyFlutterWebView() {
+  if (isFlutterBridgeAvailable()) return true
+  if (typeof window === "undefined") return false
+
+  return hasFlutterSpecificGlobals() || isLikelyAndroidWebView()
 }
 
 export async function waitForFlutterInAppWebView(
