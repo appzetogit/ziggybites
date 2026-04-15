@@ -12,7 +12,6 @@ import {
 import { Button } from "@/components/ui/button"
 import { restaurantAPI } from "@/lib/api"
 import { firebaseAuth, ensureFirebaseInitialized, signInWithGoogleBridge } from "@/lib/firebase"
-import { requestNativeGoogleSignIn, waitForFlutterInAppWebView } from "@/lib/mobileBridge"
 import { useCompanyName } from "@/lib/hooks/useCompanyName"
 
 // Common country codes
@@ -338,14 +337,7 @@ export default function RestaurantLogin() {
     redirectHandledRef.current = false
 
     try {
-      const isFlutterReady = await waitForFlutterInAppWebView()
-      const nativeResult = isFlutterReady
-        ? await requestNativeGoogleSignIn()
-        : undefined
-
-      const { result, source, cancelled } = await signInWithGoogleBridge({
-        nativeResult,
-      })
+      const { result, source, cancelled } = await signInWithGoogleBridge()
 
       if (cancelled) {
         setIsSending(false)

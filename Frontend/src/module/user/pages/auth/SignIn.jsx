@@ -14,7 +14,6 @@ import {
 } from "@/components/ui/select"
 import { authAPI } from "@/lib/api"
 import { firebaseAuth, ensureFirebaseInitialized, signInWithGoogleBridge } from "@/lib/firebase"
-import { requestNativeGoogleSignIn, waitForFlutterInAppWebView } from "@/lib/mobileBridge"
 import { setAuthData } from "@/lib/utils/auth"
 import { syncSubscriptionDraftAfterUserLogin } from "@/module/user/utils/subscriptionDraftStorage.js"
 import { registerFcmTokenForLoggedInUser } from "@/lib/notifications/fcmWeb"
@@ -390,14 +389,7 @@ export default function SignIn() {
     redirectHandledRef.current = false // Reset flag when starting new sign-in
 
     try {
-      const isFlutterReady = await waitForFlutterInAppWebView()
-      const nativeResult = isFlutterReady
-        ? await requestNativeGoogleSignIn()
-        : undefined
-
-      const { result, source, cancelled } = await signInWithGoogleBridge({
-        nativeResult,
-      })
+      const { result, source, cancelled } = await signInWithGoogleBridge()
 
       if (cancelled) {
         setIsLoading(false)

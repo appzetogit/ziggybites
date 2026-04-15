@@ -119,12 +119,7 @@ export function getFirebaseVapidKey() {
   return firebaseConfig.vapidKey || import.meta.env.VITE_FIREBASE_VAPID_KEY || import.meta.env.VITE_FCM_VAPID_KEY || "";
 }
 
-export async function signInWithGoogleBridge(options = {}) {
-  const nativeResultOverride =
-    Object.prototype.hasOwnProperty.call(options, "nativeResult")
-      ? options.nativeResult
-      : undefined;
-
+export async function signInWithGoogleBridge() {
   await ensureFirebaseInitialized();
 
   if (!firebaseAuth || !googleProvider) {
@@ -132,16 +127,10 @@ export async function signInWithGoogleBridge(options = {}) {
   }
 
   const { GoogleAuthProvider, signInWithCredential, signInWithPopup } = await import("firebase/auth");
-  const isFlutterWebView =
-    nativeResultOverride !== undefined
-      ? true
-      : await waitForFlutterInAppWebView();
+  const isFlutterWebView = await waitForFlutterInAppWebView();
 
   if (isFlutterWebView) {
-    const nativeResult =
-      nativeResultOverride !== undefined
-        ? nativeResultOverride
-        : await requestNativeGoogleSignIn();
+    const nativeResult = await requestNativeGoogleSignIn();
 
     if (nativeResult && nativeResult.success) {
       if (!nativeResult.idToken) {
