@@ -1,5 +1,6 @@
 import { initializeApp, getApps } from "firebase/app";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
+import { hasFlutterInAppWebView, requestNativeGoogleSignIn } from "./mobileBridge";
 
 // Firebase configuration - will be populated from backend
 const firebaseConfig = {
@@ -113,6 +114,53 @@ async function ensureFirebaseInitialized() {
 
 export function getFirebaseVapidKey() {
   return firebaseConfig.vapidKey || import.meta.env.VITE_FIREBASE_VAPID_KEY || import.meta.env.VITE_FCM_VAPID_KEY || "";
+}
+
+export async function signInWithGoogleBridge() {
+  await ensureFirebaseInitialized();
+
+  if (!firebaseAuth || !googleProvider) {
+    throw new Error("Firebase is not configured correctly for Google sign-in.");
+  }
+
+  const { GoogleAuthProvider, signInWithCredential, signInWithPopup } = await import("firebase/auth");
+  const isFlutterWebView = hasFlutterInAppWebView();
+
+  if (isFlutterWebView) {
+    const nativeResult = await requestNativeGoogleSignIn();
+
+    if (nativeResult && nativeResult.success) {
+      if (!nativeResult.idToken) {
+        throw new Error("Native Google sign-in did not return an ID token.");
+      }
+
+      const credential = GoogleAuthProvider.credential(nativeResult.idToken);
+      const result = await signInWithCredential(firebaseAuth, credential);
+
+      return {
+        result,
+        source: "flutter-native-google",
+      };
+    }
+
+    const nativeMessage = nativeResult?.error || nativeResult?.message || "";
+    if (!nativeMessage) {
+      return {
+        result: null,
+        source: "flutter-native-google",
+        cancelled: true,
+      };
+    }
+
+    throw new Error(nativeMessage);
+  }
+
+  const result = await signInWithPopup(firebaseAuth, googleProvider);
+
+  return {
+    result,
+    source: "web-google-popup",
+  };
 }
 
 export { firebaseAuth, googleProvider, ensureFirebaseInitialized };

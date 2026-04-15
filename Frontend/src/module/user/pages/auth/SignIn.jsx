@@ -13,8 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { authAPI } from "@/lib/api"
-import { firebaseAuth, googleProvider, ensureFirebaseInitialized } from "@/lib/firebase"
-import { requestNativeGoogleSignIn } from "@/lib/mobileBridge"
+import { firebaseAuth, ensureFirebaseInitialized, signInWithGoogleBridge } from "@/lib/firebase"
 import { setAuthData } from "@/lib/utils/auth"
 import { syncSubscriptionDraftAfterUserLogin } from "@/module/user/utils/subscriptionDraftStorage.js"
 import { registerFcmTokenForLoggedInUser } from "@/lib/notifications/fcmWeb"
@@ -390,58 +389,25 @@ export default function SignIn() {
     redirectHandledRef.current = false // Reset flag when starting new sign-in
 
     try {
-      // Ensure Firebase is initialized before use
-      await ensureFirebaseInitialized()
+      const { result, source, cancelled } = await signInWithGoogleBridge()
 
-      // Validate Firebase Auth instance
-      if (!firebaseAuth) {
-        throw new Error("Firebase Auth is not initialized. Please check your Firebase configuration.")
+      if (cancelled) {
+        setIsLoading(false)
+        redirectHandledRef.current = false
+        return
       }
 
-      const nativeSignInResult = await requestNativeGoogleSignIn()
-      const { GoogleAuthProvider, signInWithCredential, signInWithPopup } = await import("firebase/auth")
-
-      if (nativeSignInResult) {
-        if (!nativeSignInResult.success) {
-          const nativeMessage = nativeSignInResult.error || nativeSignInResult.message || ""
-          if (!nativeMessage) {
-            setIsLoading(false)
-            redirectHandledRef.current = false
-            return
-          }
-          throw new Error(nativeMessage)
-        }
-
-        if (!nativeSignInResult.idToken) {
-          throw new Error("Native Google sign-in did not return an ID token.")
-        }
-
-        const credential = GoogleAuthProvider.credential(nativeSignInResult.idToken)
-        const result = await signInWithCredential(firebaseAuth, credential)
-
-        if (result?.user) {
-          await processSignedInUser(result.user, "flutter-native-google")
-          return
-        }
-      }
-
-      // Log current origin for debugging
-      console.log("🚀 Starting Google sign-in popup...")
-
-      // Use popup for better UX and error handling
-      const result = await signInWithPopup(firebaseAuth, googleProvider)
-
-      console.log("✅ Popup sign-in successful:", {
+      console.log("Google sign-in successful:", {
         user: result?.user?.email,
-        operationType: result.operationType
+        operationType: result?.operationType,
+        source,
       })
 
-      if (result && result.user) {
-        // Process signed-in user
-        await processSignedInUser(result.user, "popup-result")
+      if (result?.user) {
+        await processSignedInUser(result.user, source)
       }
     } catch (error) {
-      console.error("❌ Google sign-in redirect error:", error)
+      console.error("Google sign-in error:", error)
       console.error("Error code:", error?.code)
       console.error("Error message:", error?.message)
       setIsLoading(false)

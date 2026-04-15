@@ -184,3 +184,12 @@ export async function requestNativeGoogleSignIn() {
 
   return null
 }
+
+export function hasFlutterInAppWebView() {
+  if (typeof window === "undefined") return false
+
+  return Boolean(
+    window.flutter_inappwebview &&
+      typeof window.flutter_inappwebview.callHandler === "function",
+  )
+}
