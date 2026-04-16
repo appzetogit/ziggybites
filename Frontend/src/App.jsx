@@ -1,4 +1,6 @@
 import { Routes, Route, Navigate, Outlet, useLocation } from "react-router-dom"
+import { useEffect } from "react"
+import { initializeFcmWeb, registerFcmTokenForLoggedInUser } from "@/lib/notifications/fcmWeb"
 import ProtectedRoute from "@/components/ProtectedRoute"
 import AuthRedirect from "@/components/AuthRedirect"
 import { NearestRestaurantProvider } from "@/module/user/context/NearestRestaurantContext"
@@ -141,6 +143,15 @@ function UserMainRestaurantLayout() {
 }
 
 export default function App() {
+  // Initialize Firebase Cloud Messaging for user role on app mount
+  useEffect(() => {
+    // Initialize FCM and register token for logged-in user
+    initializeFcmWeb("user").then(() => {
+      registerFcmTokenForLoggedInUser();
+    }).catch((err) => {
+      console.warn("[FCM] Initialization error:", err);
+    });
+  }, []);
   return (
     <Suspense fallback={<Loader />}>
       <Routes>

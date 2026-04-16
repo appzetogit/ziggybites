@@ -190,6 +190,8 @@ export const API_ENDPOINTS = {
     LOCATION: "/user/location",
     COMPLAINTS: "/user/complaints",
     COMPLAINT_BY_ID: "/user/complaints/:id",
+    NOTIFICATIONS: "/notification",
+    NOTIFICATION_READ: "/notification/:id/read",
   },
   // Location endpoints
   LOCATION: {
@@ -457,6 +459,8 @@ export const API_ENDPOINTS = {
     ZONES: "/admin/zones",
     ZONE_BY_ID: "/admin/zones/:id",
     ZONE_STATUS: "/admin/zones/:id/status",
+    NOTIFICATION_SEND: "/notification/admin/send",
+    NOTIFICATION_HISTORY: "/notification/admin/history",
   },
   // Order endpoints
   ORDER: {

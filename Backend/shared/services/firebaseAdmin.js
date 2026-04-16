@@ -108,9 +108,26 @@ export async function sendPushNotification(tokens, payload) {
           body: payload.body,
         },
         data: payload.data || {},
-        android: { priority: "high" },
+        android: {
+          priority: "high",
+          notification: {
+            sound: "default",
+            channelId: payload.androidChannelId || "default",
+          },
+        },
         apns: { payload: { aps: { sound: "default" } } },
-        webpush: { headers: { Urgency: "high" } },
+        webpush: {
+          headers: { Urgency: "high" },
+          notification: {
+            title: payload.title,
+            body: payload.body,
+            icon: payload.icon || payload.data?.icon || "/favicon.ico",
+            image: payload.imageUrl || payload.data?.image || undefined,
+          },
+          fcmOptions: {
+            link: payload.data?.link || "/",
+          },
+        },
       });
 
       result.successCount += response.successCount || 0;
@@ -139,4 +156,3 @@ export async function sendPushNotification(tokens, payload) {
 
   return result;
 }
-

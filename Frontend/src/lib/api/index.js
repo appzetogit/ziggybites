@@ -273,6 +273,17 @@ export const userAPI = {
   updateLocation: (locationData) => {
     return apiClient.put(API_ENDPOINTS.USER.LOCATION, locationData);
   },
+
+  // Notifications
+  getNotifications: (params = {}) => {
+    return apiClient.get(API_ENDPOINTS.USER.NOTIFICATIONS, { params });
+  },
+
+  markNotificationAsRead: (id) => {
+    return apiClient.patch(
+      API_ENDPOINTS.USER.NOTIFICATION_READ.replace(":id", id),
+    );
+  },
 };
 
 // Export location API helper functions
@@ -1895,6 +1906,15 @@ export const adminAPI = {
   // Public Environment Variables (for frontend use)
   getPublicEnvVariables: () => {
     return apiClient.get("/env/public");
+  },
+
+  // Notifications
+  sendPushNotification: (data) => {
+    return apiClient.post(API_ENDPOINTS.ADMIN.NOTIFICATION_SEND, data);
+  },
+
+  getNotificationHistory: (params = {}) => {
+    return apiClient.get(API_ENDPOINTS.ADMIN.NOTIFICATION_HISTORY, { params });
   },
 
   // Delivery Boy Commission Management
