@@ -126,6 +126,23 @@ export default function SignIn() {
         // Register FCM token for push notifications (fire-and-forget)
         registerFcmTokenForLoggedInUser().catch(() => {})
 
+        // Show a welcome notification after login
+        const showLoginNotification = async () => {
+          if (typeof Notification === "undefined") return
+          if (Notification.permission !== "granted") {
+            try {
+              await Notification.requestPermission()
+            } catch {}
+          }
+          if (Notification.permission === "granted") {
+            new Notification("Login Successful", {
+              body: "Welcome back!",
+              icon: "/favicon.ico",
+            })
+          }
+        }
+        showLoginNotification().catch(() => {})
+
         // Clear any URL hash or params
         const hasHash = window.location.hash.length > 0
         const hasQueryParams = window.location.search.length > 0
@@ -208,7 +225,10 @@ export default function SignIn() {
 
         unsubscribe = onAuthStateChanged(firebaseAuth, async (user) => {
           if (user && !redirectHandledRef.current) {
-            await processSignedInUser(user, "auth-state-listener")
+            // Only handle auth changes while on the sign‑in page to avoid loops after navigation
+            if (window.location.pathname.includes('/auth/sign-in')) {
+              await processSignedInUser(user, "auth-state-listener");
+            }
           }
         })
       } catch (error) {
