@@ -155,6 +155,14 @@ const userSchema = new mongoose.Schema(
       },
     },
     // FCM tokens for different platforms
+    fcmTokens: {
+      type: [String],
+      default: [],
+    },
+    fcmTokenMobile: {
+      type: [String],
+      default: [],
+    },
     fcmTokenWeb: {
       type: String,
       default: null,

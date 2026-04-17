@@ -28,7 +28,13 @@ function normalizeSendTo(sendTo = "") {
 function collectTokens(record) {
   return [
     ...new Set(
-      [record?.fcmTokenWeb, record?.fcmTokenAndroid, record?.fcmTokenIos].filter(Boolean),
+      [
+        ...(record?.fcmTokens || []),
+        ...(record?.fcmTokenMobile || []),
+        record?.fcmTokenWeb,
+        record?.fcmTokenAndroid,
+        record?.fcmTokenIos,
+      ].filter(Boolean),
     ),
   ];
 }
@@ -95,14 +101,18 @@ async function clearInvalidTokens(model, records, cleanupTokens = []) {
       update.fcmTokenIos = null;
     }
 
-    if (Object.keys(update).length > 0) {
-      bulkOps.push({
-        updateOne: {
-          filter: { _id: record._id },
-          update: { $set: update },
+    bulkOps.push({
+      updateOne: {
+        filter: { _id: record._id },
+        update: {
+          ...(Object.keys(update).length > 0 ? { $set: update } : {}),
+          $pull: {
+            fcmTokens: { $in: cleanupTokens },
+            fcmTokenMobile: { $in: cleanupTokens },
+          },
         },
-      });
-    }
+      },
+    });
   }
 
   if (bulkOps.length) {
@@ -127,7 +137,7 @@ export async function sendAdminNotification(req, res) {
 
     const recipients = await model
       .find({ isActive: true })
-      .select("_id fcmTokenWeb fcmTokenAndroid fcmTokenIos")
+      .select("_id fcmTokens fcmTokenMobile fcmTokenWeb fcmTokenAndroid fcmTokenIos")
       .lean();
 
     const batchId = new mongoose.Types.ObjectId().toString();

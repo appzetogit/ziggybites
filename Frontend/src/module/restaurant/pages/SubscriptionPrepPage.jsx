@@ -263,6 +263,45 @@ export default function SubscriptionPrepPage() {
     return { day, time, full }
   }
 
+  const getReadyWindow = (order) => {
+    const readyWindow = order?.readyWindow
+    if (readyWindow?.startsAt && readyWindow?.endsAt) {
+      const startsAt = new Date(readyWindow.startsAt)
+      const endsAt = new Date(readyWindow.endsAt)
+      if (!Number.isNaN(startsAt.getTime()) && !Number.isNaN(endsAt.getTime())) {
+        return {
+          startsAt,
+          endsAt,
+          canMarkReady: readyWindow.canMarkReady !== false && Date.now() >= startsAt.getTime() && Date.now() <= endsAt.getTime(),
+        }
+      }
+    }
+    if (!order?.scheduledMealAt) return { startsAt: null, endsAt: null, canMarkReady: true }
+    const scheduledAt = new Date(order.scheduledMealAt)
+    if (Number.isNaN(scheduledAt.getTime())) return { startsAt: null, endsAt: null, canMarkReady: true }
+    const startsAt = new Date(scheduledAt.getTime() - 45 * 60 * 1000)
+    const endsAt = new Date(scheduledAt.getTime() + 45 * 60 * 1000)
+    return {
+      startsAt,
+      endsAt,
+      canMarkReady: Date.now() >= startsAt.getTime() && Date.now() <= endsAt.getTime(),
+    }
+  }
+
+  const canMarkOrderReadyNow = (order) => {
+    if (!order?.mealDetailsVisible) return false
+    if (String(order?._id || "").startsWith("subscription-")) return false
+    if ((order.preparationStatus || "pending") === "ready") return false
+    if (isDemoData || String(order?._id || "").startsWith("demo-")) return true
+    return getReadyWindow(order).canMarkReady
+  }
+
+  const readyWindowLabel = (order) => {
+    const window = getReadyWindow(order)
+    if (!window.startsAt || !window.endsAt) return "Ready window unavailable"
+    return `Ready allowed ${window.startsAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} - ${window.endsAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
+  }
+
   const escapeHtml = (value) => {
     return String(value ?? "")
       .replaceAll("&", "&amp;")
@@ -638,8 +677,12 @@ export default function SubscriptionPrepPage() {
       toast.info("This meal is still a preview. Ready action will work after the order is generated.")
       return
     }
+    const targetOrder = (data?.orders || []).find((order) => String(order?._id) === String(orderId))
+    if (targetOrder && !canMarkOrderReadyNow(targetOrder)) {
+      toast.info(readyWindowLabel(targetOrder))
+      return
+    }
     if (isDemoData || String(orderId).startsWith("demo-")) {
-      const targetOrder = (data?.orders || []).find((order) => String(order?._id) === String(orderId))
       if (!targetOrder?.mealDetailsVisible) {
         toast.info("Nothing to mark ready")
         return
@@ -665,10 +708,7 @@ export default function SubscriptionPrepPage() {
   const markMealReadyForSlot = async (slotKey, orders) => {
     if (!slotKey || updatingSlotKey || updatingOrderId) return
     const eligible = (orders || []).filter(
-      (o) =>
-        o?.mealDetailsVisible &&
-        !String(o?._id || "").startsWith("subscription-") &&
-        (o.preparationStatus || "pending") !== "ready",
+      (o) => canMarkOrderReadyNow(o),
     )
     if (eligible.length === 0) {
       toast.info("Nothing to mark ready")
@@ -702,16 +742,10 @@ export default function SubscriptionPrepPage() {
       .map((group) => ({
         key: group.key,
         eligibleOrders: (group.orders || []).filter(
-          (order) =>
-            order?.mealDetailsVisible &&
-            !String(order?._id || "").startsWith("subscription-") &&
-            (order.preparationStatus || "pending") !== "ready",
+          (order) => canMarkOrderReadyNow(order),
         ),
         firstEligibleOrder: (group.orders || []).find(
-          (order) =>
-            order?.mealDetailsVisible &&
-            !String(order?._id || "").startsWith("subscription-") &&
-            (order.preparationStatus || "pending") !== "ready",
+          (order) => canMarkOrderReadyNow(order),
         ),
       }))
       .filter((group) => group.firstEligibleOrder)
@@ -845,12 +879,7 @@ export default function SubscriptionPrepPage() {
                       updatingOrderId ||
                       updatingSlotKey === "__all__" ||
                       !filteredSlotGroups.some((group) =>
-                        (group.orders || []).some(
-                          (order) =>
-                            order?.mealDetailsVisible &&
-                            !String(order?._id || "").startsWith("subscription-") &&
-                            (order.preparationStatus || "pending") !== "ready",
-                        ),
+                        (group.orders || []).some((order) => canMarkOrderReadyNow(order)),
                       )
                     }
                   className={`w-full text-xs px-3 py-2.5 rounded-lg font-semibold transition-colors ${
@@ -907,12 +936,7 @@ export default function SubscriptionPrepPage() {
                   const readyCount = g.orders.filter((o) => (o?.preparationStatus || "pending") === "ready").length
                   const canMark =
                     !isDemoData &&
-                    (g.orders || []).some(
-                      (order) =>
-                        order?.mealDetailsVisible &&
-                        !String(order?._id || "").startsWith("subscription-") &&
-                        (order.preparationStatus || "pending") !== "ready",
-                    )
+                    (g.orders || []).some((order) => canMarkOrderReadyNow(order))
                   const uniqueUsers = new Set(
                     g.orders
                       .map((o) => o?.user?._id)
@@ -951,7 +975,7 @@ export default function SubscriptionPrepPage() {
                                 ? "bg-emerald-600 text-white hover:bg-emerald-700"
                                 : "bg-slate-100 text-slate-400 cursor-not-allowed"
                             }`}
-                            title={canMark ? "Mark all unlocked orders ready for this meal slot" : "No unlocked orders to mark ready"}
+                            title={canMark ? "Mark all unlocked orders ready for this meal slot" : "Ready is allowed only within 45 minutes before or after the scheduled meal time"}
                           >
                             {updatingSlotKey === String(g.key) ? "Marking..." : "Mark meal ready"}
                           </button>
@@ -986,8 +1010,9 @@ export default function SubscriptionPrepPage() {
                                   <button
                                     type="button"
                                     onClick={() => markOrderReady(o._id)}
-                                    disabled={updatingOrderId === String(o._id) || updatingSlotKey === "__all__"}
-                                    className="px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white text-[11px] font-semibold hover:bg-emerald-700 disabled:opacity-50"
+                                    disabled={!canMarkOrderReadyNow(o) || updatingOrderId === String(o._id) || updatingSlotKey === "__all__"}
+                                    title={canMarkOrderReadyNow(o) ? "Mark this order ready" : readyWindowLabel(o)}
+                                    className="px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white text-[11px] font-semibold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
                                   >
                                     {updatingOrderId === String(o._id) ? "Marking..." : "Mark ready"}
                                   </button>
@@ -1007,6 +1032,18 @@ export default function SubscriptionPrepPage() {
                             </div>
 
                             <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-600">
+                              {o?.mealDetailsVisible &&
+                                !isDemoData &&
+                                !String(o?._id || "").startsWith("subscription-") &&
+                                (o.preparationStatus || "pending") !== "ready" && (
+                                  <div className={`col-span-2 rounded-lg border px-3 py-2 ${
+                                    canMarkOrderReadyNow(o)
+                                      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                                      : "border-amber-200 bg-amber-50 text-amber-800"
+                                  }`}>
+                                    {readyWindowLabel(o)}
+                                  </div>
+                                )}
                               <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2">
                                 <span className="text-slate-500">Contact</span>
                                 <div

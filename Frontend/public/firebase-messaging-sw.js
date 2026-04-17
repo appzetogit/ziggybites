@@ -80,7 +80,7 @@ function buildNotificationFromPayload(payload) {
   const icon =
     payload?.notification?.icon ||
     payload?.data?.icon ||
-    "/favicon.ico";
+    "/image.png";
 
   const image =
     payload?.notification?.image ||
@@ -139,8 +139,9 @@ self.addEventListener("notificationclick", (event) => {
 
   event.waitUntil(
     clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
+      const targetUrl = new URL(urlToOpen, self.location.origin).href;
       for (const client of clientList) {
-        if (client.url === urlToOpen && "focus" in client) {
+        if ((client.url === targetUrl || client.url.includes(urlToOpen)) && "focus" in client) {
           return client.focus();
         }
       }
@@ -152,7 +153,7 @@ self.addEventListener("notificationclick", (event) => {
       }
 
       if (clients.openWindow) {
-        return clients.openWindow(urlToOpen);
+        return clients.openWindow(targetUrl);
       }
 
       return undefined;

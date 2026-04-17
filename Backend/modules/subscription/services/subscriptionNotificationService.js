@@ -13,7 +13,7 @@ import {
   wallClockFromUtc,
 } from "./subscriptionScheduleService.js";
 
-const DEFAULT_NOTIFICATION_LEAD_MINUTES = 1440;
+const DEFAULT_NOTIFICATION_LEAD_MINUTES = 120;
 const DEFAULT_CRON_INTERVAL_MINUTES = 5;
 const MAX_RETRY_ATTEMPTS = 3;
 const RETRY_BACKOFF_MINUTES = [5, 15, 30];
@@ -52,7 +52,15 @@ function minuteKey(subscriptionId, dateLike) {
 }
 
 function collectUserTokens(user) {
-  return [...new Set([user?.fcmTokenWeb, user?.fcmTokenAndroid, user?.fcmTokenIos].filter(Boolean))];
+  return [
+    ...new Set([
+      ...(user?.fcmTokens || []),
+      ...(user?.fcmTokenMobile || []),
+      user?.fcmTokenWeb,
+      user?.fcmTokenAndroid,
+      user?.fcmTokenIos,
+    ].filter(Boolean)),
+  ];
 }
 
 function leadText(leadMinutes) {
@@ -104,16 +112,23 @@ async function clearInvalidTokensForUser(userId, tokens) {
   const tokenSet = new Set(tokens);
   const update = {};
 
-  const user = await User.findById(userId).select("fcmTokenWeb fcmTokenAndroid fcmTokenIos").lean();
+  const user = await User.findById(userId).select("fcmTokens fcmTokenMobile fcmTokenWeb fcmTokenAndroid fcmTokenIos").lean();
   if (!user) return;
 
   if (user.fcmTokenWeb && tokenSet.has(user.fcmTokenWeb)) update.fcmTokenWeb = null;
   if (user.fcmTokenAndroid && tokenSet.has(user.fcmTokenAndroid)) update.fcmTokenAndroid = null;
   if (user.fcmTokenIos && tokenSet.has(user.fcmTokenIos)) update.fcmTokenIos = null;
 
-  if (Object.keys(update).length > 0) {
-    await User.updateOne({ _id: userId }, { $set: update });
-  }
+  await User.updateOne(
+    { _id: userId },
+    {
+      ...(Object.keys(update).length > 0 ? { $set: update } : {}),
+      $pull: {
+        fcmTokens: { $in: tokens },
+        fcmTokenMobile: { $in: tokens },
+      },
+    },
+  );
 }
 
 function getRetryAt(attempts) {
@@ -170,7 +185,7 @@ async function attemptDelivery({ logDoc, userSub, user, settings, leadMinutes, n
     return { sent: false, skipped: true };
   }
 
-  const title = "Your meal is coming up 🍽️";
+  const title = "Your meal is coming up";
   const body = `Hi ${user.name || "there"}, your ${MEAL_LABELS[mealType] || mealType} will be served in ${leadText(leadMinutes)}. Get ready!`;
   const tokens = collectUserTokens(user);
 
@@ -188,6 +203,8 @@ async function attemptDelivery({ logDoc, userSub, user, settings, leadMinutes, n
       scheduledMealAt: new Date(userSub.nextDeliveryAt).toISOString(),
       leadMinutes: String(leadMinutes),
       userSubscriptionId: String(userSub._id),
+      tag: `subscription:${userSub._id}:${mealType}:${new Date(userSub.nextDeliveryAt).toISOString()}`,
+      link: "/subscription",
     },
   });
 
@@ -335,7 +352,7 @@ export async function processSubscriptionTwoHourNotifications() {
   const userIds = [...new Set(subscriptions.map((sub) => String(sub.userId)))];
   const [users, userPlans] = await Promise.all([
     User.find({ _id: { $in: userIds } })
-      .select("name role isActive fcmTokenWeb fcmTokenAndroid fcmTokenIos")
+      .select("name role isActive fcmTokens fcmTokenMobile fcmTokenWeb fcmTokenAndroid fcmTokenIos")
       .lean(),
     UserPlanSubscription.find({ userId: { $in: userIds } }).select("userId status endDate").lean(),
   ]);
@@ -426,7 +443,7 @@ export async function retryFailedMealReminderNotifications(settingsFromCaller = 
 
   const [subs, users, plans] = await Promise.all([
     UserSubscription.find({ _id: { $in: subIds } }).select("userId items nextDeliveryAt status pauseUntil endDate").lean(),
-    User.find({ _id: { $in: userIds } }).select("name role isActive fcmTokenWeb fcmTokenAndroid fcmTokenIos").lean(),
+    User.find({ _id: { $in: userIds } }).select("name role isActive fcmTokens fcmTokenMobile fcmTokenWeb fcmTokenAndroid fcmTokenIos").lean(),
     UserPlanSubscription.find({ userId: { $in: userIds } }).select("userId status endDate").lean(),
   ]);
 

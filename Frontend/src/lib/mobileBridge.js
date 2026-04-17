@@ -2,6 +2,7 @@ const VOICE_RESULT_TIMEOUT_MS = 45000
 const FLUTTER_BRIDGE_READY_TIMEOUT_MS = 4000
 
 let activeBrowserRecognition = null
+let flutterCameraBridgeInstalled = false
 
 function isFlutterBridgeAvailable() {
   if (typeof window === "undefined") return false
@@ -211,6 +212,116 @@ export async function requestNativeGoogleSignIn() {
   }
 
   return null
+}
+
+function normalizeCameraResult(result) {
+  if (!result || typeof result !== "object") {
+    throw new Error("Camera capture failed")
+  }
+
+  if (!result.success) {
+    throw new Error(result.error || "Camera capture cancelled")
+  }
+
+  if (!result.base64) {
+    throw new Error("Camera capture did not return an image")
+  }
+
+  return {
+    base64: String(result.base64),
+    mimeType: String(result.mimeType || "image/jpeg"),
+    fileName: String(result.fileName || `camera-${Date.now()}.jpg`),
+  }
+}
+
+function base64ToUint8Array(base64) {
+  const sanitizedBase64 = String(base64).replace(/\s/g, "")
+  const binaryString = window.atob(sanitizedBase64)
+  const bytes = new Uint8Array(binaryString.length)
+
+  for (let index = 0; index < binaryString.length; index += 1) {
+    bytes[index] = binaryString.charCodeAt(index)
+  }
+
+  return bytes
+}
+
+function createFileFromCameraResult(result) {
+  const { base64, mimeType, fileName } = normalizeCameraResult(result)
+  const bytes = base64ToUint8Array(base64)
+  return new File([bytes], fileName, { type: mimeType })
+}
+
+function assignFileToInput(input, file) {
+  const transfer = new DataTransfer()
+  transfer.items.add(file)
+  input.files = transfer.files
+}
+
+function isImageInput(input) {
+  const accept = (input.getAttribute("accept") || "").toLowerCase()
+  return accept.includes("image/")
+}
+
+function shouldUseFlutterCameraBridge(input) {
+  if (!(input instanceof HTMLInputElement)) return false
+  if (input.type !== "file" || input.disabled) return false
+  if (input.multiple) return false
+  if (!isImageInput(input)) return false
+  if (input.dataset.flutterCameraBridge === "off") return false
+
+  const capture = (input.getAttribute("capture") || "").toLowerCase()
+  if (capture === "user" || capture === "environment") return true
+
+  return input.dataset.flutterCameraBridge === "on"
+}
+
+export async function requestCameraCapture() {
+  if (typeof window === "undefined") {
+    throw new Error("Camera is unavailable in this environment")
+  }
+
+  const isReady = await waitForFlutterInAppWebView()
+  if (!isReady) {
+    throw new Error("Flutter camera bridge is not available")
+  }
+
+  const result = await window.flutter_inappwebview.callHandler("openCamera")
+  return createFileFromCameraResult(result)
+}
+
+export function installFlutterCameraBridge() {
+  if (typeof window === "undefined" || flutterCameraBridgeInstalled) return
+  flutterCameraBridgeInstalled = true
+
+  document.addEventListener(
+    "click",
+    async (event) => {
+      const input = event.target instanceof HTMLInputElement ? event.target : null
+      if (!input || !shouldUseFlutterCameraBridge(input)) return
+      if (!isLikelyFlutterWebView()) return
+
+      event.preventDefault()
+      event.stopPropagation()
+
+      try {
+        const file = await requestCameraCapture()
+        assignFileToInput(input, file)
+        input.dispatchEvent(new Event("input", { bubbles: true }))
+        input.dispatchEvent(new Event("change", { bubbles: true }))
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Camera capture failed"
+
+        if (message.toLowerCase().includes("cancel")) {
+          return
+        }
+
+        console.error("Flutter camera bridge error:", error)
+      }
+    },
+    true,
+  )
 }
 
 export function hasFlutterInAppWebView() {

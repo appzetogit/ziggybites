@@ -29,12 +29,21 @@ export const registerRestaurantFcmToken = asyncHandler(async (req, res) => {
     return errorResponse(res, 404, "Restaurant not found");
   }
 
+  const addUniqueToken = (field) => {
+    if (!Array.isArray(restaurant[field])) restaurant[field] = [];
+    if (!restaurant[field].includes(fcmToken)) restaurant[field].push(fcmToken);
+    if (restaurant[field].length > 10) restaurant[field] = restaurant[field].slice(-10);
+  };
+
   if (platform === "web") {
     restaurant.fcmTokenWeb = fcmToken;
+    addUniqueToken("fcmTokens");
   } else if (platform === "android") {
     restaurant.fcmTokenAndroid = fcmToken;
+    addUniqueToken("fcmTokenMobile");
   } else if (platform === "ios") {
     restaurant.fcmTokenIos = fcmToken;
+    addUniqueToken("fcmTokenMobile");
   }
 
   await restaurant.save();
@@ -47,6 +56,8 @@ export const registerRestaurantFcmToken = asyncHandler(async (req, res) => {
     fcmTokenWeb: restaurant.fcmTokenWeb,
     fcmTokenAndroid: restaurant.fcmTokenAndroid,
     fcmTokenIos: restaurant.fcmTokenIos,
+    fcmTokens: restaurant.fcmTokens,
+    fcmTokenMobile: restaurant.fcmTokenMobile,
   });
 });
 
@@ -57,7 +68,7 @@ export const registerRestaurantFcmToken = asyncHandler(async (req, res) => {
  */
 export const removeRestaurantFcmToken = asyncHandler(async (req, res) => {
   const restaurantId = req.restaurant?._id;
-  const { platform } = req.body;
+  const { platform, fcmToken } = req.body;
 
   if (!platform) {
     return errorResponse(res, 400, "platform is required");
@@ -78,15 +89,23 @@ export const removeRestaurantFcmToken = asyncHandler(async (req, res) => {
   }
 
   if (platform === "web") {
-    restaurant.fcmTokenWeb = null;
+    if (!fcmToken || restaurant.fcmTokenWeb === fcmToken) restaurant.fcmTokenWeb = null;
+    restaurant.fcmTokens = fcmToken
+      ? (restaurant.fcmTokens || []).filter((token) => token !== fcmToken)
+      : [];
   } else if (platform === "android") {
-    restaurant.fcmTokenAndroid = null;
+    if (!fcmToken || restaurant.fcmTokenAndroid === fcmToken) restaurant.fcmTokenAndroid = null;
+    restaurant.fcmTokenMobile = fcmToken
+      ? (restaurant.fcmTokenMobile || []).filter((token) => token !== fcmToken)
+      : [];
   } else if (platform === "ios") {
-    restaurant.fcmTokenIos = null;
+    if (!fcmToken || restaurant.fcmTokenIos === fcmToken) restaurant.fcmTokenIos = null;
+    restaurant.fcmTokenMobile = fcmToken
+      ? (restaurant.fcmTokenMobile || []).filter((token) => token !== fcmToken)
+      : [];
   }
 
   await restaurant.save();
 
   return successResponse(res, 200, "FCM token removed successfully");
 });
-

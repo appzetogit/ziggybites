@@ -40,6 +40,7 @@ const countryCodes = [
 
 export default function RestaurantLogin() {
   const companyName = useCompanyName()
+  const appDisplayName = companyName.replace(/\s+(restaurant|delivery)\b/gi, "").trim() || companyName
   const navigate = useNavigate()
   const [loginMethod, setLoginMethod] = useState("phone") // "phone" or "email"
   const [formData, setFormData] = useState({
@@ -402,8 +403,7 @@ export default function RestaurantLogin() {
               textStroke: "0.5px black"
             }}
           >
-
-            {companyName.toLowerCase()}
+            {appDisplayName.toLowerCase()}
           </h1>
         </div>
 

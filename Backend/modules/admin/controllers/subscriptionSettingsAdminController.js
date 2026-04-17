@@ -42,7 +42,7 @@ function settingsToDto(settings) {
       mealReminderEnabled: settings.notificationSettings?.mealReminderEnabled !== false,
       mealReminderLeadMinutes: Number.isFinite(Number(settings.notificationSettings?.mealReminderLeadMinutes))
         ? Math.min(Math.max(Math.round(Number(settings.notificationSettings?.mealReminderLeadMinutes)), 15), 1440)
-        : 1440,
+        : 120,
     },
   };
 }
@@ -125,7 +125,7 @@ export const updateSubscriptionSettings = asyncHandler(async (req, res) => {
             ? v.partial.mealReminderLeadMinutes
             : Number.isFinite(Number(current.mealReminderLeadMinutes))
               ? Math.min(Math.max(Math.round(Number(current.mealReminderLeadMinutes)), 15), 1440)
-              : 1440,
+              : 120,
       };
       settings.markModified("notificationSettings");
     }

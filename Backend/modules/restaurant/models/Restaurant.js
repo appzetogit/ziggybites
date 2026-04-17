@@ -167,6 +167,14 @@ const restaurantSchema = new mongoose.Schema(
       default: "Flat ₹50 OFF above ₹199",
     },
     // FCM tokens for sending push notifications to restaurant dashboard/app
+    fcmTokens: {
+      type: [String],
+      default: [],
+    },
+    fcmTokenMobile: {
+      type: [String],
+      default: [],
+    },
     fcmTokenWeb: {
       type: String,
       default: null,

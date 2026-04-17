@@ -3,30 +3,29 @@ import { ensureFirebaseInitialized, getFirebaseVapidKey } from "@/lib/firebase";
 import { adminAPI, authAPI, deliveryAPI, restaurantAPI } from "@/lib/api";
 
 const FCM_SW_PATH = "/firebase-messaging-sw.js";
-const FCM_SW_SCOPE = "/firebase-cloud-messaging-push-scope/";
 const NOTIFICATION_DEBOUNCE_MS = 5000;
 
 const ROLE_CONFIG = {
   user: {
     register: (platform, token) => authAPI.registerFcmToken(platform, token),
-    remove: (platform) => authAPI.removeFcmToken(platform),
+    remove: (platform, token) => authAPI.removeFcmToken(platform, token),
     logPrefix: "[FCM]",
     defaultTitle: "Ziggy Update",
-    defaultIcon: "/favicon.ico",
+    defaultIcon: "/image.png",
   },
   restaurant: {
     register: (platform, token) => restaurantAPI.registerFcmToken(platform, token),
-    remove: (platform) => restaurantAPI.removeFcmToken(platform),
+    remove: (platform, token) => restaurantAPI.removeFcmToken(platform, token),
     logPrefix: "[FCM][Restaurant]",
     defaultTitle: "Ziggy Restaurant",
-    defaultIcon: "/favicon.ico",
+    defaultIcon: "/image.png",
   },
   delivery: {
     register: (platform, token) => deliveryAPI.registerFcmToken(platform, token),
-    remove: (platform) => deliveryAPI.removeFcmToken(platform),
+    remove: (platform, token) => deliveryAPI.removeFcmToken(platform, token),
     logPrefix: "[FCM][Delivery]",
     defaultTitle: "Ziggy Delivery",
-    defaultIcon: "/favicon.ico",
+    defaultIcon: "/image.png",
   },
 };
 
@@ -84,7 +83,7 @@ async function ensureServiceWorkerRegistered() {
 
   if (!serviceWorkerRegistrationPromise) {
     serviceWorkerRegistrationPromise = navigator.serviceWorker
-      .register(FCM_SW_PATH, { scope: FCM_SW_SCOPE })
+      .register(FCM_SW_PATH)
       .then(async (registration) => {
         if (typeof registration.update === "function") {
           try {
@@ -278,8 +277,10 @@ async function removeFcmToken(role) {
   const config = getRoleConfig(role);
 
   try {
-    await config.remove("web");
-    localStorage.removeItem(getRoleCacheKey(role));
+    const cacheKey = getRoleCacheKey(role);
+    const cachedToken = localStorage.getItem(cacheKey);
+    await config.remove("web", cachedToken);
+    localStorage.removeItem(cacheKey);
   } catch (error) {
     console.error(`${config.logPrefix} Error removing FCM token for web:`, error);
   }

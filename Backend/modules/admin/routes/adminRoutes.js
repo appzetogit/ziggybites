@@ -242,6 +242,7 @@ import {
   getSubscriptionSettings,
   updateSubscriptionSettings,
 } from "../controllers/subscriptionSettingsAdminController.js";
+import { getActiveSubscriptions } from "../controllers/activeSubscriptionController.js";
 import {
   assignSubscriptionOrders,
   getScheduledSubscriptionOrders,
@@ -287,6 +288,7 @@ router.delete("/subscription-plans/:durationDays", deleteSubscriptionPlan);
 // Subscription Settings (delivery charges per day)
 router.get("/subscription-settings", getSubscriptionSettings);
 router.put("/subscription-settings", updateSubscriptionSettings);
+router.get("/subscriptions", getActiveSubscriptions);
 
 // Subscription order flow (wallet / meal edit / assignment) — additive admin APIs
 router.post("/subscription-flow/assign-orders", assignSubscriptionOrders);

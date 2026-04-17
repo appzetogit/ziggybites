@@ -180,6 +180,11 @@ export default function RestaurantOnboarding() {
   const mainContentRef = useRef(null)
   const [error, setError] = useState("")
   const [approvalPending, setApprovalPending] = useState(false)
+  const digitsOnly = (value) => String(value || "").replace(/\D/g, "")
+  const isAlphabeticName = (value) =>
+    /^[A-Za-z][A-Za-z\s'.-]*$/.test(String(value || "").trim())
+  const isValidStepOneEmail = (value) =>
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim())
 
   const [step1, setStep1] = useState({
     restaurantName: "",
@@ -496,23 +501,29 @@ export default function RestaurantOnboarding() {
     }
     if (!step1.ownerName?.trim()) {
       errors.push("Owner name is required")
+    } else if (!isAlphabeticName(step1.ownerName)) {
+      errors.push("Owner full name should contain only alphabets")
     }
     if (!step1.ownerEmail?.trim()) {
       errors.push("Owner email is required")
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(step1.ownerEmail)) {
-      errors.push("Please enter a valid email address")
+    } else if (!isValidStepOneEmail(step1.ownerEmail)) {
+      errors.push("Email should be in this format: example@gmail.com")
     }
     if (!step1.ownerPhone?.trim()) {
       errors.push("Owner phone number is required")
     }
     if (!step1.primaryContactNumber?.trim()) {
       errors.push("Primary contact number is required")
+    } else if (digitsOnly(step1.primaryContactNumber).length !== 10) {
+      errors.push("Primary contact number should be 10 digits")
     }
     if (!step1.location?.area?.trim()) {
       errors.push("Area/Sector/Locality is required")
     }
     if (!step1.location?.city?.trim()) {
       errors.push("City is required")
+    } else if (!isAlphabeticName(step1.location.city)) {
+      errors.push("City field should contain only alphabets")
     }
 
     return errors
@@ -1122,6 +1133,13 @@ export default function RestaurantOnboarding() {
     })
   }
 
+  const removeMenuImage = (indexToRemove) => {
+    setStep2((prev) => ({
+      ...prev,
+      menuImages: prev.menuImages.filter((_, index) => index !== indexToRemove),
+    }))
+  }
+
   const renderStep1 = () => (
     <div className="space-y-6">
       <section className="bg-white p-4 sm:p-6 rounded-md">
@@ -1150,7 +1168,12 @@ export default function RestaurantOnboarding() {
             <Label className="text-xs text-gray-700">Full name*</Label>
             <Input
               value={step1.ownerName || ""}
-              onChange={(e) => setStep1({ ...step1, ownerName: e.target.value })}
+              onChange={(e) =>
+                setStep1({
+                  ...step1,
+                  ownerName: e.target.value.replace(/[^A-Za-z\s'.-]/g, ""),
+                })
+              }
               className="mt-1 bg-white text-sm text-black placeholder-black"
               placeholder="Owner full name"
             />
@@ -1160,9 +1183,11 @@ export default function RestaurantOnboarding() {
             <Input
               type="email"
               value={step1.ownerEmail || ""}
-              onChange={(e) => setStep1({ ...step1, ownerEmail: e.target.value })}
+              onChange={(e) =>
+                setStep1({ ...step1, ownerEmail: e.target.value.trim().toLowerCase() })
+              }
               className="mt-1 bg-white text-sm text-black placeholder-black"
-              placeholder="owner@example.com"
+              placeholder="example@gmail.com"
             />
           </div>
           <div>
@@ -1188,10 +1213,13 @@ export default function RestaurantOnboarding() {
           <Input
             value={step1.primaryContactNumber || ""}
             onChange={(e) =>
-              setStep1({ ...step1, primaryContactNumber: e.target.value })
+              setStep1({
+                ...step1,
+                primaryContactNumber: e.target.value.replace(/\D/g, "").slice(0, 10),
+              })
             }
             className="mt-1 bg-white text-sm text-black placeholder-black"
-            placeholder="Restaurant's primary contact number"
+            placeholder="10-digit contact number"
           />
           <p className="text-[11px] text-gray-500 mt-1">
             Customers, delivery partners and {companyName} may call on this number for order
@@ -1218,7 +1246,10 @@ export default function RestaurantOnboarding() {
             onChange={(e) =>
               setStep1({
                 ...step1,
-                location: { ...step1.location, city: e.target.value },
+                location: {
+                  ...step1.location,
+                  city: e.target.value.replace(/[^A-Za-z\s'.-]/g, ""),
+                },
               })
             }
             className="bg-white text-sm"
@@ -1290,13 +1321,22 @@ export default function RestaurantOnboarding() {
                 </span>
               </div>
             </div>
-            <label
-              htmlFor="menuImagesInput"
-              className="inline-flex justify-center items-center gap-1.5 px-3 py-1.5 rounded-sm bg-white text-black  border-black text-xs font-medium cursor-pointer     w-full items-center"
-            >
-              <Upload className="w-4.5 h-4.5" />
-              <span>Choose files</span>
-            </label>
+            <div className="grid w-full grid-cols-2 gap-2">
+              <label
+                htmlFor="menuImagesInput"
+                className="inline-flex justify-center items-center gap-1.5 px-3 py-2 rounded-sm bg-white text-black text-xs font-medium cursor-pointer border border-gray-300"
+              >
+                <Upload className="w-4.5 h-4.5" />
+                <span>Gallery</span>
+              </label>
+              <label
+                htmlFor="menuImagesCameraInput"
+                className="inline-flex justify-center items-center gap-1.5 px-3 py-2 rounded-sm bg-white text-black text-xs font-medium cursor-pointer border border-gray-300"
+              >
+                <Camera className="w-4.5 h-4.5" />
+                <span>Camera</span>
+              </label>
+            </div>
             <input
               id="menuImagesInput"
               type="file"
@@ -1313,6 +1353,22 @@ export default function RestaurantOnboarding() {
                 }))
                 // Reset input to allow selecting same file again
                 e.target.value = ''
+              }}
+            />
+            <input
+              id="menuImagesCameraInput"
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (!file) return
+                setStep2((prev) => ({
+                  ...prev,
+                  menuImages: [...(prev.menuImages || []), file],
+                }))
+                e.target.value = ""
               }}
             />
           </div>
@@ -1358,6 +1414,13 @@ export default function RestaurantOnboarding() {
                         {imageName}
                       </p>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => removeMenuImage(idx)}
+                      className="absolute right-2 top-2 rounded bg-black/75 px-2 py-1 text-[10px] font-medium text-white"
+                    >
+                      Delete
+                    </button>
                   </div>
                 )
               })}
@@ -1409,13 +1472,22 @@ export default function RestaurantOnboarding() {
             </div>
 
           </div>
-          <label
-            htmlFor="profileImageInput"
-            className="inline-flex justify-center items-center gap-1.5 px-3 py-1.5 rounded-sm bg-white text-black  border-black text-xs font-medium cursor-pointer     w-full items-center"
-          >
-            <Upload className="w-4.5 h-4.5" />
-            <span>Upload</span>
-          </label>
+          <div className="grid grid-cols-2 gap-2">
+            <label
+              htmlFor="profileImageInput"
+              className="inline-flex justify-center items-center gap-1.5 px-3 py-2 rounded-sm bg-white text-black text-xs font-medium cursor-pointer border border-gray-300"
+            >
+              <Upload className="w-4.5 h-4.5" />
+              <span>Gallery</span>
+            </label>
+            <label
+              htmlFor="profileImageCameraInput"
+              className="inline-flex justify-center items-center gap-1.5 px-3 py-2 rounded-sm bg-white text-black text-xs font-medium cursor-pointer border border-gray-300"
+            >
+              <Camera className="w-4.5 h-4.5" />
+              <span>Camera</span>
+            </label>
+          </div>
           <input
             id="profileImageInput"
             type="file"
@@ -1432,6 +1504,23 @@ export default function RestaurantOnboarding() {
               }
               // Reset input to allow selecting same file again
               e.target.value = ''
+            }}
+          />
+          <input
+            id="profileImageCameraInput"
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0] || null
+              if (file) {
+                setStep2((prev) => ({
+                  ...prev,
+                  profileImage: file,
+                }))
+              }
+              e.target.value = ""
             }}
           />
         </div>
@@ -1804,11 +1893,11 @@ export default function RestaurantOnboarding() {
 
   return (
     <LocalizationProvider dateAdapter={AdapterDateFns}>
-      <div className="min-h-screen bg-gray-100 flex flex-col">
+      <div className="h-[100dvh] bg-gray-100 flex flex-col overflow-hidden">
         {approvalPending && (
           <ApprovalPendingPopup
-            title="Waiting for admin approval"
-            message="Your restaurant registration has been submitted. This popup will stay until admin approval is completed."
+            title="Registration Submitted"
+            message="Your restaurant registration has been submitted. We will notify you once the review is complete."
           />
         )}
         <header className="px-4 py-4 sm:px-6 sm:py-5 bg-white border-b border-gray-100 flex items-center justify-between">

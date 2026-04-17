@@ -78,6 +78,7 @@ const fcmRegisterSchema = Joi.object({
 
 const fcmDeleteSchema = Joi.object({
   platform: Joi.string().valid('web', 'android', 'ios').required(),
+  fcmToken: Joi.string().optional(),
 });
 
 // Public routes
@@ -109,4 +110,3 @@ router.get('/google/:role/callback', googleCallback);
 router.get('/me', authenticate, getCurrentUser);
 
 export default router;
-

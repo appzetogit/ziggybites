@@ -45,7 +45,13 @@ function normalizePayload(payload = {}) {
 
 function collectTokens(record) {
   return [
-    ...new Set([record?.fcmTokenWeb, record?.fcmTokenAndroid, record?.fcmTokenIos].filter(Boolean)),
+    ...new Set([
+      ...(record?.fcmTokens || []),
+      ...(record?.fcmTokenMobile || []),
+      record?.fcmTokenWeb,
+      record?.fcmTokenAndroid,
+      record?.fcmTokenIos,
+    ].filter(Boolean)),
   ];
 }
 
@@ -76,9 +82,16 @@ async function clearInvalidTokens(model, record, cleanupTokens = []) {
   if (record.fcmTokenAndroid && invalid.has(record.fcmTokenAndroid)) update.fcmTokenAndroid = null;
   if (record.fcmTokenIos && invalid.has(record.fcmTokenIos)) update.fcmTokenIos = null;
 
-  if (Object.keys(update).length > 0) {
-    await model.updateOne({ _id: record._id }, { $set: update });
-  }
+  await model.updateOne(
+    { _id: record._id },
+    {
+      ...(Object.keys(update).length > 0 ? { $set: update } : {}),
+      $pull: {
+        fcmTokens: { $in: cleanupTokens },
+        fcmTokenMobile: { $in: cleanupTokens },
+      },
+    },
+  );
 }
 
 export async function sendEntityPushNotification(targetId, targetType, payload) {

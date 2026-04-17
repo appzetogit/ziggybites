@@ -58,6 +58,22 @@ export const releaseEscrow = async (orderId) => {
       throw new Error("Settlement not found");
     }
 
+    const isFullySettled =
+      currentSettlement.escrowStatus === "released" ||
+      currentSettlement.settlementStatus === "completed";
+    const allPartiesSettled =
+      currentSettlement.restaurantSettled &&
+      currentSettlement.adminSettled &&
+      (!currentSettlement.deliveryPartnerId ||
+        currentSettlement.deliveryPartnerSettled);
+
+    if (isFullySettled && allPartiesSettled) {
+      console.log(
+        `Escrow already released for order ${currentSettlement.orderNumber}. Skipping duplicate distribution.`,
+      );
+      return currentSettlement;
+    }
+
     // Self-healing: If escrow was missed (pending), attempt to hold it now before releasing
     if (currentSettlement.escrowStatus === "pending") {
       console.log(
@@ -78,7 +94,10 @@ export const releaseEscrow = async (orderId) => {
       }
     }
 
-    if (currentSettlement.escrowStatus !== "held") {
+    if (
+      currentSettlement.escrowStatus !== "held" &&
+      currentSettlement.escrowStatus !== "released"
+    ) {
       throw new Error(
         `Escrow not in held status. Current status: ${currentSettlement.escrowStatus}`,
       );
@@ -90,12 +109,15 @@ export const releaseEscrow = async (orderId) => {
     // Update escrow status
     settlement.escrowStatus = "released";
     settlement.escrowReleasedAt = new Date();
-    await settlement.save();
 
     // Credit restaurant wallet with net earning (food price - commission)
     // Example: ₹200 order, 15% commission = ₹30, restaurant gets ₹170
-    if (settlement.restaurantEarning.netEarning > 0) {
-      await creditRestaurantWallet(
+    if (
+      !settlement.restaurantSettled &&
+      settlement.restaurantEarning.status !== "credited" &&
+      settlement.restaurantEarning.netEarning > 0
+    ) {
+      const restaurantCredited = await creditRestaurantWallet(
         settlement.restaurantId,
         settlement.orderId,
         settlement.restaurantEarning.netEarning, // ₹170 (₹200 - ₹30)
@@ -103,9 +125,11 @@ export const releaseEscrow = async (orderId) => {
         settlement.restaurantEarning.foodPrice, // Full order value for reference
         settlement.restaurantEarning.commission, // Commission deducted
       );
-      settlement.restaurantEarning.status = "credited";
-      settlement.restaurantEarning.creditedAt = new Date();
-      settlement.restaurantSettled = true;
+      if (restaurantCredited) {
+        settlement.restaurantEarning.status = "credited";
+        settlement.restaurantEarning.creditedAt = new Date();
+        settlement.restaurantSettled = true;
+      }
     }
 
     // Credit delivery partner wallet
@@ -113,28 +137,34 @@ export const releaseEscrow = async (orderId) => {
       settlement.deliveryPartnerId &&
       settlement.deliveryPartnerEarning.totalEarning > 0
     ) {
-      await creditDeliveryWallet(
+      const deliveryCredited = await creditDeliveryWallet(
         settlement.deliveryPartnerId,
         settlement.orderId,
         settlement.deliveryPartnerEarning.totalEarning,
         settlement.orderNumber,
       );
-      settlement.deliveryPartnerEarning.status = "credited";
-      settlement.deliveryPartnerEarning.creditedAt = new Date();
-      settlement.deliveryPartnerSettled = true;
+      if (deliveryCredited) {
+        settlement.deliveryPartnerEarning.status = "credited";
+        settlement.deliveryPartnerEarning.creditedAt = new Date();
+        settlement.deliveryPartnerSettled = true;
+      }
     }
 
     // Credit admin wallet
-    await creditAdminWallet(
-      settlement.orderId,
-      settlement.adminEarning,
-      settlement.orderNumber,
-      settlement.restaurantId,
-      settlement, // Pass settlement for reference
-    );
-    settlement.adminEarning.status = "credited";
-    settlement.adminEarning.creditedAt = new Date();
-    settlement.adminSettled = true;
+    if (!settlement.adminSettled && settlement.adminEarning.status !== "credited") {
+      const adminCredited = await creditAdminWallet(
+        settlement.orderId,
+        settlement.adminEarning,
+        settlement.orderNumber,
+        settlement.restaurantId,
+        settlement, // Pass settlement for reference
+      );
+      if (adminCredited) {
+        settlement.adminEarning.status = "credited";
+        settlement.adminEarning.creditedAt = new Date();
+        settlement.adminSettled = true;
+      }
+    }
 
     // Update settlement status
     settlement.settlementStatus = "completed";
@@ -190,6 +220,21 @@ const creditRestaurantWallet = async (
     const wallet =
       await RestaurantWallet.findOrCreateByRestaurantId(restaurantId);
 
+    const existingTransaction = wallet.transactions?.find(
+      (transaction) =>
+        transaction.orderId &&
+        transaction.orderId.toString() === orderId.toString() &&
+        transaction.type === "payment" &&
+        transaction.status === "Completed",
+    );
+
+    if (existingTransaction) {
+      console.log(
+        `Restaurant wallet already credited for order ${orderNumber}. Skipping duplicate credit.`,
+      );
+      return true;
+    }
+
     // Create description with breakdown
     let description = `Payment for order ${orderNumber}`;
     if (foodPrice && commission) {
@@ -225,6 +270,8 @@ const creditRestaurantWallet = async (
       },
       description: `Restaurant wallet credited for order ${orderNumber}`,
     });
+
+    return true;
   } catch (error) {
     console.error("Error crediting restaurant wallet:", error);
     throw error;
@@ -245,6 +292,21 @@ const creditDeliveryWallet = async (
       await import("../../delivery/models/DeliveryWallet.js")
     ).default;
     const wallet = await DeliveryWallet.findOrCreateByDeliveryId(deliveryId);
+
+    const existingTransaction = wallet.transactions?.find(
+      (transaction) =>
+        transaction.orderId &&
+        transaction.orderId.toString() === orderId.toString() &&
+        transaction.type === "payment" &&
+        transaction.status === "Completed",
+    );
+
+    if (existingTransaction) {
+      console.log(
+        `Delivery wallet already credited for order ${orderNumber}. Skipping duplicate credit.`,
+      );
+      return true;
+    }
 
     wallet.addTransaction({
       amount: amount,
@@ -276,6 +338,8 @@ const creditDeliveryWallet = async (
       },
       description: `Delivery partner wallet credited for order ${orderNumber}`,
     });
+
+    return true;
   } catch (error) {
     console.error("Error crediting delivery wallet:", error);
     throw error;
@@ -299,10 +363,19 @@ const creditAdminWallet = async (
 ) => {
   try {
     const wallet = await AdminWallet.findOrCreate();
+    const hasCompletedTransaction = (type) =>
+      wallet.transactions?.some(
+        (transaction) =>
+          transaction.orderId &&
+          transaction.orderId.toString() === orderId.toString() &&
+          transaction.type === type &&
+          transaction.status === "Completed",
+      );
+    let creditedAny = false;
 
     // Credit commission (from restaurant)
     // This is the commission deducted from restaurant's food price
-    if (adminEarning.commission > 0) {
+    if (adminEarning.commission > 0 && !hasCompletedTransaction("commission")) {
       const foodPrice = settlement?.restaurantEarning?.foodPrice || 0;
       const commissionPercent =
         foodPrice > 0
@@ -316,10 +389,11 @@ const creditAdminWallet = async (
         orderId: orderId,
         restaurantId: restaurantId,
       });
+      creditedAny = true;
     }
 
     // Credit platform fee
-    if (adminEarning.platformFee > 0) {
+    if (adminEarning.platformFee > 0 && !hasCompletedTransaction("platform_fee")) {
       wallet.addTransaction({
         amount: adminEarning.platformFee,
         type: "platform_fee",
@@ -327,10 +401,11 @@ const creditAdminWallet = async (
         description: `Platform fee from order ${orderNumber}`,
         orderId: orderId,
       });
+      creditedAny = true;
     }
 
     // Credit delivery fee
-    if (adminEarning.deliveryFee > 0) {
+    if (adminEarning.deliveryFee > 0 && !hasCompletedTransaction("delivery_fee")) {
       wallet.addTransaction({
         amount: adminEarning.deliveryFee,
         type: "delivery_fee",
@@ -338,10 +413,11 @@ const creditAdminWallet = async (
         description: `Delivery fee from order ${orderNumber}`,
         orderId: orderId,
       });
+      creditedAny = true;
     }
 
     // Credit GST
-    if (adminEarning.gst > 0) {
+    if (adminEarning.gst > 0 && !hasCompletedTransaction("gst")) {
       wallet.addTransaction({
         amount: adminEarning.gst,
         type: "gst",
@@ -349,6 +425,14 @@ const creditAdminWallet = async (
         description: `GST from order ${orderNumber}`,
         orderId: orderId,
       });
+      creditedAny = true;
+    }
+
+    if (!creditedAny) {
+      console.log(
+        `Admin wallet already credited for order ${orderNumber}. Skipping duplicate credit.`,
+      );
+      return true;
     }
 
     await wallet.save();
@@ -372,6 +456,8 @@ const creditAdminWallet = async (
       },
       description: `Admin wallet credited for order ${orderNumber}`,
     });
+
+    return true;
   } catch (error) {
     console.error("Error crediting admin wallet:", error);
     throw error;

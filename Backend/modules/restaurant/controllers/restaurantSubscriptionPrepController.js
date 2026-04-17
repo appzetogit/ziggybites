@@ -3,6 +3,23 @@ import { successResponse, errorResponse } from "../../../shared/utils/response.j
 import Order from "../../order/models/Order.js";
 import UserSubscription from "../../subscription/models/UserSubscription.js";
 
+const SUBSCRIPTION_READY_WINDOW_MINUTES = 45;
+
+function getReadyWindowForMeal(dateLike) {
+  const scheduledAt = new Date(dateLike);
+  if (Number.isNaN(scheduledAt.getTime())) return null;
+  const windowMs = SUBSCRIPTION_READY_WINDOW_MINUTES * 60 * 1000;
+  const startsAt = new Date(scheduledAt.getTime() - windowMs);
+  const endsAt = new Date(scheduledAt.getTime() + windowMs);
+  const nowMs = Date.now();
+  return {
+    startsAt: startsAt.toISOString(),
+    endsAt: endsAt.toISOString(),
+    canMarkReady: nowMs >= startsAt.getTime() && nowMs <= endsAt.getTime(),
+    minutes: SUBSCRIPTION_READY_WINDOW_MINUTES,
+  };
+}
+
 function minuteKey(subscriptionId, dateLike) {
   const ms = new Date(dateLike).getTime();
   if (!Number.isFinite(ms)) return null;
@@ -38,6 +55,7 @@ function buildPrepSummaryAndRowsFromOrders(orders) {
             }
           : null,
       scheduledMealAt: order.scheduledMealAt,
+      readyWindow: getReadyWindowForMeal(order.scheduledMealAt),
       editWindow: order.editWindow,
       mealDetailsVisible: visible,
       visibilityReason: reason,

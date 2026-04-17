@@ -101,34 +101,73 @@ export async function sendPushNotification(tokens, payload) {
 
   for (const tokenChunk of chunks) {
     try {
-      const response = await admin.messaging().sendEachForMulticast({
+      const tag = payload.data?.tag || payload.data?.orderId || payload.data?.notificationId || String(Date.now());
+      const icon = payload.icon || payload.data?.icon || "/image.png";
+      const image = payload.imageUrl || payload.data?.image || "";
+      const link = payload.data?.link || payload.data?.click_action || "/";
+      const message = {
         tokens: tokenChunk,
-        notification: {
-          title: payload.title,
-          body: payload.body,
+        data: {
+          ...(payload.data || {}),
+          title: payload.title || "",
+          body: payload.body || "",
+          tag,
+          icon,
+          image,
+          link,
         },
-        data: payload.data || {},
         android: {
           priority: "high",
+          collapseKey: tag,
           notification: {
             sound: "default",
             channelId: payload.androidChannelId || "default",
           },
         },
-        apns: { payload: { aps: { sound: "default" } } },
+        apns: {
+          headers: { "apns-collapse-id": tag, "apns-priority": "10" },
+          payload: {
+            aps: {
+              alert: { title: payload.title || "", body: payload.body || "" },
+              sound: "default",
+              "thread-id": tag,
+            },
+          },
+        },
         webpush: {
-          headers: { Urgency: "high" },
+          headers: { Urgency: "high", Topic: tag.substring(0, 32) },
           notification: {
             title: payload.title,
             body: payload.body,
-            icon: payload.icon || payload.data?.icon || "/favicon.ico",
-            image: payload.imageUrl || payload.data?.image || undefined,
+            tag,
+            icon,
+            badge: icon,
+            image: image || undefined,
+            requireInteraction: false,
           },
           fcmOptions: {
-            link: payload.data?.link || "/",
+            link,
           },
         },
-      });
+      };
+
+      const messaging = admin.messaging();
+      const response = typeof messaging.sendEachForMulticast === "function"
+        ? await messaging.sendEachForMulticast(message)
+        : await Promise.allSettled(
+            tokenChunk.map((token) => {
+              const { tokens: _tokens, ...singleMessage } = message;
+              return messaging.send({ ...singleMessage, token });
+            }),
+          ).then((settled) => ({
+            successCount: settled.filter((entry) => entry.status === "fulfilled").length,
+            failureCount: settled.filter((entry) => entry.status === "rejected").length,
+            responses: settled.map((entry) =>
+              entry.status === "fulfilled"
+                ? { success: true, messageId: entry.value }
+                : { success: false, error: entry.reason },
+            ),
+          }));
 
       result.successCount += response.successCount || 0;
       result.failureCount += response.failureCount || 0;

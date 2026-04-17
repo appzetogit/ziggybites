@@ -64,6 +64,8 @@ export default function SignIn() {
   const [isLoading, setIsLoading] = useState(false)
   const [apiError, setApiError] = useState("")
   const redirectHandledRef = useRef(false)
+  const initRanRef = useRef(false)
+  const navigateRef = useRef(navigate)
 
   // Prefill phone when user comes back from OTP screen
   useEffect(() => {
@@ -84,6 +86,9 @@ export default function SignIn() {
       }
     } catch (_) {}
   }, [])
+
+  // Keep navigate ref in sync
+  navigateRef.current = navigate
 
   // Helper function to process signed-in user
   const processSignedInUser = async (user, source = "unknown") => {
@@ -151,7 +156,7 @@ export default function SignIn() {
         }
 
         console.log(`✅ Navigating to user dashboard from ${source}...`)
-        navigate("/user", { replace: true })
+        navigateRef.current("/user", { replace: true })
       } else {
         console.error(`❌ Invalid backend response from ${source}`)
         redirectHandledRef.current = false
@@ -173,11 +178,18 @@ export default function SignIn() {
     }
   }
 
-  // Handle Firebase redirect result on component mount and URL changes
+  // Handle Firebase redirect result on component mount ONLY (run once)
   useEffect(() => {
+    // Prevent running multiple times (e.g. React StrictMode double-mount)
+    if (initRanRef.current) return
+    initRanRef.current = true
+
     let unsubscribe = null
+    let cancelled = false
 
     const handleRedirectResult = async () => {
+      if (cancelled || redirectHandledRef.current) return
+
       try {
         const { getRedirectResult } = await import("firebase/auth")
         await ensureFirebaseInitialized()
@@ -201,15 +213,15 @@ export default function SignIn() {
           result = null
         }
 
+        if (cancelled || redirectHandledRef.current) return
+
         if (result?.user) {
           await processSignedInUser(result.user, "redirect-result")
-        } else {
-          const currentUser = firebaseAuth?.currentUser
-          if (currentUser && !redirectHandledRef.current) {
-            await processSignedInUser(currentUser, "current-user-check")
-          }
         }
+        // NOTE: Removed auto-processing of currentUser here to prevent loops.
+        // Users with a stale Firebase session will need to click "Sign in" again.
       } catch (error) {
+        if (cancelled) return
         console.error("❌ Google sign-in check error:", error)
         setApiError("Failed to check authentication status. Please try refreshing.")
         setIsLoading(false)
@@ -223,12 +235,22 @@ export default function SignIn() {
 
         if (!firebaseAuth) return
 
+        // We only care about NEW sign-ins triggered by the user on this page,
+        // not existing Firebase sessions. Track whether listener has fired once.
+        let initialFire = true
+
         unsubscribe = onAuthStateChanged(firebaseAuth, async (user) => {
-          if (user && !redirectHandledRef.current) {
-            // Only handle auth changes while on the sign‑in page to avoid loops after navigation
-            if (window.location.pathname.includes('/auth/sign-in')) {
-              await processSignedInUser(user, "auth-state-listener");
-            }
+          if (cancelled || redirectHandledRef.current) return
+
+          // Skip the first fire — it just reports the existing Firebase session
+          // which causes the loop if the user is already signed in with Google.
+          if (initialFire) {
+            initialFire = false
+            return
+          }
+
+          if (user && window.location.pathname.includes('/auth/sign-in')) {
+            await processSignedInUser(user, "auth-state-listener")
           }
         })
       } catch (error) {
@@ -241,16 +263,17 @@ export default function SignIn() {
       await setupAuthListener()
       // Small delay to let Firebase state settle
       setTimeout(() => {
-        handleRedirectResult()
+        if (!cancelled) handleRedirectResult()
       }, 500)
     }
 
     init()
 
     return () => {
+      cancelled = true
       if (unsubscribe) unsubscribe()
     }
-  }, [navigate])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Get selected country details dynamically
   const selectedCountry = countryCodes.find(c => c.code === formData.countryCode) || countryCodes[2] // Default to India (+91)
@@ -473,17 +496,17 @@ export default function SignIn() {
   }
 
   return (
-    <AnimatedPage className="h-screen max-h-[100dvh] flex flex-col bg-white dark:bg-[#0a0a0a] overflow-hidden !pb-0 md:flex-row md:overflow-hidden">
+    <AnimatedPage className="h-[100dvh] flex flex-col bg-white dark:bg-[#0a0a0a] overflow-hidden !pb-0 md:flex-row md:overflow-hidden">
 
        {/* Mobile: Top Section - Banner Image */}
        {/* Desktop: Left Section - Banner Image */}
        {/* Mobile: Top Section - Delivery logo (ZigZagLite red theme) */}
-      <div className="relative md:hidden w-full shrink-0 flex items-center justify-center bg-white dark:bg-white" style={{ height: "45vh", minHeight: "300px" }}>
+      <div className="relative md:hidden w-full shrink-0 flex items-center justify-center bg-white dark:bg-white px-4 pt-4" style={{ height: "clamp(220px, 32dvh, 280px)" }}>
         <div className="flex flex-col items-center justify-center">
           <img
             src="/image.png"
             alt="ZiggyBites"
-            className="w-64 h-auto object-contain"
+            className="w-48 h-auto object-contain sm:w-56"
             onError={(e) => { e.target.onerror = null; e.target.src = ziggybitesLogo }}
           />
         </div>
@@ -503,10 +526,10 @@ export default function SignIn() {
 
       {/* Mobile: Bottom Section - White Login Form (scrollable); Desktop: Right Section - Login Form */}
       <div className="flex-1 min-h-0 flex flex-col md:w-1/2 md:h-full md:overflow-hidden">
-        <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 md:p-6 lg:p-8 xl:p-10 md:flex md:items-center md:justify-center bg-white dark:bg-[#1a1a1a]">
-        <div className="max-w-md lg:max-w-lg xl:max-w-xl mx-auto space-y-6 md:space-y-8 lg:space-y-10 w-full">
+        <div className="flex-1 min-h-0 overflow-hidden p-3 sm:p-4 md:p-6 lg:p-8 xl:p-10 md:flex md:items-center md:justify-center bg-white dark:bg-[#1a1a1a]">
+        <div className="max-w-md lg:max-w-lg xl:max-w-xl mx-auto flex h-full w-full flex-col justify-between gap-4 md:h-auto md:justify-center md:space-y-8 lg:space-y-10">
           {/* Heading - ZigZagLite: subscription food delivery (no dine-in) */}
-          <div className="text-center space-y-2 md:space-y-3">
+          <div className="text-center space-y-1.5 md:space-y-3">
             <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-black dark:text-white leading-tight">
               India's #1 Subscription Food Delivery App
             </h2>
@@ -516,7 +539,7 @@ export default function SignIn() {
           </div>
 
           {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-4 md:space-y-5">
+          <form onSubmit={handleSubmit} className="space-y-3 md:space-y-5">
             {/* Name field for sign up - hidden by default, shown only when needed */}
             {isSignUp && (
               <div className="space-y-2">
@@ -723,7 +746,7 @@ export default function SignIn() {
           </div>
 
           {/* Legal Disclaimer */}
-          <div className="text-center text-xs md:text-sm text-gray-500 dark:text-gray-400 pt-4 md:pt-6">
+          <div className="text-center text-xs md:text-sm text-gray-500 dark:text-gray-400 pt-2 md:pt-6">
             <p className="mb-1 md:mb-2">
               By continuing, you agree to our
             </p>

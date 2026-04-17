@@ -5,6 +5,44 @@ import { getIO } from "../../../server.js";
 import Restaurant from "../../restaurant/models/Restaurant.js";
 import { assignOrderToDeliveryBoy, findNearestDeliveryBoy, findNearestDeliveryBoys } from "./deliveryAssignmentService.js";
 
+const SUBSCRIPTION_READY_WINDOW_MINUTES = 45;
+
+function getSubscriptionReadyWindow(scheduledMealAt) {
+  const scheduledAt = new Date(scheduledMealAt);
+  if (Number.isNaN(scheduledAt.getTime())) return null;
+  const windowMs = SUBSCRIPTION_READY_WINDOW_MINUTES * 60 * 1000;
+  return {
+    startsAt: new Date(scheduledAt.getTime() - windowMs),
+    endsAt: new Date(scheduledAt.getTime() + windowMs),
+  };
+}
+
+function assertSubscriptionReadyWindow(order) {
+  if (order.source?.type !== "subscription") return;
+  if (!order.scheduledMealAt) {
+    const err = new Error("Scheduled meal time is missing for this subscription order");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const window = getSubscriptionReadyWindow(order.scheduledMealAt);
+  if (!window) {
+    const err = new Error("Scheduled meal time is invalid for this subscription order");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const nowMs = Date.now();
+  if (nowMs < window.startsAt.getTime() || nowMs > window.endsAt.getTime()) {
+    const err = new Error(
+      `Meal can be marked ready only within ${SUBSCRIPTION_READY_WINDOW_MINUTES} minutes before or after the scheduled time (${window.startsAt.toLocaleString("en-IN")} - ${window.endsAt.toLocaleString("en-IN")}).`,
+    );
+    err.statusCode = 400;
+    err.readyWindow = window;
+    throw err;
+  }
+}
+
 async function getRestaurantCoords(restaurantId) {
   const restaurantDoc = await Restaurant.findById(restaurantId)
     .select("location")
@@ -285,6 +323,10 @@ export async function updatePreparationStatus(orderId, restaurantId, { preparati
     const err = new Error("Forbidden");
     err.statusCode = 403;
     throw err;
+  }
+
+  if (preparationStatus === "ready") {
+    assertSubscriptionReadyWindow(order);
   }
 
   const prev = order.preparationStatus;

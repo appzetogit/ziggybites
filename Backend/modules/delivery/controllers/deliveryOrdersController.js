@@ -1974,6 +1974,17 @@ export const completeDelivery = asyncHandler(async (req, res) => {
         `ℹ️ Order ${order.orderId || order._id} is already delivered/completed. Returning success (idempotent).`,
       );
 
+      try {
+        const { releaseEscrow } =
+          await import("../../order/services/escrowWalletService.js");
+        await releaseEscrow(order._id);
+      } catch (escrowError) {
+        console.error(
+          `Error ensuring wallet settlement for already delivered order ${order.orderId || order._id}:`,
+          escrowError,
+        );
+      }
+
       // Return success with existing order data (idempotent operation)
       // Still calculate earnings if not already calculated
       let earnings = null;
@@ -2375,6 +2386,7 @@ export const completeDelivery = asyncHandler(async (req, res) => {
       const subtotal = order.pricing?.subtotal || order.pricing?.total || 0;
       const discount = order.pricing?.discount || 0;
       const foodPrice = Math.max(0, subtotal - discount);
+      const orderTotal = Number(order.pricing?.total) || 0;
 
       // Find restaurant by restaurantId (can be string or ObjectId)
       let restaurant = null;
@@ -2398,14 +2410,25 @@ export const completeDelivery = asyncHandler(async (req, res) => {
             foodPrice,
           );
 
-        const commissionAmount = commissionResult.commission || 0;
-        const restaurantEarning = foodPrice - commissionAmount;
+        const rawCommissionAmount = Number(commissionResult.commission) || 0;
+        const commissionAmount = Math.min(
+          foodPrice,
+          Math.round(rawCommissionAmount * 100) / 100,
+        );
+        const restaurantEarning =
+          Math.round((foodPrice - commissionAmount) * 100) / 100;
+        const commissionPercentage =
+          commissionResult.type === "percentage"
+            ? commissionResult.value
+            : foodPrice > 0
+              ? Math.round((commissionAmount / foodPrice) * 10000) / 100
+              : 0;
 
         console.log(
           `💰 Restaurant commission calculation for order ${orderIdForLog}:`,
           {
             foodPrice,
-            commissionPercentage: commissionResult.value,
+            commissionPercentage,
             commissionAmount: commissionAmount,
             restaurantEarning: restaurantEarning,
           },
@@ -2482,7 +2505,7 @@ export const completeDelivery = asyncHandler(async (req, res) => {
               orderId: orderMongoId || order._id,
               orderAmount: orderTotal,
               commissionAmount: commissionAmount,
-              commissionPercentage: commissionResult.value,
+              commissionPercentage,
               restaurantId: restaurant._id,
               restaurantName: restaurant.name || order.restaurantName,
               restaurantEarning: restaurantEarning,

@@ -137,10 +137,10 @@ export const authAPI = {
   },
 
   // Remove FCM token for this platform on logout
-  removeFcmToken: (platform = "web") => {
+  removeFcmToken: (platform = "web", fcmToken = null) => {
     console.log("[FCM] Removing token on backend for platform", platform);
     return apiClient.delete(API_ENDPOINTS.AUTH.FCM_TOKEN, {
-      data: { platform },
+      data: { platform, ...(fcmToken ? { fcmToken } : {}) },
     });
   },
 
@@ -506,13 +506,13 @@ export const restaurantAPI = {
   },
 
   // Remove FCM token for this restaurant platform on logout
-  removeFcmToken: (platform = "web") => {
+  removeFcmToken: (platform = "web", fcmToken = null) => {
     console.log(
       "[FCM][Restaurant] Removing token on backend for platform",
       platform,
     );
     return apiClient.delete(API_ENDPOINTS.RESTAURANT.AUTH.FCM_TOKEN, {
-      data: { platform },
+      data: { platform, ...(fcmToken ? { fcmToken } : {}) },
     });
   },
 
@@ -1007,10 +1007,10 @@ export const deliveryAPI = {
       fcmToken,
     });
   },
-  removeFcmToken: (platform = "web") => {
+  removeFcmToken: (platform = "web", fcmToken = null) => {
     console.log("[FCM][Delivery] Removing token on backend for platform", platform);
     return apiClient.delete(API_ENDPOINTS.DELIVERY.AUTH.FCM_TOKEN, {
-      data: { platform },
+      data: { platform, ...(fcmToken ? { fcmToken } : {}) },
     });
   },
   getCurrentDelivery: () => {

@@ -423,13 +423,21 @@ export const registerFcmToken = asyncHandler(async (req, res) => {
     return errorResponse(res, 404, "Delivery partner not found");
   }
 
-  // Update specific platform token
+  const addUniqueToken = (field) => {
+    if (!Array.isArray(delivery[field])) delivery[field] = [];
+    if (!delivery[field].includes(fcmToken)) delivery[field].push(fcmToken);
+    if (delivery[field].length > 10) delivery[field] = delivery[field].slice(-10);
+  };
+
   if (platform === "web") {
     delivery.fcmTokenWeb = fcmToken;
+    addUniqueToken("fcmTokens");
   } else if (platform === "android") {
     delivery.fcmTokenAndroid = fcmToken;
+    addUniqueToken("fcmTokenMobile");
   } else if (platform === "ios") {
     delivery.fcmTokenIos = fcmToken;
+    addUniqueToken("fcmTokenMobile");
   }
 
   await delivery.save();
@@ -442,6 +450,8 @@ export const registerFcmToken = asyncHandler(async (req, res) => {
     fcmTokenWeb: delivery.fcmTokenWeb,
     fcmTokenAndroid: delivery.fcmTokenAndroid,
     fcmTokenIos: delivery.fcmTokenIos,
+    fcmTokens: delivery.fcmTokens,
+    fcmTokenMobile: delivery.fcmTokenMobile,
   });
 });
 
@@ -452,7 +462,7 @@ export const registerFcmToken = asyncHandler(async (req, res) => {
  */
 export const removeFcmToken = asyncHandler(async (req, res) => {
   const deliveryId = req.delivery?._id;
-  const { platform } = req.body;
+  const { platform, fcmToken } = req.body;
 
   if (!platform) {
     return errorResponse(res, 400, "platform is required");
@@ -473,11 +483,20 @@ export const removeFcmToken = asyncHandler(async (req, res) => {
   }
 
   if (platform === "web") {
-    delivery.fcmTokenWeb = null;
+    if (!fcmToken || delivery.fcmTokenWeb === fcmToken) delivery.fcmTokenWeb = null;
+    delivery.fcmTokens = fcmToken
+      ? (delivery.fcmTokens || []).filter((token) => token !== fcmToken)
+      : [];
   } else if (platform === "android") {
-    delivery.fcmTokenAndroid = null;
+    if (!fcmToken || delivery.fcmTokenAndroid === fcmToken) delivery.fcmTokenAndroid = null;
+    delivery.fcmTokenMobile = fcmToken
+      ? (delivery.fcmTokenMobile || []).filter((token) => token !== fcmToken)
+      : [];
   } else if (platform === "ios") {
-    delivery.fcmTokenIos = null;
+    if (!fcmToken || delivery.fcmTokenIos === fcmToken) delivery.fcmTokenIos = null;
+    delivery.fcmTokenMobile = fcmToken
+      ? (delivery.fcmTokenMobile || []).filter((token) => token !== fcmToken)
+      : [];
   }
 
   await delivery.save();

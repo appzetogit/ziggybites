@@ -7,6 +7,7 @@ import App from './App.jsx'
 import OfflineBanner from './components/OfflineBanner.jsx'
 import { getGoogleMapsApiKey } from './lib/utils/googleMapsApiKey.js'
 import { loadBusinessSettings } from './lib/utils/businessSettings.js'
+import { installFlutterCameraBridge } from './lib/mobileBridge.js'
 
 // Load business settings on app start (favicon, title)
 // Silently handle errors - this is not critical for app functionality
@@ -81,6 +82,8 @@ window.__googleMapsLoaded = window.__googleMapsLoaded || false;
 // Force light theme app-wide.
 localStorage.setItem('appTheme', 'light')
 document.documentElement.classList.remove('dark')
+
+installFlutterCameraBridge()
 
 // Suppress browser extension errors
 const originalError = console.error

@@ -358,13 +358,21 @@ export const registerFcmToken = asyncHandler(async (req, res) => {
     return errorResponse(res, 404, "User not found");
   }
 
-  // Update specific platform token
+  const addUniqueToken = (field) => {
+    if (!Array.isArray(user[field])) user[field] = [];
+    if (!user[field].includes(fcmToken)) user[field].push(fcmToken);
+    if (user[field].length > 10) user[field] = user[field].slice(-10);
+  };
+
   if (platform === "web") {
     user.fcmTokenWeb = fcmToken;
+    addUniqueToken("fcmTokens");
   } else if (platform === "android") {
     user.fcmTokenAndroid = fcmToken;
+    addUniqueToken("fcmTokenMobile");
   } else if (platform === "ios") {
     user.fcmTokenIos = fcmToken;
+    addUniqueToken("fcmTokenMobile");
   }
 
   await user.save();
@@ -375,6 +383,8 @@ export const registerFcmToken = asyncHandler(async (req, res) => {
     fcmTokenWeb: user.fcmTokenWeb,
     fcmTokenAndroid: user.fcmTokenAndroid,
     fcmTokenIos: user.fcmTokenIos,
+    fcmTokens: user.fcmTokens,
+    fcmTokenMobile: user.fcmTokenMobile,
   });
 });
 
@@ -385,7 +395,7 @@ export const registerFcmToken = asyncHandler(async (req, res) => {
  */
 export const removeFcmToken = asyncHandler(async (req, res) => {
   const userId = req.user?._id;
-  const { platform } = req.body;
+  const { platform, fcmToken } = req.body;
 
   if (!platform) {
     return errorResponse(res, 400, "platform is required");
@@ -406,11 +416,20 @@ export const removeFcmToken = asyncHandler(async (req, res) => {
   }
 
   if (platform === "web") {
-    user.fcmTokenWeb = null;
+    if (!fcmToken || user.fcmTokenWeb === fcmToken) user.fcmTokenWeb = null;
+    user.fcmTokens = fcmToken
+      ? (user.fcmTokens || []).filter((token) => token !== fcmToken)
+      : [];
   } else if (platform === "android") {
-    user.fcmTokenAndroid = null;
+    if (!fcmToken || user.fcmTokenAndroid === fcmToken) user.fcmTokenAndroid = null;
+    user.fcmTokenMobile = fcmToken
+      ? (user.fcmTokenMobile || []).filter((token) => token !== fcmToken)
+      : [];
   } else if (platform === "ios") {
-    user.fcmTokenIos = null;
+    if (!fcmToken || user.fcmTokenIos === fcmToken) user.fcmTokenIos = null;
+    user.fcmTokenMobile = fcmToken
+      ? (user.fcmTokenMobile || []).filter((token) => token !== fcmToken)
+      : [];
   }
 
   await user.save();

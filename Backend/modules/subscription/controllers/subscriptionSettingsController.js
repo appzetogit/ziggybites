@@ -8,7 +8,7 @@ function notificationSettingsDto(settings) {
   const lead = Number(ns.mealReminderLeadMinutes);
   return {
     mealReminderEnabled: ns.mealReminderEnabled !== false,
-    mealReminderLeadMinutes: Number.isFinite(lead) ? Math.min(Math.max(Math.round(lead), 15), 1440) : 1440,
+    mealReminderLeadMinutes: Number.isFinite(lead) ? Math.min(Math.max(Math.round(lead), 15), 1440) : 120,
   };
 }
 

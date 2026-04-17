@@ -57,13 +57,17 @@ export const calculateOrderSettlement = async (orderId) => {
 
     // Calculate restaurant commission and earnings
     // Commission is calculated on food price (subtotal - discount)
-    const foodPrice = userPayment.subtotal - userPayment.discount;
+    const foodPrice = Math.max(0, userPayment.subtotal - userPayment.discount);
     const restaurantCommissionData = await RestaurantCommission.calculateCommissionForOrder(
       restaurant._id,
       foodPrice
     );
 
-    const commissionAmount = Math.round(restaurantCommissionData.commission * 100) / 100;
+    const rawCommission = Number(restaurantCommissionData.commission) || 0;
+    const commissionAmount = Math.min(
+      foodPrice,
+      Math.round(rawCommission * 100) / 100
+    );
     const restaurantNetEarning = Math.round((foodPrice - commissionAmount) * 100) / 100;
 
     const restaurantEarning = {
@@ -71,7 +75,7 @@ export const calculateOrderSettlement = async (orderId) => {
       commission: commissionAmount, // Commission deducted (₹30 for 15%)
       commissionPercentage: restaurantCommissionData.type === 'percentage' 
         ? restaurantCommissionData.value 
-        : (commissionAmount / foodPrice) * 100,
+        : foodPrice > 0 ? Math.round((commissionAmount / foodPrice) * 10000) / 100 : 0,
       netEarning: restaurantNetEarning, // Amount restaurant receives (₹170)
       status: 'pending'
     };
@@ -232,4 +236,3 @@ export const updateSettlementOnStatusChange = async (orderId, newStatus, previou
     throw error;
   }
 };
-
