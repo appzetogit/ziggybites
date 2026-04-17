@@ -175,6 +175,7 @@ const RestaurantImageCarousel = React.memo(({ restaurant, priority = false }) =>
 })
 
 export default function Home() {
+  const VEG_MODE_SCOPE_STORAGE_KEY = "userVegModeScope"
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const query = searchParams.get("q") || ""
@@ -186,7 +187,10 @@ export default function Home() {
   const [prevVegMode, setPrevVegMode] = useState(vegMode)
   const [showVegModePopup, setShowVegModePopup] = useState(false)
   const [showSwitchOffPopup, setShowSwitchOffPopup] = useState(false)
-  const [vegModeOption, setVegModeOption] = useState("all") // "all" or "pure-veg"
+  const [vegModeOption, setVegModeOption] = useState(() => {
+    const saved = localStorage.getItem(VEG_MODE_SCOPE_STORAGE_KEY)
+    return saved === "pure-veg" ? "pure-veg" : "all"
+  }) // "all" or "pure-veg"
   const [isApplyingVegMode, setIsApplyingVegMode] = useState(false)
   const [isSwitchingOffVegMode, setIsSwitchingOffVegMode] = useState(false)
   const [popupPosition, setPopupPosition] = useState({ top: 0, right: 0 })
@@ -207,6 +211,10 @@ export default function Home() {
   const [loadingRealCategories, setLoadingRealCategories] = useState(true)
   const [showAllCategoriesModal, setShowAllCategoriesModal] = useState(false)
   const isHandlingSwitchOff = useRef(false)
+
+  useEffect(() => {
+    localStorage.setItem(VEG_MODE_SCOPE_STORAGE_KEY, vegModeOption)
+  }, [vegModeOption])
 
   // Swipe functionality for hero banner carousel
   const touchStartX = useRef(0)
@@ -973,8 +981,10 @@ export default function Home() {
     // Use only API data - no mock data fallback
     let filtered = [...restaurantsData]
 
-    // Veg mode: show only pure-veg restaurants when enabled (backend may send isPureVeg / veg)
-    if (vegMode) {
+    // Veg mode with scope:
+    // - "all" shows all restaurants, but dish cards are filtered to Veg only below
+    // - "pure-veg" narrows the restaurant list to pure-veg places only
+    if (vegMode && vegModeOption === "pure-veg") {
       filtered = filtered.filter((r) => r.isPureVeg === true || r.veg === true)
     }
 
@@ -1074,18 +1084,25 @@ export default function Home() {
     }
 
     return filtered
-  }, [restaurantsData, activeFilters, selectedCuisine, sortBy, vegMode])
+  }, [restaurantsData, activeFilters, selectedCuisine, sortBy, vegMode, vegModeOption])
 
     // Filter food items based on active filters (delivery time, distance)
     const filteredFoods = useMemo(() => {
       let filtered = [...nearbyFoods]
 
-      if (foodPreference === "healthy") {
-        filtered = filtered.filter((food) =>
-          Array.isArray(food.tags) &&
-          food.tags.some((tag) => String(tag).trim().toLowerCase() === "healthy")
-        )
-      }
+    if (foodPreference === "healthy") {
+      filtered = filtered.filter((food) =>
+        Array.isArray(food.tags) &&
+        food.tags.some((tag) => String(tag).trim().toLowerCase() === "healthy")
+      )
+    }
+
+    if (vegMode) {
+      filtered = filtered.filter((food) => {
+        const foodType = String(food.foodType ?? food.food_type ?? "").trim().toLowerCase()
+        return foodType === "veg"
+      })
+    }
 
       // Parse eta string (e.g. "25-30 mins" or "20 mins") to get max minutes
       const parseEtaMinutes = (eta) => {
@@ -1141,7 +1158,7 @@ export default function Home() {
     }
 
     return filtered
-    }, [nearbyFoods, activeFilters, sortBy, foodPreference])
+    }, [nearbyFoods, activeFilters, sortBy, foodPreference, vegMode])
 
   const foodsForDisplay = useMemo(
     () => filteredFoods,
@@ -2589,7 +2606,7 @@ export default function Home() {
               onClick={() => {
                 setShowSwitchOffPopup(false)
                 isHandlingSwitchOff.current = false
-                setVegMode(true)
+                setVegModeContext(true)
                 // prevVegMode stays true (from before), which is correct
               }}
               className="fixed inset-0 bg-black/50 z-[9998] backdrop-blur-sm"

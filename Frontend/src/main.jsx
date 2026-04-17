@@ -9,6 +9,50 @@ import { getGoogleMapsApiKey } from './lib/utils/googleMapsApiKey.js'
 import { loadBusinessSettings } from './lib/utils/businessSettings.js'
 import { installFlutterCameraBridge } from './lib/mobileBridge.js'
 
+const ZOOM_ALLOWED_SELECTOR = [
+  '.leaflet-container',
+  '.gm-style',
+  '[data-allow-zoom="true"]',
+  '[id*="map"]',
+  '[class*="map"]',
+].join(', ')
+
+const isInsideZoomAllowedSurface = (eventTarget) => {
+  if (!(eventTarget instanceof Element)) return false
+  return Boolean(eventTarget.closest(ZOOM_ALLOWED_SELECTOR))
+}
+
+const preventAppZoomOutsideMaps = () => {
+  const preventWhenNeeded = (event) => {
+    if (isInsideZoomAllowedSurface(event.target)) return
+    event.preventDefault()
+  }
+
+  document.addEventListener(
+    'wheel',
+    (event) => {
+      if (!(event.ctrlKey || event.metaKey)) return
+      preventWhenNeeded(event)
+    },
+    { passive: false },
+  )
+
+  document.addEventListener(
+    'keydown',
+    (event) => {
+      if (!(event.ctrlKey || event.metaKey)) return
+      if (!['+', '-', '=', '0'].includes(event.key)) return
+      if (isInsideZoomAllowedSurface(event.target)) return
+      event.preventDefault()
+    },
+    { passive: false },
+  )
+
+  document.addEventListener('gesturestart', preventWhenNeeded, { passive: false })
+  document.addEventListener('gesturechange', preventWhenNeeded, { passive: false })
+  document.addEventListener('gestureend', preventWhenNeeded, { passive: false })
+}
+
 // Load business settings on app start (favicon, title)
 // Silently handle errors - this is not critical for app functionality
 loadBusinessSettings().catch(() => {
@@ -84,6 +128,7 @@ localStorage.setItem('appTheme', 'light')
 document.documentElement.classList.remove('dark')
 
 installFlutterCameraBridge()
+preventAppZoomOutsideMaps()
 
 // Suppress browser extension errors
 const originalError = console.error
