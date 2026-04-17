@@ -344,11 +344,29 @@ apiClient.interceptors.response.use(
 
     // If error is 401 and we haven't tried to refresh yet
     if (error.response?.status === 401 && !originalRequest._retry) {
+      const currentPath = window.location.pathname;
+      const requestUrl = originalRequest?.url || "";
+      const isAuthPage =
+        currentPath.includes("/auth/") ||
+        currentPath === "/admin/login" ||
+        currentPath === "/admin/signup" ||
+        currentPath === "/admin/forgot-password" ||
+        currentPath === "/restaurant/login" ||
+        currentPath === "/restaurant/welcome" ||
+        currentPath === "/delivery/sign-in" ||
+        currentPath === "/delivery/welcome";
+      const isPublicConfigRequest =
+        requestUrl.includes("/env/public") ||
+        requestUrl.includes("/firebase-config.json");
+
+      if (isAuthPage || isPublicConfigRequest) {
+        return Promise.reject(error);
+      }
+
       originalRequest._retry = true;
 
       try {
         // Determine which module's refresh endpoint to use based on current route
-        const currentPath = window.location.pathname;
         let refreshEndpoint = "/auth/refresh-token"; // default to user auth
 
         if (currentPath.startsWith("/admin")) {
@@ -459,7 +477,6 @@ apiClient.interceptors.response.use(
 
         // Refresh failed, clear module-specific token and redirect to login
         // BUT: Don't auto-redirect on certain pages - let them handle errors gracefully
-        const currentPath = window.location.pathname;
         const isOnboardingPage = currentPath.includes("/onboarding");
         const isLandingPageManagement =
           currentPath.includes("/hero-banner-management") ||
@@ -494,7 +511,7 @@ apiClient.interceptors.response.use(
           } else {
             // User module: clear both storages
             clearModuleAuth("user");
-            window.location.href = "/user/auth/sign-in";
+            window.location.href = "/auth/sign-in";
           }
         }
 
