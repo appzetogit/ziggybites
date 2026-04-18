@@ -178,6 +178,7 @@ export default function RestaurantOnboarding() {
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const mainContentRef = useRef(null)
+  const hasLocalDraftRef = useRef(false)
   const [error, setError] = useState("")
   const digitsOnly = (value) => String(value || "").replace(/\D/g, "")
   const isAlphabeticName = (value) =>
@@ -248,6 +249,7 @@ export default function RestaurantOnboarding() {
 
     const localData = loadOnboardingFromLocalStorage()
     if (localData) {
+      hasLocalDraftRef.current = true
       if (localData.step1) {
         setStep1({
           restaurantName: localData.step1.restaurantName || "",
@@ -360,7 +362,7 @@ export default function RestaurantOnboarding() {
         const res = await api.get("/restaurant/onboarding")
         const data = res?.data?.data?.onboarding
         if (data) {
-          if (data.step1) {
+          if (!hasLocalDraftRef.current && data.step1) {
             setStep1((prev) => ({
               restaurantName: data.step1.restaurantName || "",
               ownerName: data.step1.ownerName || "",
@@ -376,7 +378,7 @@ export default function RestaurantOnboarding() {
               },
             }))
           }
-          if (data.step2) {
+          if (!hasLocalDraftRef.current && data.step2) {
             setStep2({
               // Load menu images from URLs if available
               menuImages: data.step2.menuImageUrls || [],
@@ -388,7 +390,7 @@ export default function RestaurantOnboarding() {
               openDays: data.step2.openDays || [],
             })
           }
-          if (data.step3) {
+          if (!hasLocalDraftRef.current && data.step3) {
             setStep3({
               panNumber: data.step3.pan?.panNumber || "",
               nameOnPan: data.step3.pan?.nameOnPan || "",
@@ -411,7 +413,7 @@ export default function RestaurantOnboarding() {
             })
           }
 
-          if (data.step4) {
+          if (!hasLocalDraftRef.current && data.step4) {
             setStep4({
               estimatedDeliveryTime: data.step4.estimatedDeliveryTime || "",
               featuredDish: data.step4.featuredDish || "",
@@ -421,8 +423,10 @@ export default function RestaurantOnboarding() {
           }
 
           // Determine which step to show based on completeness
-          const stepToShow = determineStepToShow(data)
-          setStep(stepToShow)
+          if (!hasLocalDraftRef.current) {
+            const stepToShow = determineStepToShow(data)
+            setStep(stepToShow)
+          }
         }
       } catch (err) {
         // Handle error gracefully - if it's a 401 (unauthorized), the user might need to login again

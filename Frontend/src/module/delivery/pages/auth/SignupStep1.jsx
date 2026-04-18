@@ -1,9 +1,11 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { ArrowLeft } from "lucide-react"
 import { deliveryAPI } from "@/lib/api"
 import { toast } from "sonner"
 import { clearModuleAuth } from "@/lib/utils/auth"
+
+const DELIVERY_SIGNUP_DETAILS_STORAGE_KEY = "delivery_signup_details_draft"
 
 const INDIAN_STATES = [
   "Andhra Pradesh",
@@ -62,9 +64,34 @@ export default function SignupStep1() {
   const [errors, setErrors] = useState({})
   const [isSubmitting, setIsSubmitting] = useState(false)
 
+  useEffect(() => {
+    try {
+      const savedDraft = localStorage.getItem(DELIVERY_SIGNUP_DETAILS_STORAGE_KEY)
+      if (!savedDraft) return
+
+      const parsedDraft = JSON.parse(savedDraft)
+      setFormData((prev) => ({
+        ...prev,
+        ...parsedDraft,
+      }))
+    } catch (error) {
+      console.error("Failed to load delivery signup draft:", error)
+    }
+  }, [])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(DELIVERY_SIGNUP_DETAILS_STORAGE_KEY, JSON.stringify(formData))
+    } catch (error) {
+      console.error("Failed to save delivery signup draft:", error)
+    }
+  }, [formData])
+
   const handleBackToSignIn = () => {
     try {
       clearModuleAuth("delivery")
+      localStorage.removeItem(DELIVERY_SIGNUP_DETAILS_STORAGE_KEY)
+      localStorage.removeItem("delivery_signup_documents_draft")
     } catch (error) {
       console.error("Failed to reset delivery signup session:", error)
     }

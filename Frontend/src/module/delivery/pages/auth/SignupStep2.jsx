@@ -1,9 +1,11 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { ArrowLeft, Upload, X, Check, Camera } from "lucide-react"
 import { deliveryAPI } from "@/lib/api"
 import apiClient from "@/lib/api/axios"
 import { toast } from "sonner"
+
+const DELIVERY_SIGNUP_DOCUMENTS_STORAGE_KEY = "delivery_signup_documents_draft"
 
 export default function SignupStep2() {
   const navigate = useNavigate()
@@ -26,6 +28,29 @@ export default function SignupStep2() {
     drivingLicensePhoto: false
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  useEffect(() => {
+    try {
+      const savedDraft = localStorage.getItem(DELIVERY_SIGNUP_DOCUMENTS_STORAGE_KEY)
+      if (!savedDraft) return
+
+      const parsedDraft = JSON.parse(savedDraft)
+      setUploadedDocs((prev) => ({
+        ...prev,
+        ...parsedDraft,
+      }))
+    } catch (error) {
+      console.error("Failed to load delivery document draft:", error)
+    }
+  }, [])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(DELIVERY_SIGNUP_DOCUMENTS_STORAGE_KEY, JSON.stringify(uploadedDocs))
+    } catch (error) {
+      console.error("Failed to save delivery document draft:", error)
+    }
+  }, [uploadedDocs])
 
   const handleFileSelect = async (docType, file) => {
     if (!file) return
@@ -112,6 +137,8 @@ export default function SignupStep2() {
 
       if (response?.data?.success) {
         toast.success("Signup completed successfully!")
+        localStorage.removeItem(DELIVERY_SIGNUP_DOCUMENTS_STORAGE_KEY)
+        localStorage.removeItem("delivery_signup_details_draft")
         // Redirect to delivery home page
         setTimeout(() => {
           navigate("/delivery", { replace: true })
@@ -234,7 +261,7 @@ export default function SignupStep2() {
       {/* Header */}
       <div className="bg-white px-4 py-3 flex items-center gap-4 border-b border-gray-200">
         <button
-          onClick={() => navigate(-1)}
+          onClick={() => navigate("/delivery/signup/details")}
           className="p-2 hover:bg-gray-100 rounded-full transition-colors"
         >
           <ArrowLeft className="w-5 h-5" />
