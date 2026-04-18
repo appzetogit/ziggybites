@@ -20,6 +20,7 @@ import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns"
 import { determineStepToShow } from "../utils/onboardingUtils"
 import { toast } from "sonner"
 import { useCompanyName } from "@/lib/hooks/useCompanyName"
+import { clearModuleAuth } from "@/lib/utils/auth"
 
 const cuisinesOptions = [
   "North Indian",
@@ -1107,6 +1108,14 @@ export default function RestaurantOnboarding() {
     if (step > 1) {
       setStep((currentStep) => Math.max(1, currentStep - 1))
       return
+    }
+
+    try {
+      clearModuleAuth("restaurant")
+      clearOnboardingFromLocalStorage()
+      localStorage.removeItem(RESTAURANT_APPROVAL_PENDING_KEY)
+    } catch (error) {
+      console.error("Failed to reset restaurant onboarding session:", error)
     }
 
     navigate("/restaurant/login", { replace: true })

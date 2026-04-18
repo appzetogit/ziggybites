@@ -2,8 +2,17 @@ import { asyncHandler } from "../../../shared/middleware/asyncHandler.js";
 import { successResponse, errorResponse } from "../../../shared/utils/response.js";
 import Order from "../../order/models/Order.js";
 import UserSubscription from "../../subscription/models/UserSubscription.js";
+import {
+  addCalendarDaysFromYmd,
+  mergeMealSlotRanges,
+  parseTimeString,
+  utcForWallClockMinute,
+  wallClockFromUtc,
+} from "../../subscription/services/subscriptionScheduleService.js";
 
 const SUBSCRIPTION_READY_WINDOW_MINUTES = 45;
+const DEFAULT_MEAL_SLOT_TIMEZONE = "Asia/Kolkata";
+const DEFAULT_MEAL_SLOT_TIMES = mergeMealSlotRanges(null);
 
 function getReadyWindowForMeal(dateLike) {
   const scheduledAt = new Date(dateLike);
@@ -95,6 +104,68 @@ function buildPrepSummaryAndRowsFromOrders(orders) {
   return { prepSummary, rows };
 }
 
+function getMealCategoriesForSubscription(items) {
+  return [...new Set(
+    (items || [])
+      .map((item) => item?.mealCategory)
+      .filter((mealCategory) => ["breakfast", "lunch", "snacks", "dinner"].includes(mealCategory)),
+  )];
+}
+
+function getSubscriptionSlotInstantsWithinWindow({
+  subscription,
+  start,
+  end,
+  mealSlotTimezone = DEFAULT_MEAL_SLOT_TIMEZONE,
+  mealSlotTimes = DEFAULT_MEAL_SLOT_TIMES,
+}) {
+  const categories = getMealCategoriesForSubscription(subscription?.items);
+  if (!categories.length) return [];
+
+  const slotRanges = mergeMealSlotRanges(mealSlotTimes);
+  const startWall = wallClockFromUtc(start.getTime(), mealSlotTimezone);
+  const endWall = wallClockFromUtc(end.getTime(), mealSlotTimezone);
+  const slotInstants = [];
+
+  for (let dayOffset = 0; dayOffset < 3; dayOffset++) {
+    const { y, mo, d } = addCalendarDaysFromYmd(
+      startWall.y,
+      startWall.mo,
+      startWall.d,
+      dayOffset,
+      mealSlotTimezone,
+    );
+
+    for (const mealCategory of categories) {
+      const parsed = parseTimeString(slotRanges?.[mealCategory]?.start);
+      if (!parsed) continue;
+
+      const slotUtcMs = utcForWallClockMinute(y, mo, d, parsed.h, parsed.m, mealSlotTimezone);
+      if (slotUtcMs == null) continue;
+
+      const slotAt = new Date(slotUtcMs);
+      if (slotAt < start || slotAt > end) continue;
+
+      const slotWall = wallClockFromUtc(slotUtcMs, mealSlotTimezone);
+      if (
+        slotWall.y > endWall.y ||
+        (slotWall.y === endWall.y && slotWall.mo > endWall.mo) ||
+        (slotWall.y === endWall.y && slotWall.mo === endWall.mo && slotWall.d > endWall.d)
+      ) {
+        continue;
+      }
+
+      slotInstants.push({
+        mealCategory,
+        scheduledMealAt: slotAt,
+      });
+    }
+  }
+
+  slotInstants.sort((a, b) => a.scheduledMealAt.getTime() - b.scheduledMealAt.getTime());
+  return slotInstants;
+}
+
 async function appendUpcomingSubscriptionFallbackRows({
   restaurantId,
   restaurantName,
@@ -140,47 +211,51 @@ async function appendUpcomingSubscriptionFallbackRows({
   const fallbackRows = [];
 
   for (const sub of subs) {
-    const key = minuteKey(sub._id, sub.nextDeliveryAt);
-    if (!key || existingKeys.has(key)) continue;
+    const slotInstants = getSubscriptionSlotInstantsWithinWindow({ subscription: sub, start, end });
+    for (const slot of slotInstants) {
+      const key = minuteKey(sub._id, slot.scheduledMealAt);
+      if (!key || existingKeys.has(key)) continue;
 
-    const mealCategory = mealCategoryForTime(sub.nextDeliveryAt);
-    const items = (sub.items || []).filter((item) => item?.mealCategory === mealCategory);
-    if (!items.length) continue;
+      const items = (sub.items || []).filter((item) => item?.mealCategory === slot.mealCategory);
+      if (!items.length) continue;
 
-    const totalAmount = items.reduce(
-      (sum, item) => sum + (Number(item?.price) || 0) * (Number(item?.quantity) || 1),
-      0,
-    );
+      const totalAmount = items.reduce(
+        (sum, item) => sum + (Number(item?.price) || 0) * (Number(item?.quantity) || 1),
+        0,
+      );
 
-    fallbackRows.push({
-      _id: `subscription-${sub._id}-${mealCategory}`,
-      orderId: `SUB-${String(sub._id).slice(-6).toUpperCase()}`,
-      status: "scheduled",
-      preparationStatus: "pending",
-      user:
-        sub.userId && typeof sub.userId === "object"
-          ? {
-              _id: sub.userId._id,
-              name: sub.userId.name,
-              phone: sub.userId.phone,
-            }
-          : null,
-      scheduledMealAt: sub.nextDeliveryAt,
-      editWindow: null,
-      mealDetailsVisible: true,
-      visibilityReason: "active_subscription",
-      userMessage: null,
-      deliveryAddress: sub.address?.formattedAddress || "",
-      totalAmount,
-      items,
-      selectedMeal: items[0] || null,
-      pricing: {
-        total: totalAmount,
-        subtotal: totalAmount,
-      },
-      sourcePreview: true,
-      hint: "Showing active subscription meal before order generation.",
-    });
+      fallbackRows.push({
+        _id: `subscription-${sub._id}-${slot.mealCategory}-${slot.scheduledMealAt.getTime()}`,
+        orderId: `SUB-${String(sub._id).slice(-6).toUpperCase()}`,
+        status: "scheduled",
+        preparationStatus: "pending",
+        user:
+          sub.userId && typeof sub.userId === "object"
+            ? {
+                _id: sub.userId._id,
+                name: sub.userId.name,
+                phone: sub.userId.phone,
+              }
+            : null,
+        scheduledMealAt: slot.scheduledMealAt,
+        editWindow: null,
+        mealDetailsVisible: true,
+        visibilityReason: "active_subscription",
+        userMessage: null,
+        deliveryAddress: sub.address?.formattedAddress || "",
+        totalAmount,
+        items,
+        selectedMeal: items[0] || null,
+        pricing: {
+          total: totalAmount,
+          subtotal: totalAmount,
+        },
+        sourcePreview: true,
+        hint: "Showing active subscription meal before order generation.",
+      });
+
+      existingKeys.add(key);
+    }
   }
 
   return fallbackRows;

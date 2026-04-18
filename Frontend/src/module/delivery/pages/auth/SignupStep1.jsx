@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom"
 import { ArrowLeft } from "lucide-react"
 import { deliveryAPI } from "@/lib/api"
 import { toast } from "sonner"
+import { clearModuleAuth } from "@/lib/utils/auth"
 
 const INDIAN_STATES = [
   "Andhra Pradesh",
@@ -60,6 +61,16 @@ export default function SignupStep1() {
   })
   const [errors, setErrors] = useState({})
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  const handleBackToSignIn = () => {
+    try {
+      clearModuleAuth("delivery")
+    } catch (error) {
+      console.error("Failed to reset delivery signup session:", error)
+    }
+
+    navigate("/delivery/sign-in", { replace: true })
+  }
 
   const handleChange = (e) => {
     const { name, value } = e.target
@@ -256,7 +267,7 @@ export default function SignupStep1() {
       {/* Header */}
       <div className="bg-white px-4 py-3 flex items-center gap-4 border-b border-gray-200">
         <button
-          onClick={() => navigate(-1)}
+          onClick={handleBackToSignIn}
           className="p-2 hover:bg-gray-100 rounded-full transition-colors"
         >
           <ArrowLeft className="w-5 h-5" />
@@ -489,4 +500,3 @@ export default function SignupStep1() {
     </div>
   )
 }
-

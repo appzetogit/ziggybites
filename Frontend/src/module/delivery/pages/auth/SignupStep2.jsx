@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { ArrowLeft, Upload, X, Check } from "lucide-react"
+import { ArrowLeft, Upload, X, Check, Camera } from "lucide-react"
 import { deliveryAPI } from "@/lib/api"
 import apiClient from "@/lib/api/axios"
 import { toast } from "sonner"
@@ -130,6 +130,9 @@ export default function SignupStep2() {
     const file = documents[docType]
     const uploaded = uploadedDocs[docType]
     const isUploading = uploading[docType]
+    const galleryInputId = `${docType}GalleryInput`
+    const cameraInputId = `${docType}CameraInput`
+    const captureMode = docType === "profilePhoto" ? "user" : "environment"
 
     return (
       <div className="bg-white rounded-lg p-4 border border-gray-200">
@@ -172,7 +175,26 @@ export default function SignupStep2() {
                 </>
               )}
             </div>
+            {!isUploading && (
+              <div className="mt-2 grid w-full max-w-xs grid-cols-2 gap-2 px-4">
+                <label
+                  htmlFor={galleryInputId}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700"
+                >
+                  <Upload className="w-4 h-4" />
+                  <span>Gallery</span>
+                </label>
+                <label
+                  htmlFor={cameraInputId}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700"
+                >
+                  <Camera className="w-4 h-4" />
+                  <span>Camera</span>
+                </label>
+              </div>
+            )}
             <input
+              id={galleryInputId}
               type="file"
               className="hidden"
               accept="image/*"
@@ -181,6 +203,23 @@ export default function SignupStep2() {
                 if (selectedFile) {
                   handleFileSelect(docType, selectedFile)
                 }
+                e.target.value = ""
+              }}
+              disabled={isUploading}
+            />
+            <input
+              id={cameraInputId}
+              type="file"
+              className="hidden"
+              accept="image/*"
+              capture={captureMode}
+              data-flutter-camera-bridge="on"
+              onChange={(e) => {
+                const selectedFile = e.target.files[0]
+                if (selectedFile) {
+                  handleFileSelect(docType, selectedFile)
+                }
+                e.target.value = ""
               }}
               disabled={isUploading}
             />
@@ -233,4 +272,3 @@ export default function SignupStep2() {
     </div>
   )
 }
-
