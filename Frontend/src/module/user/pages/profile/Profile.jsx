@@ -20,7 +20,8 @@ import {
   Settings as SettingsIcon,
   Power,
   ShoppingCart,
-  UtensilsCrossed
+  UtensilsCrossed,
+  Loader2
 } from "lucide-react"
 
 import AnimatedPage from "../../components/AnimatedPage"
@@ -42,12 +43,14 @@ import { firebaseAuth } from "@/lib/firebase"
 import { clearModuleAuth } from "@/lib/utils/auth"
 
 export default function Profile() {
-  const { userProfile, vegMode, setVegMode } = useProfile()
+  const { userProfile, vegMode, setVegMode, updateUserProfile } = useProfile()
   const navigate = useNavigate()
   const companyName = useCompanyName()
 
   // Popup states
   const [vegModeOpen, setVegModeOpen] = useState(false)
+  const [foodPreferenceOpen, setFoodPreferenceOpen] = useState(false)
+  const [isSavingFoodPreference, setIsSavingFoodPreference] = useState(false)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
 
   // Get first letter of name for avatar
@@ -58,6 +61,45 @@ export default function Profile() {
   const displayEmail = hasValidEmail ? userProfile.email : (userProfile?.phone || 'Not available')
   const foodPreference = userProfile?.preferences?.foodPreference || "all"
   const foodPreferenceLabel = foodPreference === "healthy" ? "Healthy choices" : "All items"
+
+  const handleFoodPreferenceChange = async (nextPreference) => {
+    if (!nextPreference || nextPreference === foodPreference || isSavingFoodPreference) {
+      setFoodPreferenceOpen(false)
+      return
+    }
+
+    setIsSavingFoodPreference(true)
+
+    const nextUserProfile = {
+      ...(userProfile || {}),
+      preferences: {
+        ...(userProfile?.preferences || {}),
+        foodPreference: nextPreference,
+      },
+    }
+
+    updateUserProfile(nextUserProfile)
+
+    try {
+      const response = await authAPI.updateProfile({
+        preferences: {
+          foodPreference: nextPreference,
+        },
+      })
+
+      const updatedUser =
+        response?.data?.data?.user ||
+        response?.data?.user ||
+        nextUserProfile
+
+      updateUserProfile(updatedUser)
+    } catch (error) {
+      console.warn("Failed to sync food preference:", error?.message || error)
+    } finally {
+      setIsSavingFoodPreference(false)
+      setFoodPreferenceOpen(false)
+    }
+  }
 
   // Calculate profile completion percentage
   const calculateProfileCompletion = () => {
@@ -435,38 +477,39 @@ export default function Profile() {
             </Card>
           </motion.div>
 
-          <Link to="/user/profile/edit" className="block">
-            <motion.div
-              whileHover={{ x: 4, scale: 1.01 }}
-              transition={{ duration: 0.2, type: "spring", stiffness: 300 }}
+          <motion.div
+            whileHover={{ x: 4, scale: 1.01 }}
+            transition={{ duration: 0.2, type: "spring", stiffness: 300 }}
+          >
+            <Card
+              className="bg-white dark:bg-[#1a1a1a] py-0 rounded-xl shadow-sm border-0 dark:border-gray-800 cursor-pointer"
+              onClick={() => setFoodPreferenceOpen(true)}
             >
-              <Card className="bg-white dark:bg-[#1a1a1a] py-0 rounded-xl shadow-sm border-0 dark:border-gray-800 cursor-pointer">
-                <CardContent className="p-4 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <motion.div
-                      className="bg-gray-100 dark:bg-gray-800 rounded-full p-2"
-                      whileHover={{ rotate: 15, scale: 1.1 }}
-                      transition={{ duration: 0.3 }}
-                    >
-                      <UtensilsCrossed className="h-5 w-5 text-gray-700 dark:text-gray-300" />
-                    </motion.div>
-                    <div className="flex flex-col">
-                      <span className="text-base font-medium text-gray-900 dark:text-white">Food preference</span>
-                      <span className="text-xs text-gray-500 dark:text-gray-400">
-                        {foodPreferenceLabel}
-                      </span>
-                    </div>
-                  </div>
+              <CardContent className="p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
                   <motion.div
-                    whileHover={{ x: 4 }}
-                    transition={{ duration: 0.2 }}
+                    className="bg-gray-100 dark:bg-gray-800 rounded-full p-2"
+                    whileHover={{ rotate: 15, scale: 1.1 }}
+                    transition={{ duration: 0.3 }}
                   >
-                    <ChevronRight className="h-5 w-5 text-gray-400 dark:text-gray-500" />
+                    <UtensilsCrossed className="h-5 w-5 text-gray-700 dark:text-gray-300" />
                   </motion.div>
-                </CardContent>
-              </Card>
-            </motion.div>
-          </Link>
+                  <div className="flex flex-col">
+                    <span className="text-base font-medium text-gray-900 dark:text-white">Food preference</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                      {foodPreferenceLabel}
+                    </span>
+                  </div>
+                </div>
+                <motion.div
+                  whileHover={{ x: 4 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <ChevronRight className="h-5 w-5 text-gray-400 dark:text-gray-500" />
+                </motion.div>
+              </CardContent>
+            </Card>
+          </motion.div>
 
         </div>
 
@@ -819,6 +862,71 @@ export default function Profile() {
                   <p className="text-xs text-gray-500">Show all options</p>
                 </div>
               </div>
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={foodPreferenceOpen} onOpenChange={setFoodPreferenceOpen}>
+        <DialogContent className="max-w-sm md:max-w-md lg:max-w-lg w-[calc(100%-2rem)] rounded-2xl p-0 overflow-hidden">
+          <DialogHeader className="p-5 pb-3">
+            <DialogTitle className="text-lg font-bold text-gray-900">Food Preference</DialogTitle>
+            <DialogDescription className="text-sm text-gray-500">
+              Choose what you want to see first in your feed.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 px-5 pb-5">
+            <button
+              onClick={() => handleFoodPreferenceChange("healthy")}
+              disabled={isSavingFoodPreference}
+              className={`w-full p-3 rounded-xl border-2 transition-all flex items-center justify-between ${
+                foodPreference === "healthy"
+                  ? "border-green-600 bg-green-50"
+                  : "border-gray-200 bg-white hover:border-gray-300"
+              } disabled:opacity-60`}
+            >
+              <div className="flex items-center gap-3">
+                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                  foodPreference === "healthy" ? "border-green-600 bg-green-600" : "border-gray-300"
+                }`}>
+                  {foodPreference === "healthy" && <Check className="h-3 w-3 text-white" />}
+                </div>
+                <div className="text-left">
+                  <p className="font-medium text-gray-900 text-sm">Healthy choices</p>
+                  <p className="text-xs text-gray-500">Prioritize healthier tagged dishes</p>
+                </div>
+              </div>
+              {isSavingFoodPreference && foodPreference !== "healthy" ? (
+                <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+              ) : (
+                <Leaf className={`h-5 w-5 ${foodPreference === "healthy" ? "text-green-600" : "text-gray-400"}`} />
+              )}
+            </button>
+            <button
+              onClick={() => handleFoodPreferenceChange("all")}
+              disabled={isSavingFoodPreference}
+              className={`w-full p-3 rounded-xl border-2 transition-all flex items-center justify-between ${
+                foodPreference === "all"
+                  ? "border-red-600 bg-red-50"
+                  : "border-gray-200 bg-white hover:border-gray-300"
+              } disabled:opacity-60`}
+            >
+              <div className="flex items-center gap-3">
+                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                  foodPreference === "all" ? "border-red-600 bg-red-600" : "border-gray-300"
+                }`}>
+                  {foodPreference === "all" && <Check className="h-3 w-3 text-white" />}
+                </div>
+                <div className="text-left">
+                  <p className="font-medium text-gray-900 text-sm">All items</p>
+                  <p className="text-xs text-gray-500">Show the full food catalog</p>
+                </div>
+              </div>
+              {isSavingFoodPreference && foodPreference !== "all" ? (
+                <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+              ) : (
+                <UtensilsCrossed className={`h-5 w-5 ${foodPreference === "all" ? "text-red-600" : "text-gray-400"}`} />
+              )}
             </button>
           </div>
         </DialogContent>

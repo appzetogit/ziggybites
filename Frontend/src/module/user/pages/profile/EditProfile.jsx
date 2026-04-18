@@ -29,19 +29,6 @@ const genderOptions = [
   { value: "prefer-not-to-say", label: "Prefer not to say" },
 ]
 
-const foodPreferenceOptions = [
-  {
-    value: "healthy",
-    label: "Healthy choices",
-    description: "Prioritize items tagged as healthy by partner restaurants.",
-  },
-  {
-    value: "all",
-    label: "All items",
-    description: "Show the complete food catalog from partner restaurants.",
-  },
-]
-
 // Load profile data from localStorage
 const loadProfileFromStorage = () => {
   try {
@@ -87,7 +74,6 @@ export default function EditProfile() {
         : dayjs(initialProfile.anniversary))
       : null,
     gender: initialProfile.gender ?? "",
-    foodPreference: initialProfile?.preferences?.foodPreference ?? "",
   }
   
   const [formData, setFormData] = useState(initialFormData)
@@ -119,7 +105,6 @@ export default function EditProfile() {
           : dayjs(profile.anniversary))
         : null,
       gender: profile.gender ?? "",
-      foodPreference: profile?.preferences?.foodPreference ?? "",
     }
     setFormData(newFormData)
     
@@ -236,9 +221,6 @@ export default function EditProfile() {
         dateOfBirth: formData.dateOfBirth ? formData.dateOfBirth.format('YYYY-MM-DD') : undefined,
         anniversary: formData.anniversary ? formData.anniversary.format('YYYY-MM-DD') : undefined,
         gender: formData.gender || undefined,
-        preferences: {
-          foodPreference: formData.foodPreference || undefined,
-        },
         profileImage: profileImage || undefined, // Include profileImage in update
       }
 
@@ -265,7 +247,6 @@ export default function EditProfile() {
           gender: updatedUser.gender || formData.gender,
           preferences: {
             ...(updatedUser.preferences || {}),
-            foodPreference: updatedUser.preferences?.foodPreference || formData.foodPreference,
           },
         })
 
@@ -538,31 +519,6 @@ export default function EditProfile() {
               </Select>
             </div>
 
-            {/* Food Preference Field */}
-            <div className="space-y-1.5">
-              <Label htmlFor="foodPreference" className="text-sm font-medium text-gray-700 dark:text-white">
-                Food preference
-              </Label>
-              <Select
-                value={formData.foodPreference || ""}
-                onValueChange={(value) => handleChange('foodPreference', value)}
-              >
-                <SelectTrigger className="h-12 text-base border border-gray-300 dark:border-gray-700 focus:border-green-600 focus:ring-1 focus:ring-green-600 rounded-lg bg-white dark:bg-[#1a1a1a] text-gray-900 dark:text-white">
-                  <SelectValue placeholder="Choose a preference" />
-                </SelectTrigger>
-                <SelectContent>
-                  {foodPreferenceOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                {foodPreferenceOptions.find((option) => option.value === formData.foodPreference)?.description ||
-                  "This controls what you see first on your home feed."}
-              </p>
-            </div>
           </CardContent>
         </Card>
 

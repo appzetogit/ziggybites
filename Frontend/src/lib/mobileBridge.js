@@ -52,6 +52,42 @@ function getVoiceSearchChannel() {
   return channel
 }
 
+function getNativeShareChannel() {
+  if (typeof window === "undefined") return null
+
+  const directChannel = window.NativeShareChannel || window.ShareChannel
+  const aliasChannel = window.nativeShareChannel || window.shareChannel
+  const channel =
+    directChannel && typeof directChannel.postMessage === "function"
+      ? directChannel
+      : aliasChannel && typeof aliasChannel.postMessage === "function"
+        ? aliasChannel
+        : null
+
+  if (channel) {
+    window.NativeShareChannel = channel
+    window.nativeShareChannel = channel
+  }
+
+  return channel
+}
+
+function getWebkitNativeShareHandler() {
+  if (typeof window === "undefined") return null
+
+  const candidates = [
+    window.webkit?.messageHandlers?.nativeShare,
+    window.webkit?.messageHandlers?.NativeShare,
+    window.webkit?.messageHandlers?.NativeShareChannel,
+    window.webkit?.messageHandlers?.share,
+    window.webkit?.messageHandlers?.ShareChannel,
+  ]
+
+  return candidates.find(
+    (handler) => handler && typeof handler.postMessage === "function",
+  ) || null
+}
+
 function normalizeTranscript(value) {
   if (typeof value === "string") return value
   if (value == null) return ""
@@ -214,6 +250,52 @@ export async function requestNativeGoogleSignIn() {
   return null
 }
 
+export function hasNativeShareBridge() {
+  if (isFlutterBridgeAvailable()) return true
+  if (getWebkitNativeShareHandler()) return true
+  return Boolean(getNativeShareChannel())
+}
+
+export async function requestNativeShare(payload) {
+  if (typeof window === "undefined") {
+    throw new Error("Native sharing is unavailable in this environment")
+  }
+
+  const sharePayload = {
+    title: String(payload?.title || document.title || ""),
+    text: String(payload?.text || ""),
+    url: String(payload?.url || window.location.href),
+  }
+
+  if (isFlutterBridgeAvailable()) {
+    // flutter_inappwebview supports structured payloads and works on Android/iOS.
+    const result = await window.flutter_inappwebview.callHandler(
+      "nativeShare",
+      sharePayload,
+    )
+
+    if (result && typeof result === "object" && result.success === false) {
+      throw new Error(result.error || "Native share failed")
+    }
+
+    return result || { success: true }
+  }
+
+  const webkitHandler = getWebkitNativeShareHandler()
+  if (webkitHandler) {
+    webkitHandler.postMessage(sharePayload)
+    return { success: true }
+  }
+
+  const channel = getNativeShareChannel()
+  if (channel) {
+    channel.postMessage(JSON.stringify(sharePayload))
+    return { success: true }
+  }
+
+  throw new Error("Native share bridge is not available")
+}
+
 function normalizeCameraResult(result) {
   if (!result || typeof result !== "object") {
     throw new Error("Camera capture failed")
@@ -276,6 +358,32 @@ function shouldUseFlutterCameraBridge(input) {
   return input.dataset.flutterCameraBridge === "on"
 }
 
+function findAssociatedFileInput(target) {
+  if (!(target instanceof Element)) return null
+
+  if (target instanceof HTMLInputElement && target.type === "file") {
+    return target
+  }
+
+  const parentLabel = target.closest("label")
+  if (parentLabel) {
+    const nestedInput = parentLabel.querySelector('input[type="file"]')
+    if (nestedInput instanceof HTMLInputElement) {
+      return nestedInput
+    }
+
+    const htmlFor = parentLabel.getAttribute("for")
+    if (htmlFor) {
+      const labelledInput = document.getElementById(htmlFor)
+      if (labelledInput instanceof HTMLInputElement && labelledInput.type === "file") {
+        return labelledInput
+      }
+    }
+  }
+
+  return null
+}
+
 export async function requestCameraCapture() {
   if (typeof window === "undefined") {
     throw new Error("Camera is unavailable in this environment")
@@ -292,12 +400,12 @@ export async function requestCameraCapture() {
 
 export function installFlutterCameraBridge() {
   if (typeof window === "undefined" || flutterCameraBridgeInstalled) return
-  flutterCameraBridgeInstalled = true
+      flutterCameraBridgeInstalled = true
 
   document.addEventListener(
     "click",
     async (event) => {
-      const input = event.target instanceof HTMLInputElement ? event.target : null
+      const input = findAssociatedFileInput(event.target)
       if (!input || !shouldUseFlutterCameraBridge(input)) return
       if (!isLikelyFlutterWebView()) return
 

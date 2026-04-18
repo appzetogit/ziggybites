@@ -2,6 +2,7 @@ import { useLocation, useNavigate } from "react-router-dom"
 import { Check, Calendar, Clock, Users, MapPin, Share2, Home } from "lucide-react"
 import { motion } from "framer-motion"
 import { useState } from "react"
+import { handleShare as shareContent } from "@/lib/share"
 
 export default function TableBookingSuccess() {
     const location = useLocation()
@@ -20,15 +21,16 @@ export default function TableBookingSuccess() {
 
     const handleShare = async () => {
         const text = `Table booked at ${booking.restaurant?.name} – ${formattedDate} at ${booking.timeSlot}, ${booking.guests} guests. ID: ${booking.bookingId}`
-        try {
-            if (navigator.share) {
-                await navigator.share({ title: 'Booking confirmed', text })
-            } else {
-                await navigator.clipboard.writeText(text)
-                setShared(true)
-                setTimeout(() => setShared(false), 2000)
-            }
-        } catch (e) { /* ignore */ }
+        const result = await shareContent({
+            title: "Booking confirmed",
+            text,
+            url: window.location.href,
+        })
+
+        if (result.status === "copied") {
+            setShared(true)
+            setTimeout(() => setShared(false), 2000)
+        }
     }
 
     const restaurantImg = booking.restaurant?.image

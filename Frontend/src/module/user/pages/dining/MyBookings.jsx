@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { motion, AnimatePresence } from "framer-motion"
 import { initRazorpayPayment } from "@/lib/utils/razorpay"
 import { getCompanyNameAsync } from "@/lib/utils/businessSettings"
+import { handleShare as shareContent } from "@/lib/share"
 
 function BookingDetailsModal({ booking, onClose, onBookingUpdate }) {
     const [shared, setShared] = useState(false)
@@ -27,15 +28,16 @@ function BookingDetailsModal({ booking, onClose, onBookingUpdate }) {
 
     const handleShare = async () => {
         const text = `Table booked at ${booking?.restaurant?.name} – ${formattedDate} at ${booking?.timeSlot}, ${booking?.guests} guests. ID: ${booking?.bookingId || booking?._id}`
-        try {
-            if (navigator.share) {
-                await navigator.share({ title: 'Booking details', text })
-            } else {
-                await navigator.clipboard.writeText(text)
-                setShared(true)
-                setTimeout(() => setShared(false), 2000)
-            }
-        } catch (e) { /* ignore */ }
+        const result = await shareContent({
+            title: "Booking details",
+            text,
+            url: window.location.href,
+        })
+
+        if (result.status === "copied") {
+            setShared(true)
+            setTimeout(() => setShared(false), 2000)
+        }
     }
 
     return (

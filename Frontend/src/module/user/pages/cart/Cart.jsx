@@ -17,6 +17,7 @@ import { API_BASE_URL } from "@/lib/api/config"
 import { initRazorpayPayment } from "@/lib/utils/razorpay"
 import { toast } from "sonner"
 import { getCompanyNameAsync } from "@/lib/utils/businessSettings"
+import { handleShare } from "@/lib/share"
 
 
 // Removed hardcoded suggested items - now fetching approved addons from backend
@@ -1339,20 +1340,12 @@ export default function Cart() {
               size="icon"
               className="h-7 w-7 md:h-8 md:w-8 flex-shrink-0"
               onClick={async () => {
-                try {
-                  const companyName = await getCompanyNameAsync()
-                  const text = `${restaurantName} on ${companyName} – ${cart.length} item(s). Order from the app.`
-                  const url = window.location.href
-                  if (navigator.share) {
-                    await navigator.share({ title: restaurantName, text, url })
-                    toast.success("Shared")
-                  } else {
-                    await navigator.clipboard?.writeText(`${text}\n${url}`)
-                    toast.success("Link copied to clipboard")
-                  }
-                } catch (e) {
-                  if (e?.name !== "AbortError") toast.error("Share failed")
-                }
+                const companyName = await getCompanyNameAsync()
+                await handleShare({
+                  title: restaurantName,
+                  text: `${restaurantName} on ${companyName} - ${cart.length} item(s). Order from the app.`,
+                  url: window.location.href,
+                })
               }}
             >
               <Share2 className="h-4 w-4 md:h-5 md:w-5" />

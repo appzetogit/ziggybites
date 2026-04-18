@@ -5,13 +5,6 @@ import AnimatedPage from "../../components/AnimatedPage"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { authAPI } from "@/lib/api"
 import { firebaseAuth, ensureFirebaseInitialized, signInWithGoogleBridge } from "@/lib/firebase"
 import { setAuthData } from "@/lib/utils/auth"
@@ -74,12 +67,12 @@ export default function SignIn() {
     try {
       const data = JSON.parse(stored)
       if (data.method === "phone" && data.phone) {
-        const match = data.phone.match(/^(\+\d+)\s*(\d*)/)
+        const match = data.phone.match(/^(?:\+\d+)?\s*(\d*)/)
         if (match) {
-          const [, code, num] = match
+          const [, num] = match
           setFormData((prev) => ({
             ...prev,
-            countryCode: code || prev.countryCode,
+            countryCode: "+91",
             phone: (num || "").replace(/\D/g, ""),
           }))
         }
@@ -275,9 +268,6 @@ export default function SignIn() {
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Get selected country details dynamically
-  const selectedCountry = countryCodes.find(c => c.code === formData.countryCode) || countryCodes[2] // Default to India (+91)
-
   const validateEmail = (email) => {
     if (!email.trim()) {
       return "Email is required"
@@ -289,7 +279,7 @@ export default function SignIn() {
     return ""
   }
 
-  const validatePhone = (phone, countryCode = formData.countryCode) => {
+  const validatePhone = (phone) => {
     if (!phone.trim()) {
       return "Phone number is required"
     }
@@ -297,17 +287,11 @@ export default function SignIn() {
     if (!/^\d+$/.test(cleanPhone)) {
       return "Please enter a valid phone number (digits only)"
     }
-    if (countryCode === "+91") {
-      if (cleanPhone.length !== 10) {
-        return "Phone number must be 10 digits"
-      }
-      if (!["6", "7", "8", "9"].includes(cleanPhone[0])) {
-        return "Please enter a valid 10-digit mobile number"
-      }
-      return ""
+    if (cleanPhone.length !== 10) {
+      return "Phone number must be 10 digits"
     }
-    if (cleanPhone.length < 7 || cleanPhone.length > 15) {
-      return "Phone number must be 7-15 digits"
+    if (!["6", "7", "8", "9"].includes(cleanPhone[0])) {
+      return "Please enter a valid 10-digit mobile number"
     }
     return ""
   }
@@ -329,7 +313,7 @@ export default function SignIn() {
     return ""
   }
 
-  const maxPhoneLength = formData.countryCode === "+91" ? 10 : 15
+  const maxPhoneLength = 10
 
   const handleChange = (e) => {
     const { name, value } = e.target
@@ -346,17 +330,10 @@ export default function SignIn() {
     if (name === "email") {
       setErrors({ ...errors, email: validateEmail(value) })
     } else if (name === "phone") {
-      setErrors({ ...errors, phone: validatePhone(nextValue, formData.countryCode) })
+      setErrors({ ...errors, phone: validatePhone(nextValue) })
     } else if (name === "name") {
       setErrors({ ...errors, name: validateName(value) })
     }
-  }
-
-  const handleCountryCodeChange = (value) => {
-    const maxLen = value === "+91" ? 10 : 15
-    const trimmed = (formData.phone || "").replace(/\D/g, "").slice(0, maxLen)
-    setFormData((prev) => ({ ...prev, countryCode: value, phone: trimmed }))
-    if (trimmed) setErrors((prev) => ({ ...prev, phone: validatePhone(trimmed, value) }))
   }
 
   const handleSubmit = async (e) => {
@@ -369,7 +346,7 @@ export default function SignIn() {
     const newErrors = { phone: "", email: "", name: "" }
 
     if (authMethod === "phone") {
-      const phoneError = validatePhone(formData.phone, formData.countryCode)
+      const phoneError = validatePhone(formData.phone)
       newErrors.phone = phoneError
       if (phoneError) hasErrors = true
     } else {
@@ -395,7 +372,7 @@ export default function SignIn() {
     try {
       const purpose = isSignUp ? "register" : "login"
       const phoneDigits = (formData.phone || "").replace(/\D/g, "")
-      const fullPhone = authMethod === "phone" ? `${formData.countryCode} ${phoneDigits}`.trim() : null
+      const fullPhone = authMethod === "phone" ? `+91 ${phoneDigits}`.trim() : null
       const email = authMethod === "email" ? formData.email.trim() : null
 
       // Call backend to send OTP
@@ -564,34 +541,7 @@ export default function SignIn() {
             {/* Phone Number Input */}
             {authMethod === "phone" && (
               <div className="space-y-2">
-                <div className="flex gap-2 items-stretch">
-                  <Select
-                    value={formData.countryCode}
-                    onValueChange={handleCountryCodeChange}
-                  >
-                    <SelectTrigger
-                      className="w-[100px] md:w-[120px] !h-12 md:!h-14 border-gray-300 dark:border-gray-700 bg-white dark:bg-[#1a1a1a] text-black dark:text-white rounded-lg flex items-center transition-colors"
-                      size="default"
-                      aria-label="Select country code"
-                    >
-                      <SelectValue>
-                        <span className="flex items-center gap-2 text-sm md:text-base">
-                          <span>{selectedCountry.flag}</span>
-                          <span>{selectedCountry.code}</span>
-                        </span>
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent className="max-h-[300px] overflow-y-auto">
-                      {countryCodes.map((country) => (
-                        <SelectItem key={country.code} value={country.code}>
-                          <span className="flex items-center gap-2">
-                            <span>{country.flag}</span>
-                            <span>{country.code}</span>
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                <div className="flex items-stretch">
                   <Input
                     id="phone"
                     name="phone"

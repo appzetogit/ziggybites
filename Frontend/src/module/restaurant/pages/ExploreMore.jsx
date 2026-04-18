@@ -731,6 +731,17 @@ export default function ExploreMore() {
       .filter(section => section.items.length > 0)
   }
 
+  const handleSectionNavigation = (route) => {
+    if (!route) return
+
+    if (route === "/restaurant/subscription-prep") {
+      navigate(route, { replace: true })
+      return
+    }
+
+    navigate(route)
+  }
+
   const filteredSections = getFilteredSections()
 
   const renderSection = (title, items, delay = 0) => (
@@ -775,7 +786,7 @@ export default function ExploreMore() {
                     // Schedule off card
                     handleScheduleOffClick()
                   } else if (item.route) {
-                    navigate(item.route)
+                    handleSectionNavigation(item.route)
                   }
                 }}
                 className="w-full flex items-center justify-center p-6 bg-white rounded-lg shadow-md border-2 border-gray-200 hover:shadow-md transition-shadow duration-200 min-h-[110px]"
@@ -1018,7 +1029,7 @@ export default function ExploreMore() {
                                     if (item.id === 5) {
                                       handleScheduleOffClick()
                                     } else if (item.route) {
-                                      navigate(item.route)
+                                      handleSectionNavigation(item.route)
                                     }
                                     setSearchOpen(false)
                                     setSearchQuery("")

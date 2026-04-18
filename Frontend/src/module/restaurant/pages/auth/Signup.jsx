@@ -6,13 +6,6 @@ import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/com
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import loginBg from "@/assets/loginbanner.jpg"
 import { useCompanyName } from "@/lib/hooks/useCompanyName"
 
@@ -94,13 +87,6 @@ export default function RestaurantSignup() {
     }
   }
 
-  const handleCountryCodeChange = (value) => {
-    setFormData({
-      ...formData,
-      countryCode: value,
-    })
-  }
-
   const handleSubmit = async (e) => {
     e.preventDefault()
     setIsLoading(true)
@@ -126,7 +112,7 @@ export default function RestaurantSignup() {
     }
 
     // Build full phone number
-    const fullPhone = `${formData.countryCode} ${formData.phone}`.trim()
+    const fullPhone = `+91 ${formData.phone}`.trim()
 
     try {
       // Send OTP with purpose 'register'
@@ -259,25 +245,7 @@ export default function RestaurantSignup() {
               <Label htmlFor="phone" className="text-sm font-medium text-gray-700">
                 Phone Number
               </Label>
-              <div className="flex gap-2">
-                <Select
-                  value={formData.countryCode}
-                  onValueChange={handleCountryCodeChange}
-                >
-                  <SelectTrigger className="w-20 sm:w-24 md:w-[100px] text-xs sm:text-sm">
-                    <SelectValue placeholder="Code" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {countryCodes.map((country) => (
-                      <SelectItem key={country.code} value={country.code}>
-                        <span className="flex items-center gap-2 text-xs sm:text-sm">
-                          <span>{country.flag}</span>
-                          <span>{country.code}</span>
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="flex">
                 <div className="flex-1 min-w-0">
                   <div className="relative">
                     <span className="absolute inset-y-0 left-3 flex items-center text-gray-400 pointer-events-none">
@@ -393,4 +361,3 @@ export default function RestaurantSignup() {
     </div>
   )
 }
-

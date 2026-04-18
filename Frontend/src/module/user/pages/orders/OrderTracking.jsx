@@ -36,6 +36,7 @@ import { useLocation as useUserLocation } from "../../hooks/useLocation"
 import DeliveryTrackingMap from "../../components/DeliveryTrackingMap"
 import { orderAPI, restaurantAPI } from "@/lib/api"
 import circleIcon from "@/assets/circleicon.png"
+import { handleShare as shareContent } from "@/lib/share"
 
 // Animated checkmark component
 const AnimatedCheckmark = ({ delay = 0 }) => (
@@ -626,26 +627,11 @@ export default function OrderTracking() {
   }
 
   const handleShare = async () => {
-    const shareData = {
+    await shareContent({
       title: `Track my order from ${order?.restaurant || 'ZiggyBites'}`,
       text: `Hey, I'm tracking my order from ${order?.restaurant || 'the restaurant'} on ZiggyBites!`,
       url: window.location.href,
-    };
-
-    try {
-      if (navigator.share) {
-        await navigator.share(shareData);
-        toast.success("Shared successfully");
-      } else {
-        await navigator.clipboard.writeText(window.location.href);
-        toast.success("Link copied to clipboard");
-      }
-    } catch (err) {
-      if (err.name !== 'AbortError') {
-        console.error("Error sharing:", err);
-        toast.error("Failed to share");
-      }
-    }
+    })
   };
 
 

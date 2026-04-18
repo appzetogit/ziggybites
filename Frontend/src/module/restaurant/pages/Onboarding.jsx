@@ -14,7 +14,6 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { uploadAPI, api, restaurantAPI } from "@/lib/api"
-import ApprovalPendingPopup from "@/components/account/ApprovalPendingPopup"
 import { MobileTimePicker } from "@mui/x-date-pickers/MobileTimePicker"
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider"
 import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns"
@@ -179,7 +178,6 @@ export default function RestaurantOnboarding() {
   const [saving, setSaving] = useState(false)
   const mainContentRef = useRef(null)
   const [error, setError] = useState("")
-  const [approvalPending, setApprovalPending] = useState(false)
   const digitsOnly = (value) => String(value || "").replace(/\D/g, "")
   const isAlphabeticName = (value) =>
     /^[A-Za-z][A-Za-z\s'.-]*$/.test(String(value || "").trim())
@@ -235,43 +233,6 @@ export default function RestaurantOnboarding() {
     featuredPrice: "",
     offer: "",
   })
-
-  useEffect(() => {
-    let isMounted = true
-
-    const fetchApprovalState = async () => {
-      try {
-        const response = await restaurantAPI.getCurrentRestaurant()
-        const restaurant =
-          response?.data?.data?.restaurant || response?.data?.restaurant
-
-        if (!isMounted || !restaurant) return
-
-        setApprovalPending(
-          restaurant.isActive === false && !restaurant.rejectionReason,
-        )
-      } catch (fetchError) {
-        if (
-          fetchError.code !== "ERR_NETWORK" &&
-          fetchError.code !== "ECONNABORTED" &&
-          !fetchError.message?.includes("timeout")
-        ) {
-          console.error("Error fetching restaurant approval state:", fetchError)
-        }
-      }
-    }
-
-    fetchApprovalState()
-    const intervalId = setInterval(fetchApprovalState, 30000)
-    window.addEventListener("focus", fetchApprovalState)
-
-    return () => {
-      isMounted = false
-      clearInterval(intervalId)
-      window.removeEventListener("focus", fetchApprovalState)
-    }
-  }, [])
-
 
   // Load from localStorage on mount and check URL parameter
   useEffect(() => {
@@ -1140,6 +1101,17 @@ export default function RestaurantOnboarding() {
     }))
   }
 
+  const handleBackNavigation = () => {
+    if (saving) return
+
+    if (step > 1) {
+      setStep((currentStep) => Math.max(1, currentStep - 1))
+      return
+    }
+
+    navigate("/restaurant/login", { replace: true })
+  }
+
   const renderStep1 = () => (
     <div className="space-y-6">
       <section className="bg-white p-4 sm:p-6 rounded-md">
@@ -1360,6 +1332,7 @@ export default function RestaurantOnboarding() {
               type="file"
               accept="image/*"
               capture="environment"
+              data-flutter-camera-bridge="on"
               className="hidden"
               onChange={(e) => {
                 const file = e.target.files?.[0]
@@ -1511,6 +1484,7 @@ export default function RestaurantOnboarding() {
             type="file"
             accept="image/*"
             capture="environment"
+            data-flutter-camera-bridge="on"
             className="hidden"
             onChange={(e) => {
               const file = e.target.files?.[0] || null
@@ -1651,6 +1625,7 @@ export default function RestaurantOnboarding() {
                 type="file"
                 accept="image/*"
                 capture="environment"
+                data-flutter-camera-bridge="on"
                 className="hidden"
                 onChange={(e) => setStep3({ ...step3, panImage: e.target.files?.[0] || null })}
               />
@@ -1778,6 +1753,7 @@ export default function RestaurantOnboarding() {
               type="file"
               accept="image/*"
               capture="environment"
+              data-flutter-camera-bridge="on"
               className="hidden"
               onChange={(e) => setStep3({ ...step3, fssaiImage: e.target.files?.[0] || null })}
             />
@@ -1894,18 +1870,20 @@ export default function RestaurantOnboarding() {
   return (
     <LocalizationProvider dateAdapter={AdapterDateFns}>
       <div className="h-[100dvh] bg-gray-100 flex flex-col overflow-hidden">
-        {approvalPending && (
-          <ApprovalPendingPopup
-            title="Registration Submitted"
-            message="Your restaurant registration has been submitted. We will notify you once the review is complete."
-          />
-        )}
         <header className="px-4 py-4 sm:px-6 sm:py-5 bg-white border-b border-gray-100 flex items-center justify-between">
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleBackNavigation}
+              className="mr-1 inline-flex h-9 w-9 items-center justify-center rounded-full text-gray-700 transition-colors hover:bg-gray-100"
+              aria-label={step > 1 ? "Previous step" : "Back to login"}
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </button>
             <div className="w-8 h-8 bg-black rounded-lg flex items-center justify-center">
               <Sparkles className="w-4 h-4 text-white" />
             </div>
-            <div className="text-sm font-bold text-black tracking-tight">ZiggyBites Backend</div>
+            <div className="text-sm font-bold text-black tracking-tight">ZiggyBites Onboarding</div>
           </div>
           <div className="flex items-center gap-3">
             {import.meta.env.DEV && (
@@ -1923,7 +1901,7 @@ export default function RestaurantOnboarding() {
           </div>
         </header>
 
-        <main ref={mainContentRef} className="flex-1 px-4 sm:px-6 py-8 max-w-3xl mx-auto w-full overflow-y-auto">
+        <main ref={mainContentRef} className="min-h-0 flex-1 px-4 sm:px-6 py-8 max-w-3xl mx-auto w-full overflow-y-auto overscroll-contain">
           <StepIndicator />
           {loading ? (
             <div className="flex flex-col items-center justify-center py-20 animate-pulse">
@@ -1948,7 +1926,7 @@ export default function RestaurantOnboarding() {
             <Button
               variant="ghost"
               disabled={step === 1 || saving}
-              onClick={() => setStep((s) => Math.max(1, s - 1))}
+              onClick={handleBackNavigation}
               className="text-sm font-medium text-gray-600 hover:text-black hover:bg-gray-50 flex items-center gap-2"
             >
               <ArrowLeft className="w-4 h-4" />

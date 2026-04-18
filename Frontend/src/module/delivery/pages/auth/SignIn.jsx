@@ -1,12 +1,5 @@
 import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { deliveryAPI } from "@/lib/api"
 import { clearModuleAuth } from "@/lib/utils/auth"
 import { useCompanyName } from "@/lib/hooks/useCompanyName"
@@ -56,10 +49,7 @@ export default function DeliverySignIn() {
     }
   }, [])
 
-  // Get selected country details dynamically
-  const selectedCountry = countryCodes.find(c => c.code === formData.countryCode) || countryCodes[2] // Default to India (+91)
-
-  const validatePhone = (phone, countryCode) => {
+  const validatePhone = (phone) => {
     if (!phone || phone.trim() === "") {
       return "Phone number is required"
     }
@@ -70,15 +60,12 @@ export default function DeliverySignIn() {
       return "Phone number must be at least 7 digits"
     }
 
-    // India-specific validation
-    if (countryCode === "+91") {
-      if (digitsOnly.length !== 10) {
-        return "Indian phone number must be 10 digits"
-      }
-      const firstDigit = digitsOnly[0]
-      if (!["6", "7", "8", "9"].includes(firstDigit)) {
-        return "Invalid Indian mobile number"
-      }
+    if (digitsOnly.length !== 10) {
+      return "Indian phone number must be 10 digits"
+    }
+    const firstDigit = digitsOnly[0]
+    if (!["6", "7", "8", "9"].includes(firstDigit)) {
+      return "Invalid Indian mobile number"
     }
 
     return ""
@@ -87,13 +74,13 @@ export default function DeliverySignIn() {
   const handleSendOTP = async () => {
     setError("")
 
-    const phoneError = validatePhone(formData.phone, formData.countryCode)
+    const phoneError = validatePhone(formData.phone)
     if (phoneError) {
       setError(phoneError)
       return
     }
 
-    const fullPhone = `${formData.countryCode} ${formData.phone}`.trim()
+    const fullPhone = `+91 ${formData.phone}`.trim()
 
     try {
       setIsSending(true)
@@ -140,14 +127,7 @@ export default function DeliverySignIn() {
     })
   }
 
-  const handleCountryCodeChange = (value) => {
-    setFormData({
-      ...formData,
-      countryCode: value,
-    })
-  }
-
-  const isValid = !validatePhone(formData.phone, formData.countryCode)
+  const isValid = !validatePhone(formData.phone)
 
   return (
     <div className="max-h-screen h-screen bg-white flex flex-col">
@@ -183,30 +163,7 @@ export default function DeliverySignIn() {
 
           {/* Mobile Number Input */}
           <div className="space-y-2 w-full">
-            <div className="flex gap-2 items-stretch w-full">
-              <Select
-                value={formData.countryCode}
-                onValueChange={handleCountryCodeChange}
-              >
-                <SelectTrigger className="w-[100px] !h-12 border-gray-300 rounded-lg flex items-center shrink-0" size="default">
-                  <SelectValue>
-                    <span className="flex items-center gap-2">
-                      <span>{selectedCountry.flag}</span>
-                      <span>{selectedCountry.code}</span>
-                    </span>
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent className="max-h-[300px] overflow-y-auto">
-                  {countryCodes.map((country) => (
-                    <SelectItem key={country.code} value={country.code}>
-                      <span className="flex items-center gap-2">
-                        <span>{country.flag}</span>
-                        <span>{country.code}</span>
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="flex items-stretch w-full">
               <input
                 type="tel"
                 inputMode="numeric"
@@ -261,4 +218,3 @@ export default function DeliverySignIn() {
     </div>
   )
 }
-

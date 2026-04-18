@@ -16,6 +16,7 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import Toast from "../components/Toast"
+import { handleShare as shareContent } from "@/lib/share"
 
 export default function FoodDetailPage() {
   const navigate = useNavigate()
@@ -48,23 +49,14 @@ export default function FoodDetailPage() {
 
   // Handle share functionality
   const handleShare = async () => {
-    try {
-      if (navigator.share) {
-        await navigator.share({
-          title: foodData.name,
-          text: `Check out this ${foodData.name} on ZiggyBites!`,
-          url: window.location.href,
-        })
-      } else {
-        // Fallback: Copy to clipboard
-        await navigator.clipboard.writeText(window.location.href)
-        showToast("Link copied to clipboard!")
-      }
-    } catch (error) {
-      if (error.name !== 'AbortError') {
-        console.error("Error sharing:", error)
-        showToast("Failed to share link")
-      }
+    const result = await shareContent({
+      title: foodData.name,
+      text: `Check out this ${foodData.name} on ZiggyBites!`,
+      url: window.location.href,
+    })
+
+    if (result.status === "failed") {
+      showToast("Failed to share link")
     }
   }
 

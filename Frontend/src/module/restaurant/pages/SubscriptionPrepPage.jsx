@@ -787,7 +787,7 @@ export default function SubscriptionPrepPage() {
       <header className="sticky top-0 z-10 bg-white border-b border-slate-200 px-4 py-3 flex items-center gap-3">
         <button
           type="button"
-          onClick={() => navigate("/restaurant/explore")}
+          onClick={() => navigate("/restaurant/explore", { replace: true })}
           className="p-2 rounded-lg hover:bg-slate-100"
           aria-label="Back"
         >

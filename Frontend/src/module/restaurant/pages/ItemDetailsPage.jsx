@@ -28,7 +28,8 @@ export default function ItemDetailsPage() {
   const isNewItem = id === "new"
   const groupId = location.state?.groupId
   const defaultCategory = location.state?.category || "Varieties"
-  const fileInputRef = useRef(null)
+  const galleryInputRef = useRef(null)
+  const cameraInputRef = useRef(null)
 
   // Initialize state with empty values - will be populated from API
   const [itemData, setItemData] = useState(null) // Store the full item data for saving
@@ -41,7 +42,7 @@ export default function ItemDetailsPage() {
   const [itemDescription, setItemDescription] = useState("")
   const [foodType, setFoodType] = useState("Non-Veg")
   const [mealCategories, setMealCategories] = useState([])
-  const [basePrice, setBasePrice] = useState("0")
+  const [basePrice, setBasePrice] = useState("")
   const [preparationTime, setPreparationTime] = useState("")
   const [gst, setGst] = useState("5.0")
   const [isRecommended, setIsRecommended] = useState(false)
@@ -442,7 +443,7 @@ export default function ItemDetailsPage() {
     const files = Array.from(e.target.files)
     if (images.length >= maxImages) {
       toast.error("Maximum 1 image allowed. Remove the current image to add another.")
-      if (fileInputRef.current) fileInputRef.current.value = ""
+      e.target.value = ""
       return
     }
 
@@ -462,7 +463,10 @@ export default function ItemDetailsPage() {
       return true
     })
 
-    if (validFiles.length === 0) return
+    if (validFiles.length === 0) {
+      e.target.value = ""
+      return
+    }
 
     // Only take the first valid file (max 1 image)
     const fileToAdd = validFiles[0]
@@ -473,9 +477,7 @@ export default function ItemDetailsPage() {
     setImages([...images, previewUrl].slice(0, maxImages))
     setImageFiles(newImageFilesMap)
 
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ""
-    }
+    e.target.value = ""
   }
 
   const handleImageDelete = (index) => {
@@ -1122,23 +1124,44 @@ export default function ItemDetailsPage() {
           {/* Add image button - max 1 image */}
           <div className="px-4 py-4 bg-white border-t border-gray-100">
             <input
-              ref={fileInputRef}
+              ref={galleryInputRef}
               type="file"
               accept="image/*"
               onChange={handleImageAdd}
               className="hidden"
-              id="image-upload"
+              id="image-upload-gallery"
+            />
+            <input
+              ref={cameraInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              data-flutter-camera-bridge="on"
+              onChange={handleImageAdd}
+              className="hidden"
+              id="image-upload-camera"
             />
             {images.length < maxImages && (
-              <label
-                htmlFor="image-upload"
-                className="flex items-center justify-center gap-2.5 px-6 py-3.5 bg-gradient-to-r from-gray-900 to-gray-800 text-white rounded-xl text-sm font-semibold cursor-pointer hover:from-gray-800 hover:to-gray-700 transition-all shadow-md hover:shadow-lg active:scale-95"
-              >
-                <div className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center">
-                  <Plus className="w-4 h-4" />
-                </div>
-                <span>Add Image</span>
-              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <label
+                  htmlFor="image-upload-gallery"
+                  className="flex items-center justify-center gap-2.5 px-4 py-3.5 bg-gradient-to-r from-gray-900 to-gray-800 text-white rounded-xl text-sm font-semibold cursor-pointer hover:from-gray-800 hover:to-gray-700 transition-all shadow-md hover:shadow-lg active:scale-95"
+                >
+                  <div className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center">
+                    <Plus className="w-4 h-4" />
+                  </div>
+                  <span>Gallery</span>
+                </label>
+                <label
+                  htmlFor="image-upload-camera"
+                  className="flex items-center justify-center gap-2.5 px-4 py-3.5 border border-gray-300 bg-white text-gray-900 rounded-xl text-sm font-semibold cursor-pointer hover:bg-gray-50 transition-all active:scale-95"
+                >
+                  <div className="w-5 h-5 rounded-full bg-gray-100 flex items-center justify-center">
+                    <Camera className="w-4 h-4" />
+                  </div>
+                  <span>Camera</span>
+                </label>
+              </div>
             )}
           </div>
         </div>

@@ -138,6 +138,65 @@ export default function LocationSelectorOverlay({ isOpen, onClose }) {
   const selectedSearchValueRef = useRef("")
   const selectedPlaceRef = useRef(null)
 
+  const resetSearchOverlayState = () => {
+    searchRequestRef.current += 1
+    selectedSearchValueRef.current = ""
+    selectedPlaceRef.current = null
+    setSearchLoading(false)
+    setShowSearchDropdown(false)
+    setSearchSuggestions([])
+  }
+
+  const teardownGoogleMap = () => {
+    if (watchPositionIdRef.current !== null && navigator.geolocation) {
+      navigator.geolocation.clearWatch(watchPositionIdRef.current)
+      watchPositionIdRef.current = null
+    }
+
+    const clearOverlayInstance = (instance, clearListeners = false) => {
+      if (!instance) return
+
+      try {
+        if (clearListeners && window.google?.maps?.event) {
+          window.google.maps.event.clearInstanceListeners(instance)
+        }
+      } catch (error) {
+        console.warn("Error clearing Google Maps listeners:", error)
+      }
+
+      try {
+        if (typeof instance.setMap === "function") {
+          instance.setMap(null)
+        }
+      } catch (error) {
+        console.warn("Error detaching Google Maps instance:", error)
+      }
+    }
+
+    clearOverlayInstance(greenMarkerRef.current, true)
+    clearOverlayInstance(userLocationMarkerRef.current, true)
+    clearOverlayInstance(blueDotCircleRef.current, true)
+
+    if (googleMapRef.current) {
+      try {
+        if (window.google?.maps?.event) {
+          window.google.maps.event.clearInstanceListeners(googleMapRef.current)
+        }
+      } catch (error) {
+        console.warn("Error clearing map listeners:", error)
+      }
+    }
+
+    greenMarkerRef.current = null
+    userLocationMarkerRef.current = null
+    blueDotCircleRef.current = null
+    googleMapRef.current = null
+
+    if (mapContainerRef.current) {
+      mapContainerRef.current.replaceChildren()
+    }
+  }
+
   const getBestKnownLocation = () => {
     const liveLocation = lastUserLocationRef.current
     if (
@@ -972,31 +1031,16 @@ export default function LocationSelectorOverlay({ isOpen, onClose }) {
 
     return () => {
       isMounted = false
-      // Cleanup geolocation watch
-      if (watchPositionIdRef.current !== null) {
-        navigator.geolocation.clearWatch(watchPositionIdRef.current)
-        watchPositionIdRef.current = null
-      }
-      // Cleanup markers
-      if (greenMarkerRef.current) {
-        greenMarkerRef.current.setMap(null)
-      }
-      if (userLocationMarkerRef.current) {
-        try {
-          userLocationMarkerRef.current.setMap(null)
-        } catch (e) {
-          console.warn("Error cleaning up blue dot marker:", e)
-        }
-      }
-      if (blueDotCircleRef.current) {
-        try {
-          blueDotCircleRef.current.setMap(null)
-        } catch (e) {
-          console.warn("Error cleaning up accuracy circle:", e)
-        }
-      }
+      teardownGoogleMap()
     }
   }, [showAddressForm, GOOGLE_MAPS_API_KEY, location?.latitude, location?.longitude])
+
+  useEffect(() => {
+    if (showAddressForm) return
+
+    teardownGoogleMap()
+    resetSearchOverlayState()
+  }, [showAddressForm])
 
   useEffect(() => {
     if (isOpen && inputRef.current) {
@@ -2710,6 +2754,7 @@ export default function LocationSelectorOverlay({ isOpen, onClose }) {
   }
 
   const handleCancelAddressForm = () => {
+    resetSearchOverlayState()
     setShowAddressForm(false)
     setAddressFormData({
       street: "",
