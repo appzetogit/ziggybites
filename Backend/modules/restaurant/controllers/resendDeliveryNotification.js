@@ -6,6 +6,33 @@ import { findNearestDeliveryBoys } from '../../order/services/deliveryAssignment
 import { notifyMultipleDeliveryBoys } from '../../order/services/deliveryNotificationService.js';
 import mongoose from 'mongoose';
 
+async function buildOrderNotificationSnapshot(orderId) {
+  const orderDoc = await Order.findById(orderId)
+    .populate('userId', 'name phone')
+    .lean();
+
+  if (!orderDoc) {
+    return null;
+  }
+
+  if (!orderDoc.restaurantId) {
+    return orderDoc;
+  }
+
+  const restaurant = await Restaurant.findById(orderDoc.restaurantId)
+    .select('name location address phone ownerPhone')
+    .lean();
+
+  if (!restaurant) {
+    return orderDoc;
+  }
+
+  return {
+    ...orderDoc,
+    restaurantId: restaurant,
+  };
+}
+
 /**
  * Resend delivery notification for unassigned order
  * POST /api/restaurant/orders/:id/resend-delivery-notification
@@ -80,10 +107,7 @@ export const resendDeliveryNotification = asyncHandler(async (req, res) => {
       }
 
       // Notify all available delivery boys
-      const populatedOrder = await Order.findById(order._id)
-        .populate('userId', 'name phone')
-        .populate('restaurantId', 'name location address phone ownerPhone')
-        .lean();
+      const populatedOrder = await buildOrderNotificationSnapshot(order._id);
 
       if (populatedOrder) {
         const deliveryPartnerIds = allDeliveryBoys.map(db => db.deliveryPartnerId);
@@ -108,10 +132,7 @@ export const resendDeliveryNotification = asyncHandler(async (req, res) => {
       }
     } else {
       // Notify priority delivery boys
-      const populatedOrder = await Order.findById(order._id)
-        .populate('userId', 'name phone')
-        .populate('restaurantId', 'name location address phone ownerPhone')
-        .lean();
+      const populatedOrder = await buildOrderNotificationSnapshot(order._id);
 
       if (populatedOrder) {
         const priorityIds = priorityDeliveryBoys.map(db => db.deliveryPartnerId);

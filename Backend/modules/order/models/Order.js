@@ -324,6 +324,7 @@ const orderSchema = new mongoose.Schema(
           "zone_match",
           "nearest_distance",
           "manual",
+          "manual_resend",
           "nearest_available",
           "delivery_accept",
         ],

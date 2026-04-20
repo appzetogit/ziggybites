@@ -75,13 +75,33 @@ function firebaseConfigPlugin(apiBaseUrl, env) {
   };
 }
 
+function appVersionPlugin(buildId) {
+  return {
+    name: "app-version",
+    generateBundle() {
+      this.emitFile({
+        type: "asset",
+        fileName: "app-version.json",
+        source: JSON.stringify({
+          buildId,
+          generatedAt: new Date().toISOString(),
+        }),
+      });
+    },
+  };
+}
+
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const apiBaseUrl = env.VITE_API_BASE_URL || "http://localhost:5000/api";
+  const buildId = new Date().toISOString();
 
   return {
-    plugins: [react(), tailwindcss(), firebaseConfigPlugin(apiBaseUrl, env)],
+    plugins: [react(), tailwindcss(), firebaseConfigPlugin(apiBaseUrl, env), appVersionPlugin(buildId)],
+    define: {
+      __APP_BUILD_ID__: JSON.stringify(buildId),
+    },
     resolve: {
       alias: {
         "@": path.resolve(__dirname, "./src"),

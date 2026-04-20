@@ -8,6 +8,34 @@ import { assignOrderToDeliveryBoy, findNearestDeliveryBoys, findNearestDeliveryB
 import { notifyDeliveryBoyNewOrder, notifyMultipleDeliveryBoys } from '../../order/services/deliveryNotificationService.js';
 import mongoose from 'mongoose';
 
+async function buildOrderNotificationSnapshot(orderId) {
+  const orderDoc = await Order.findById(orderId)
+    .populate('userId', 'name phone')
+    .populate('deliveryPartnerId', 'name phone')
+    .lean();
+
+  if (!orderDoc) {
+    return null;
+  }
+
+  if (!orderDoc.restaurantId) {
+    return orderDoc;
+  }
+
+  const restaurant = await Restaurant.findById(orderDoc.restaurantId)
+    .select('name location address phone ownerPhone')
+    .lean();
+
+  if (!restaurant) {
+    return orderDoc;
+  }
+
+  return {
+    ...orderDoc,
+    restaurantId: restaurant,
+  };
+}
+
 /**
  * Get all orders for restaurant
  * GET /api/restaurant/orders
@@ -911,12 +939,9 @@ export const markOrderReady = asyncHandler(async (req, res) => {
       notifyUserOrderStatus(order);
     } catch (_) {}
 
-    // Populate order for notifications
-    const populatedOrder = await Order.findById(order._id)
-      .populate('restaurantId', 'name location address phone')
-      .populate('userId', 'name phone')
-      .populate('deliveryPartnerId', 'name phone')
-      .lean();
+    // Build a notification-safe order snapshot. restaurantId is stored as a string
+    // in the order document, so load the restaurant record explicitly.
+    const populatedOrder = await buildOrderNotificationSnapshot(order._id);
 
     try {
       await notifyRestaurantOrderUpdate(order._id.toString(), 'ready');
@@ -925,7 +950,7 @@ export const markOrderReady = asyncHandler(async (req, res) => {
     }
 
     // Notify delivery boy that order is ready for pickup
-    if (populatedOrder.deliveryPartnerId) {
+    if (populatedOrder?.deliveryPartnerId) {
       try {
         const { notifyDeliveryBoyOrderReady } = await import('../../order/services/deliveryNotificationService.js');
         const deliveryPartnerId = populatedOrder.deliveryPartnerId._id || populatedOrder.deliveryPartnerId;
@@ -936,7 +961,7 @@ export const markOrderReady = asyncHandler(async (req, res) => {
       }
     }
 
-    if (!populatedOrder.deliveryPartnerId) {
+    if (populatedOrder && !populatedOrder.deliveryPartnerId) {
       try {
         const coords = populatedOrder.restaurantId?.location?.coordinates;
         if (coords?.length >= 2) {

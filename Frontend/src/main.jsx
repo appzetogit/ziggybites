@@ -8,6 +8,7 @@ import OfflineBanner from './components/OfflineBanner.jsx'
 import { getGoogleMapsApiKey } from './lib/utils/googleMapsApiKey.js'
 import { loadBusinessSettings } from './lib/utils/businessSettings.js'
 import { installFlutterCameraBridge } from './lib/mobileBridge.js'
+import { startAutoUpdate } from './lib/autoUpdate.js'
 
 const ZOOM_ALLOWED_SELECTOR = [
   '.leaflet-container',
@@ -129,6 +130,7 @@ document.documentElement.classList.remove('dark')
 
 installFlutterCameraBridge()
 preventAppZoomOutsideMaps()
+startAutoUpdate()
 
 // Suppress browser extension errors
 const originalError = console.error
