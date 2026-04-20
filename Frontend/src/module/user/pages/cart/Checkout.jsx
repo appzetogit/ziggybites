@@ -12,13 +12,11 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { useCart } from "../../context/CartContext"
 import { useProfile } from "../../context/ProfileContext"
-import { useOrders } from "../../context/OrdersContext"
 
 export default function Checkout() {
   const navigate = useNavigate()
   const { cart, clearCart } = useCart()
   const { getDefaultAddress, getDefaultPaymentMethod, addresses, paymentMethods } = useProfile()
-  const { createOrder } = useOrders()
   const [selectedAddress, setSelectedAddress] = useState(getDefaultAddress()?.id || "")
   const [selectedPayment, setSelectedPayment] = useState(getDefaultPaymentMethod()?.id || "")
   const [isPlacingOrder, setIsPlacingOrder] = useState(false)
@@ -43,30 +41,9 @@ export default function Checkout() {
     }
 
     setIsPlacingOrder(true)
-
-    // Simulate API call
-    setTimeout(() => {
-      const orderId = createOrder({
-        items: cart.map(item => ({
-          id: item.id,
-          name: item.name,
-          price: item.price,
-          quantity: item.quantity,
-          image: item.image
-        })),
-        address: defaultAddress,
-        paymentMethod: defaultPayment,
-        subtotal,
-        deliveryFee,
-        tax,
-        total,
-        restaurant: cart[0]?.restaurant || cart[0]?.name || "Multiple Restaurants"
-      })
-
-      clearCart()
-      setIsPlacingOrder(false)
-      navigate(`/user/orders/${orderId}?confirmed=true`)
-    }, 1500)
+    alert("Please place this order from the cart checkout so ZiggyBites can create the backend order ID.")
+    setIsPlacingOrder(false)
+    navigate("/user/cart")
   }
 
   if (cart.length === 0) {

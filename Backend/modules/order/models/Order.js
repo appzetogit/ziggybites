@@ -331,6 +331,17 @@ const orderSchema = new mongoose.Schema(
       zoneId: String,
       zoneName: String,
       deliveryPartnerId: String,
+      priorityDeliveryPartnerIds: {
+        type: [String],
+        default: undefined,
+      },
+      expandedDeliveryPartnerIds: {
+        type: [String],
+        default: undefined,
+      },
+      priorityNotifiedAt: Date,
+      expandedNotifiedAt: Date,
+      notificationPhase: String,
       assignedAt: Date,
     },
     deliveryState: {

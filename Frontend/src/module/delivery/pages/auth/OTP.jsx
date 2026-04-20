@@ -188,6 +188,10 @@ export default function DeliveryOTP() {
       // First attempt: verify OTP for login
       const response = await deliveryAPI.verifyOTP(phone, code, "login")
       const data = response?.data?.data || {}
+      const signupTargetStep =
+        data?.nextSignupStep === "documents"
+          ? "/delivery/signup/documents"
+          : "/delivery/signup/details"
 
       const userStatus = data?.user?.status
       const skipSignupForApproved =
@@ -221,7 +225,7 @@ export default function DeliveryOTP() {
 
         // Redirect to signup step 1 after token is stored
         setTimeout(() => {
-          navigate("/delivery/signup/details", { replace: true })
+          navigate(signupTargetStep, { replace: true })
         }, 200)
         setIsLoading(false)
         return

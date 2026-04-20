@@ -40,8 +40,9 @@ export default function AcceptedOrderDetails() {
       try {
         setIsLoading(true)
         const response = await deliveryAPI.getOrderDetails(orderId)
-        if (response.data?.success) {
-          setOrder(response.data.data)
+        const fetchedOrder = response.data?.data?.order || response.data?.data
+        if (response.data?.success && fetchedOrder?.orderId && Array.isArray(fetchedOrder?.items) && fetchedOrder.items.length > 0) {
+          setOrder(fetchedOrder)
         } else {
           toast.error("Failed to fetch order details")
         }
@@ -100,14 +101,14 @@ export default function AcceptedOrderDetails() {
     deliveryTime: order.estimatedDeliveryTime ? `${order.estimatedDeliveryTime} Min` : "N/A",
     customer: {
       name: order.userId?.name || order.customerName || "Customer",
-      address: order.address?.formattedAddress || order.deliveryAddress || "N/A",
+      address: order.address?.formattedAddress || order.deliveryAddress || "",
       phone: order.userId?.phone || order.customerPhone,
-      image: order.userId?.image || "https://images.unsplash.com/photo-1574071318508-1cdbab80d002?w=100&h=100&fit=crop&q=80"
+      image: order.userId?.image || ""
     },
     restaurant: {
-      name: order.restaurantName || order.restaurant?.name || "Restaurant",
-      address: order.restaurant?.address || "Restaurant Address",
-      rating: order.restaurant?.rating || 4.0
+      name: order.restaurantName || order.restaurantId?.name || order.restaurant?.name || "Restaurant",
+      address: order.restaurantId?.address || order.restaurantId?.location?.formattedAddress || order.restaurant?.address || "",
+      rating: order.restaurantId?.rating || order.restaurant?.rating || null
     },
     items: order.items?.map((item, idx) => ({
       id: item.itemId || idx,
@@ -117,7 +118,7 @@ export default function AcceptedOrderDetails() {
       subCategory: item.subCategory || "",
       quantity: item.quantity,
       type: item.isVeg ? "Veg" : "Non Veg",
-      image: item.image || "https://images.unsplash.com/photo-1585937421612-70a008356fbe?w=100&h=100&fit=crop&q=80"
+      image: item.image || ""
     })) || [],
     cutlery: order.sendCutlery ? "Yes" : "No",
     paymentMethod: {
@@ -176,11 +177,17 @@ export default function AcceptedOrderDetails() {
           <h3 className="text-gray-900 font-semibold mb-3">Customer Contact Details</h3>
           <div className="bg-white rounded-xl p-4 shadow-sm">
             <div className="flex items-start gap-4">
-              <img
-                src={orderData.customer.image}
-                alt="Customer"
-                className="w-12 h-12 rounded-lg object-cover"
-              />
+              {orderData.customer.image ? (
+                <img
+                  src={orderData.customer.image}
+                  alt="Customer"
+                  className="w-12 h-12 rounded-lg object-cover"
+                />
+              ) : (
+                <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center">
+                  <User className="w-6 h-6 text-gray-500" />
+                </div>
+              )}
               <div className="flex-1 min-w-0">
                 <p className="text-gray-900 font-medium mb-1">{orderData.customer.name}</p>
                 <p className="text-gray-600 text-sm whitespace-nowrap overflow-hidden text-ellipsis">{orderData.customer.address}</p>
@@ -227,10 +234,12 @@ export default function AcceptedOrderDetails() {
               <div className="flex-1 min-w-0">
                 <p className="text-gray-900 font-medium mb-1">{orderData.restaurant.name}</p>
                 <p className="text-gray-600 text-sm mb-1 whitespace-nowrap overflow-hidden text-ellipsis">{orderData.restaurant.address}</p>
+                {orderData.restaurant.rating != null && (
                 <div className="flex items-center gap-1">
                   <span className="text-orange-500">★</span>
                   <span className="text-gray-600 text-sm">{orderData.restaurant.rating}</span>
                 </div>
+                )}
               </div>
               <div className="flex items-center gap-1.5 flex-shrink-0">
                 <button
@@ -264,11 +273,17 @@ export default function AcceptedOrderDetails() {
             {orderData.items.map((item, idx) => (
               <div key={idx} className="bg-white rounded-xl p-4 shadow-sm">
                 <div className="flex items-start gap-4">
-                  <img
-                    src={item.image}
-                    alt={item.name}
-                    className="w-16 h-16 rounded-lg object-cover"
-                  />
+                  {item.image ? (
+                    <img
+                      src={item.image}
+                      alt={item.name}
+                      className="w-16 h-16 rounded-lg object-cover"
+                    />
+                  ) : (
+                    <div className="w-16 h-16 bg-orange-100 rounded-lg flex items-center justify-center">
+                      <UtensilsCrossed className="w-7 h-7 text-[#ff8100]" />
+                    </div>
+                  )}
                   <div className="flex-1 min-w-0">
                     <p className="text-gray-900 font-medium mb-1 truncate">{item.name}</p>
                     <p className="text-[#ff8100] font-bold mb-1">₹ {item.price.toFixed(2)}</p>

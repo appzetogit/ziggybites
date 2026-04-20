@@ -5,8 +5,6 @@ import { deliveryAPI } from '@/lib/api';
 import alertSound from '@/assets/audio/alert.mp3';
 import originalSound from '@/assets/audio/original.mp3';
 
-const DELIVERY_DEMO_READY_EVENT = 'delivery_demo_subscription_ready';
-
 export const useDeliveryNotifications = () => {
   // CRITICAL: All hooks must be called unconditionally and in the same order every render
   // Order: useRef -> useState -> useEffect -> useCallback
@@ -376,8 +374,41 @@ export const useDeliveryNotifications = () => {
       }
     });
 
+    const shouldAcceptSocketOrder = (orderData) => {
+      const orderKey = orderData?.orderMongoId || orderData?._id || orderData?.orderId;
+      const status = String(orderData?.status || orderData?.orderStatus || '').toLowerCase();
+      const preparationStatus = String(orderData?.preparationStatus || '').toLowerCase();
+      if (!orderKey || !orderData?.orderId) {
+        if (import.meta.env.MODE === 'development') {
+          console.warn('[DeliverySocket] Ignoring order without database/order ID', orderData);
+        }
+        return false;
+      }
+
+      if (!Array.isArray(orderData?.items) || orderData.items.length === 0) {
+        if (import.meta.env.MODE === 'development') {
+          console.warn('[DeliverySocket] Ignoring order without items', orderData);
+        }
+        return false;
+      }
+
+      if (status !== 'ready' && preparationStatus !== 'ready') {
+        if (import.meta.env.MODE === 'development') {
+          console.warn('[DeliverySocket] Ignoring order before restaurant marked ready', {
+            orderId: orderData?.orderId,
+            status,
+            preparationStatus,
+          });
+        }
+        return false;
+      }
+
+      return true;
+    };
+
     socketRef.current.on('new_order', (orderData) => {
       console.log('📦 New order received via socket:', orderData);
+      if (!shouldAcceptSocketOrder(orderData)) return;
       setNewOrder(orderData);
       setDeliveryBatchState((prev) => ({
         ...prev,
@@ -394,6 +425,7 @@ export const useDeliveryNotifications = () => {
       console.log('📦 New order available (priority notification):', orderData);
       console.log('📦 Notification phase:', orderData.phase || 'unknown');
       // Treat it the same as new_order for now - delivery boy can accept it
+      if (!shouldAcceptSocketOrder(orderData)) return;
       setNewOrder(orderData);
       setDeliveryBatchState((prev) => ({
         ...prev,
@@ -453,41 +485,6 @@ export const useDeliveryNotifications = () => {
   const clearOrderReady = () => {
     setOrderReady(null);
   };
-
-  useEffect(() => {
-    const applyDemoAssignment = (payload) => {
-      if (!payload || typeof payload !== 'object') return;
-
-      setNewOrder({
-        ...payload,
-        activeAssignedOrderCount: deliveryBatchState?.activeAssignedOrderCount || 0,
-        nextDeliveryLocation: deliveryBatchState?.nextDeliveryLocation || null,
-      });
-      playNotificationSound();
-    };
-
-    const handleStorage = (event) => {
-      if (event.key !== DELIVERY_DEMO_READY_EVENT || !event.newValue) return;
-
-      try {
-        applyDemoAssignment(JSON.parse(event.newValue));
-      } catch (error) {
-        console.warn('Failed to parse restaurant demo assignment:', error);
-      }
-    };
-
-    const handleWindowEvent = (event) => {
-      applyDemoAssignment(event?.detail);
-    };
-
-    window.addEventListener('storage', handleStorage);
-    window.addEventListener(DELIVERY_DEMO_READY_EVENT, handleWindowEvent);
-
-    return () => {
-      window.removeEventListener('storage', handleStorage);
-      window.removeEventListener(DELIVERY_DEMO_READY_EVENT, handleWindowEvent);
-    };
-  }, [deliveryBatchState, playNotificationSound]);
 
   return {
     newOrder,

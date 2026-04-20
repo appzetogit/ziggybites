@@ -67,79 +67,6 @@ import bikeLogo from "../../../assets/bikelogo.png"
 // Ola Maps API Key removed
 const COMPLETED_BATCH_ORDERS_STORAGE_KEY = "deliveryCompletedBatchOrderKeys"
 
-// Mock restaurants data
-const mockRestaurants = [
-  {
-    id: 1,
-    name: "Hotel Pankaj",
-    address: "Opposite Midway, Behror Locality, Behror",
-    lat: 28.2849,
-    lng: 76.1209,
-    distance: "3.56 km",
-    timeAway: "4 mins",
-    orders: 2,
-    estimatedEarnings: 76.62, // Consistent payment amount
-    pickupDistance: "3.56 km",
-    dropDistance: "12.2 km",
-    payment: "COD",
-    amount: 76.62, // Payment amount (consistent with estimatedEarnings)
-    items: 2,
-    phone: "+911234567890",
-    orderId: "ORD1234567890",
-    customerName: "Rajesh Kumar",
-    customerAddress: "401, 4th Floor, Pushparatna Solitare Building, Janjeerwala Square, New Palasia, Indore",
-    customerPhone: "+919876543210",
-    tripTime: "38 mins",
-    tripDistance: "8.8 kms"
-  },
-  {
-    id: 2,
-    name: "Haldi",
-    address: "B 2, Narnor-Alwar Rd, Indus Valley, Behror",
-    lat: 28.2780,
-    lng: 76.1150,
-    distance: "4.2 km",
-    timeAway: "4 mins",
-    orders: 1,
-    estimatedEarnings: 76.62,
-    pickupDistance: "4.2 km",
-    dropDistance: "8.5 km",
-    payment: "COD",
-    amount: 76.62,
-    items: 3,
-    phone: "+911234567891",
-    orderId: "ORD1234567891",
-    customerName: "Priya Sharma",
-    customerAddress: "Flat 302, Green Valley Apartments, MG Road, Indore",
-    customerPhone: "+919876543211",
-    tripTime: "35 mins",
-    tripDistance: "7.5 kms"
-  },
-  {
-    id: 3,
-    name: "Pandit Ji Samose Wale",
-    address: "Near Govt. Senior Secondary School, Behror Locality, Behror",
-    lat: 28.2870,
-    lng: 76.1250,
-    distance: "5.04 km",
-    timeAway: "6 mins",
-    orders: 1,
-    estimatedEarnings: 76.62,
-    pickupDistance: "5.04 km",
-    dropDistance: "7.8 km",
-    payment: "COD",
-    amount: 76.62,
-    items: 1,
-    phone: "+911234567892",
-    orderId: "ORD1234567892",
-    customerName: "Amit Patel",
-    customerAddress: "House No. 45, Sector 5, Vijay Nagar, Indore",
-    customerPhone: "+919876543212",
-    tripTime: "32 mins",
-    tripDistance: "6.9 kms"
-  }
-]
-
 // ============================================
 // STABLE TRACKING SYSTEM - RAPIDO/UBER STYLE
 // ============================================
@@ -332,7 +259,7 @@ const normalizeBatchOrder = (order = {}) => {
   const normalized = {
     ...order,
     id: order?.id || order?._id || order?.orderMongoId || order?.mongoId || order?.orderDbId,
-    orderId: order?.orderId || order?.orderCode || order?.code || order?.id || order?._id,
+    orderId: order?.orderId || order?.orderCode || order?.code,
     orderCode: order?.orderCode || order?.orderId || order?.code,
     name:
       order?.name ||
@@ -413,6 +340,24 @@ const isRestaurantDemoAssignment = (order = {}) => {
     order?.source === "restaurant-subscription-demo" ||
     order?.isRestaurantDemoAssignment === true ||
     primaryId.startsWith("demo-subscription-")
+  )
+}
+
+const getOrderDatabaseId = (order) => {
+  const rawId = order?.orderMongoId || order?._id || order?.id || order?.mongoId || order?.orderDbId
+  return rawId != null ? String(rawId) : ""
+}
+
+const isValidDeliveryOrder = (order = {}) => {
+  const displayOrderId = order?.orderId || order?.orderCode || order?.code
+  const databaseId = getOrderDatabaseId(order)
+  const items = Array.isArray(order?.items) ? order.items : []
+
+  return Boolean(
+    displayOrderId &&
+      databaseId &&
+      items.length > 0 &&
+      !isRestaurantDemoAssignment(order)
   )
 }
 
@@ -520,9 +465,10 @@ export default function DeliveryHome() {
   const [isRefreshingLocation, setIsRefreshingLocation] = useState(false)
   const [bankDetailsFilled, setBankDetailsFilled] = useState(false)
   const [deliveryStatus, setDeliveryStatus] = useState(null) // Store delivery partner status
+  const [deliveryNeedsSignup, setDeliveryNeedsSignup] = useState(false)
   const [rejectionReason, setRejectionReason] = useState(null) // Store rejection reason
   const [isReverifying, setIsReverifying] = useState(false) // Loading state for reverify
-  const showApprovalPendingPopup = deliveryStatus === "pending"
+  const showApprovalPendingPopup = deliveryStatus === "pending" && !deliveryNeedsSignup
   
   // Map refs and state (Ola Maps removed)
   const mapContainerRef = useRef(null)
@@ -851,6 +797,7 @@ export default function DeliveryHome() {
 
     const upsertOrder = (rawOrder) => {
       const normalized = normalizeBatchOrder(rawOrder)
+      if (!isValidDeliveryOrder(normalized)) return
       const key = getOrderKey(normalized)
       if (!key) return
       if (completedBatchOrderKeySet.has(String(key))) return
@@ -952,24 +899,11 @@ export default function DeliveryHome() {
 
   const incomingPopupOrders = useMemo(() => {
     if (Array.isArray(newOrder?.assignedOrders) && newOrder.assignedOrders.length > 0) {
-      return newOrder.assignedOrders
+      return newOrder.assignedOrders.filter(isValidDeliveryOrder)
     }
 
-    const fallbackOrderId = newOrder?.orderId || selectedRestaurant?.orderId || 'ORD1234567890'
-    const fallbackCustomerAddress =
-      newOrder?.customerAddress ||
-      newOrder?.customerLocation?.address ||
-      selectedRestaurant?.customerAddress ||
-      'Address pending'
-
-    return [
-      {
-        orderId: fallbackOrderId,
-        customerName: newOrder?.customerName || selectedRestaurant?.customerName || 'Customer',
-        customerAddress: fallbackCustomerAddress,
-        items: Array.isArray(newOrder?.items) ? newOrder.items : [],
-      },
-    ]
+    const singleOrder = newOrder || selectedRestaurant
+    return isValidDeliveryOrder(singleOrder) ? [singleOrder] : []
   }, [newOrder, selectedRestaurant])
 
   const {
@@ -2597,108 +2531,9 @@ export default function DeliveryHome() {
             isRestaurantDemoAssignment(newOrder)
 
           if (isDemoAssignment) {
-            const restaurantInfo = {
-              ...(selectedRestaurant || {}),
-              id: selectedRestaurant?.id || orderId,
-              orderId: selectedRestaurant?.orderId || newOrder?.orderId || `DEMO-${Date.now()}`,
-              name: selectedRestaurant?.name || newOrder?.restaurantName || 'Subscription Demo Kitchen',
-              address:
-                selectedRestaurant?.address ||
-                newOrder?.restaurantLocation?.address ||
-                newOrder?.restaurantAddress ||
-                'Restaurant Address',
-              lat:
-                selectedRestaurant?.lat ??
-                newOrder?.restaurantLocation?.latitude ??
-                currentLocation[0],
-              lng:
-                selectedRestaurant?.lng ??
-                newOrder?.restaurantLocation?.longitude ??
-                currentLocation[1],
-              distance:
-                selectedRestaurant?.distance ||
-                selectedRestaurant?.pickupDistance ||
-                newOrder?.pickupDistance ||
-                '1.00 km',
-              pickupDistance:
-                selectedRestaurant?.pickupDistance ||
-                newOrder?.pickupDistance ||
-                '1.00 km',
-              dropDistance:
-                selectedRestaurant?.dropDistance ||
-                newOrder?.deliveryDistance ||
-                '4.00 km',
-              timeAway:
-                selectedRestaurant?.timeAway ||
-                calculateTimeAway(
-                  selectedRestaurant?.pickupDistance ||
-                    newOrder?.pickupDistance ||
-                    '1.00 km',
-                ),
-              estimatedEarnings:
-                selectedRestaurant?.estimatedEarnings ||
-                newOrder?.estimatedEarnings ||
-                newOrder?.deliveryFee ||
-                0,
-              deliveryFee:
-                selectedRestaurant?.deliveryFee ||
-                newOrder?.deliveryFee ||
-                0,
-              amount:
-                selectedRestaurant?.amount ||
-                newOrder?.deliveryFee ||
-                0,
-              customerName:
-                selectedRestaurant?.customerName ||
-                newOrder?.customerName ||
-                'Customer',
-              customerAddress:
-                selectedRestaurant?.customerAddress ||
-                newOrder?.customerLocation?.address ||
-                'Customer Address',
-              customerLat:
-                selectedRestaurant?.customerLat ??
-                newOrder?.customerLocation?.latitude,
-              customerLng:
-                selectedRestaurant?.customerLng ??
-                newOrder?.customerLocation?.longitude,
-              items: selectedRestaurant?.items || newOrder?.items || [],
-              total: selectedRestaurant?.total || newOrder?.total || 0,
-              paymentMethod:
-                selectedRestaurant?.paymentMethod ||
-                newOrder?.paymentMethod ||
-                'subscription',
-              orderStatus: 'ready',
-              status: 'ready',
-              deliveryState: {
-                ...(selectedRestaurant?.deliveryState || {}),
-                currentPhase: 'en_route_to_pickup',
-                status: 'accepted',
-              },
-              deliveryPhase: 'en_route_to_pickup',
-              assignedOrders:
-                selectedRestaurant?.assignedOrders ||
-                newOrder?.assignedOrders ||
-                deliveryBatchState?.assignedOrders ||
-                [],
-              source: selectedRestaurant?.source || newOrder?.source,
-              isRestaurantDemoAssignment: true,
-            }
-
-            setSelectedRestaurant(restaurantInfo)
-            setRoutePolyline([
-              currentLocation,
-              [restaurantInfo.lat, restaurantInfo.lng],
-            ])
-            setShowNewOrderPopup(false)
-            acceptedOrderIdsRef.current.add(orderId)
+            console.warn('[Delivery] Ignoring demo assignment payload', { orderId, newOrder, selectedRestaurant })
+            toast.error('This order is no longer available.')
             clearNewOrder()
-            setShowRoutePath(true)
-            setShowDirectionsMap(false)
-            setTimeout(() => {
-              setShowreachedPickupPopup(true)
-            }, 300)
-            toast.success('Demo order accepted')
             return
           }
 
@@ -2738,13 +2573,16 @@ export default function DeliveryHome() {
             let restaurantInfo = null;
             if (order) {
               // Extract restaurant location (GeoJSON format: [longitude, latitude])
-              const restaurantCoords = order.restaurantId?.location?.coordinates || []
+              const restaurantCoords =
+                order.restaurantId?.location?.coordinates ||
+                order.restaurantLocation?.coordinates ||
+                []
               const restaurantLat = restaurantCoords[1] // Latitude is second element
               const restaurantLng = restaurantCoords[0] // Longitude is first element
               
               // Format restaurant address - check multiple possible locations
               let restaurantAddress = 'Restaurant Address'
-              const restaurantLocation = order.restaurantId?.location
+              const restaurantLocation = order.restaurantId?.location || order.restaurantLocation
               
               // Debug: Log order structure to understand data format
               console.log('🔍 Order structure for address extraction:', {
@@ -3587,25 +3425,8 @@ export default function DeliveryHome() {
         
         if (orderId) {
           if (isRestaurantDemoAssignment(selectedRestaurant) || isRestaurantDemoAssignment(newOrder)) {
-            setSelectedRestaurant(prev => ({
-              ...prev,
-              deliveryState: {
-                ...(prev?.deliveryState || {}),
-                currentPhase: 'at_pickup',
-                status: 'reached_pickup'
-              },
-              deliveryPhase: 'at_pickup',
-              isRestaurantDemoAssignment: true,
-            }))
-            setShowreachedPickupPopup(false)
-            setTimeout(() => {
-              setShowOrderIdConfirmationPopup(true)
-            }, 300)
-            toast.success('Demo pickup confirmed!')
-            setTimeout(() => {
-              setreachedPickupButtonProgress(0)
-              setreachedPickupIsAnimatingToComplete(false)
-            }, 500)
+            toast.error('This order is no longer available.')
+            clearNewOrder()
             return
           }
 
@@ -3780,7 +3601,8 @@ export default function DeliveryHome() {
         
         if (orderIdForApi) {
           if (isRestaurantDemoAssignment(selectedRestaurant) || isRestaurantDemoAssignment(newOrder)) {
-            console.log('Demo reached drop confirmed locally')
+            toast.error('This order is no longer available.')
+            clearNewOrder()
             return
           }
 
@@ -4170,37 +3992,8 @@ export default function DeliveryHome() {
 
         try {
           if (isRestaurantDemoAssignment(orderInReceiptFlow)) {
-            const customerLat = orderInReceiptFlow?.customerLat ?? 22.7196
-            const customerLng = orderInReceiptFlow?.customerLng ?? 75.8577
-
-            setSelectedRestaurant(prev => ({
-              ...prev,
-              ...orderInReceiptFlow,
-              orderStatus: 'out_for_delivery',
-              status: 'out_for_delivery',
-              deliveryPhase: 'en_route_to_delivery',
-              customerLat,
-              customerLng,
-              deliveryState: {
-                ...(prev?.deliveryState || {}),
-                currentPhase: 'en_route_to_delivery',
-                status: 'order_confirmed',
-                orderIdConfirmedAt: new Date().toISOString(),
-              },
-              isRestaurantDemoAssignment: true,
-            }))
-            setRoutePolyline([
-              currentLocation,
-              [customerLat, customerLng],
-            ])
-            setShowRoutePath(true)
-            setShowOrderIdConfirmationPopup(false)
-            setShowReachedDropPopup(true)
-            toast.success('Demo order picked up successfully!')
-            setTimeout(() => {
-              setOrderIdConfirmButtonProgress(0)
-              setOrderIdConfirmIsAnimatingToComplete(false)
-            }, 500)
+            toast.error('This order is no longer available.')
+            clearNewOrder()
             return
           }
 
@@ -4379,14 +4172,29 @@ export default function DeliveryHome() {
             // Update status to out_for_delivery (merge if customer block didn't run)
             setSelectedRestaurant(prev => ({
               ...prev,
+              ...(orderInReceiptFlow || {}),
               orderStatus: 'out_for_delivery',
               status: 'out_for_delivery',
               deliveryPhase: 'en_route_to_delivery',
               deliveryState: {
-                ...prev.deliveryState,
+                ...(prev?.deliveryState || orderInReceiptFlow?.deliveryState || {}),
                 currentPhase: 'en_route_to_delivery',
                 status: 'order_confirmed'
               }
+            }))
+            localStorage.setItem('deliveryActiveOrder', JSON.stringify({
+              ...(selectedRestaurant || {}),
+              ...(orderInReceiptFlow || {}),
+              orderStatus: 'out_for_delivery',
+              status: 'out_for_delivery',
+              deliveryPhase: 'en_route_to_delivery',
+              routeCoordinates: routeData?.coordinates || routePolyline || [],
+              deliveryState: {
+                ...((selectedRestaurant || orderInReceiptFlow)?.deliveryState || {}),
+                currentPhase: 'en_route_to_delivery',
+                status: 'order_confirmed',
+                orderIdConfirmedAt: new Date().toISOString(),
+              },
             }))
 
             // CRITICAL: Close Reached Pickup popup if it's still showing (shouldn't happen, but defensive)
@@ -4399,6 +4207,8 @@ export default function DeliveryHome() {
             
             // Show Reached Drop popup instantly after Order Picked Up is confirmed
             console.log('✅ Showing Reached Drop popup instantly after Order Picked Up confirmation')
+            setShowReachedDropPopup(true)
+            requestAnimationFrame(() => setShowReachedDropPopup(true))
             setTimeout(() => {
               setShowReachedDropPopup(true)
               console.log('✅ Reached Drop popup state set to true')
@@ -4622,35 +4432,8 @@ export default function DeliveryHome() {
             })
 
             if (isRestaurantDemoAssignment(selectedRestaurant) || isRestaurantDemoAssignment(newOrder)) {
-              const earningsSource =
-                selectedRestaurant?.amount ||
-                selectedRestaurant?.estimatedEarnings ||
-                newOrder?.deliveryFee ||
-                0
-              const earnings =
-                typeof earningsSource === 'object'
-                  ? Number(earningsSource?.totalEarning) || 0
-                  : Number(earningsSource) || 0
-
-              setOrderEarnings(earnings)
-              setSelectedRestaurant(prev => prev ? {
-                ...prev,
-                orderStatus: 'delivered',
-                status: 'delivered',
-                deliveryPhase: 'completed',
-                deliveryState: {
-                  ...(prev.deliveryState || {}),
-                  currentPhase: 'completed',
-                  status: 'delivered'
-                },
-                isRestaurantDemoAssignment: true,
-              } : prev)
-
-              const advancedToNextOrder = await advanceToNextBatchOrder(completedOrderKey, nextBatchOrder)
-              if (!advancedToNextOrder) {
-                setShowPaymentPage(true)
-              }
-              toast.success('Demo delivery completed')
+              toast.error('This order is no longer available.')
+              clearNewOrder()
               return
             }
 
@@ -4792,10 +4575,7 @@ export default function DeliveryHome() {
 
       // Navigate to pickup directions page after animation
       setTimeout(() => {
-        navigate("/delivery/pickup-directions", {
-          state: { restaurants: mockRestaurants },
-          replace: false
-        })
+        navigate("/delivery/pickup-directions", { replace: false })
 
         // Reset after navigation
         setTimeout(() => {
@@ -4927,6 +4707,16 @@ export default function DeliveryHome() {
   useEffect(() => {
     if (newOrder) {
       const orderId = newOrder.orderMongoId || newOrder.orderId;
+      if (!isValidDeliveryOrder({
+        ...newOrder,
+        id: newOrder.orderMongoId || newOrder._id || newOrder.id,
+      })) {
+        if (import.meta.env.MODE === 'development') {
+          console.warn('[Delivery] Ignoring invalid incoming order payload', newOrder)
+        }
+        clearNewOrder()
+        return
+      }
       
       // Check if this order has already been accepted
       if (acceptedOrderIdsRef.current.has(orderId)) {
@@ -4956,7 +4746,7 @@ export default function DeliveryHome() {
       
       // Transform newOrder data to match selectedRestaurant format
       // Extract restaurant address with proper priority
-      let restaurantAddress = 'Restaurant address';
+      let restaurantAddress = '';
       if (newOrder.restaurantLocation?.address) {
         restaurantAddress = newOrder.restaurantLocation.address;
       } else if (newOrder.restaurantLocation?.formattedAddress) {
@@ -5035,11 +4825,11 @@ export default function DeliveryHome() {
         deliveryFee,
         amount: earnedValue > 0 ? earnedValue : (deliveryFee > 0 ? deliveryFee : 0),
         customerName: newOrder.customerName,
-        customerAddress: newOrder.customerLocation?.address || 'Customer address',
+        customerAddress: newOrder.customerLocation?.address || '',
         customerLat: newOrder.customerLocation?.latitude,
         customerLng: newOrder.customerLocation?.longitude,
         items: newOrder.items || [],
-        total: newOrder.total || 0
+        total: newOrder.total || newOrder.totalAmount || 0
       }
       
       setSelectedRestaurant(restaurantData)
@@ -5324,7 +5114,13 @@ export default function DeliveryHome() {
         // Filter out orders that are already accepted or delivered
         const pendingOrders = orders.filter(order => {
           const orderStatus = order.status
+          const preparationStatus = order.preparationStatus
           const deliveryPhase = order.deliveryState?.currentPhase
+          const isRestaurantReady = orderStatus === 'ready' || preparationStatus === 'ready'
+          
+          if (!isRestaurantReady) {
+            return false
+          }
           
           // Skip if already delivered or completed
           if (orderStatus === 'delivered' || deliveryPhase === 'completed') {
@@ -5491,10 +5287,22 @@ export default function DeliveryHome() {
         if (response?.data?.success && response?.data?.data?.profile) {
           const profile = response.data.data.profile
           const bankDetails = profile?.documents?.bankDetails
+          const needsSignup = profile?.needsSignup === true
           
           // Store delivery partner status first
           if (profile?.status) {
             setDeliveryStatus(profile.status)
+          }
+          setDeliveryNeedsSignup(needsSignup)
+
+          if (needsSignup) {
+            navigate(
+              profile?.nextSignupStep === "documents"
+                ? "/delivery/signup/documents"
+                : "/delivery/signup/details",
+              { replace: true },
+            )
+            return
           }
           
           // Store rejection reason if status is blocked
@@ -5558,7 +5366,7 @@ export default function DeliveryHome() {
       window.removeEventListener('deliveryProfileRefresh', handleProfileRefresh)
       window.removeEventListener('focus', handleFocus)
     }
-  }, [])
+  }, [navigate])
 
   // Handle reverify (resubmit for approval)
   const handleReverify = async () => {
@@ -5570,8 +5378,21 @@ export default function DeliveryHome() {
       const response = await deliveryAPI.getProfile()
       if (response?.data?.success && response?.data?.data?.profile) {
         const profile = response.data.data.profile
+        const needsSignup = profile?.needsSignup === true
+
         setDeliveryStatus(profile.status)
+        setDeliveryNeedsSignup(needsSignup)
         setRejectionReason(null)
+
+        if (needsSignup) {
+          navigate(
+            profile?.nextSignupStep === "documents"
+              ? "/delivery/signup/documents"
+              : "/delivery/signup/details",
+            { replace: true },
+          )
+          return
+        }
       }
       
       alert("Your request has been resubmitted for verification. Admin will review it soon.")
@@ -7513,15 +7334,29 @@ export default function DeliveryHome() {
       
       restaurantInfo = {
         ...selectedRestaurant,
+        id: order.orderMongoId || order.mongoId || order._id || orderReady.orderMongoId || orderReady.mongoId,
         orderId: order.orderId || orderReady.orderId || selectedRestaurant?.orderId,
         name: order.restaurantName || orderReady.restaurantName || order.restaurantId?.name || selectedRestaurant?.name,
         address: restaurantAddress,
-        lat: order.restaurantId?.location?.coordinates?.[1] || orderReady.restaurantLat || selectedRestaurant?.lat,
-        lng: order.restaurantId?.location?.coordinates?.[0] || orderReady.restaurantLng || selectedRestaurant?.lng,
-        orderStatus: 'ready'
+        lat: order.restaurantId?.location?.coordinates?.[1] || order.restaurantLocation?.latitude || orderReady.restaurantLat || selectedRestaurant?.lat,
+        lng: order.restaurantId?.location?.coordinates?.[0] || order.restaurantLocation?.longitude || orderReady.restaurantLng || selectedRestaurant?.lng,
+        customerName: order.customerName || order.userId?.name || selectedRestaurant?.customerName,
+        customerAddress: order.customerLocation?.address || order.address?.formattedAddress || selectedRestaurant?.customerAddress,
+        customerLat: order.customerLocation?.latitude || order.address?.location?.coordinates?.[1] || selectedRestaurant?.customerLat,
+        customerLng: order.customerLocation?.longitude || order.address?.location?.coordinates?.[0] || selectedRestaurant?.customerLng,
+        items: order.items || selectedRestaurant?.items || [],
+        total: order.total || order.totalAmount || order.pricing?.total || selectedRestaurant?.total || 0,
+        paymentMethod: order.paymentMethod || order.payment?.method || selectedRestaurant?.paymentMethod,
+        orderStatus: 'ready',
+        status: 'ready'
       }
       setSelectedRestaurant(restaurantInfo)
       console.log('🏪 Updated restaurant info from orderReady event:', restaurantInfo)
+      if (!selectedRestaurant) {
+        setShowNewOrderPopup(true)
+        clearOrderReady()
+        return
+      }
     } else if (selectedRestaurant) {
       // Always set orderStatus to 'ready' so location monitor shows Reached Pickup when rider is within 500m
       setSelectedRestaurant(prev => ({ ...prev, orderStatus: 'ready' }))
@@ -8363,24 +8198,6 @@ export default function DeliveryHome() {
                              deliveryStateStatus === 'en_route_to_delivery' ||
                              orderStatus === 'ready')
 
-    // Rider position: prefer riderLocation, fallback lastLocationRef
-    const riderPos = (riderLocation && riderLocation.length === 2) ? riderLocation : (lastLocationRef.current && lastLocationRef.current.length === 2 ? lastLocationRef.current : null)
-
-    const hasCustomerCoords = selectedRestaurant?.customerLat != null && selectedRestaurant?.customerLng != null &&
-      !(selectedRestaurant.customerLat === 0 && selectedRestaurant.customerLng === 0)
-
-    if (!hasCustomerCoords) {
-      // Don't spam; only log when we're otherwise ready to monitor
-      if (isOutForDelivery && !isDeliveredOrCompleted && selectedRestaurant) {
-        console.warn('[Reached Drop] Customer location missing. Ensure order has delivery address or wait for fetch.')
-      }
-      return
-    }
-    if (!riderPos) {
-      console.log('[Reached Drop] No rider position available')
-      return
-    }
-    
     // Don't show if other popups are active (but allow if Order ID confirmation was just completed)
     // NOTE: If showReachedDropPopup is already true, don't hide it - it was explicitly set after Order ID confirmation
     if (isDeliveredOrCompleted || showNewOrderPopup || showreachedPickupPopup) {
@@ -8413,6 +8230,22 @@ export default function DeliveryHome() {
         isOutForDelivery,
         isInDeliveryPhase
       })
+      return
+    }
+
+    if (!showReachedDropPopup) {
+      console.log('[Reached Drop] Showing next step popup after order picked up')
+      setShowReachedDropPopup(true)
+      return
+    }
+
+    // Rider position: prefer riderLocation, fallback lastLocationRef. Distance logging only.
+    const riderPos = (riderLocation && riderLocation.length === 2) ? riderLocation : (lastLocationRef.current && lastLocationRef.current.length === 2 ? lastLocationRef.current : null)
+
+    const hasCustomerCoords = selectedRestaurant?.customerLat != null && selectedRestaurant?.customerLng != null &&
+      !(selectedRestaurant.customerLat === 0 && selectedRestaurant.customerLng === 0)
+
+    if (!hasCustomerCoords || !riderPos) {
       return
     }
 
@@ -10758,7 +10591,7 @@ export default function DeliveryHome() {
               })()}
             </p>
             <p className="text-gray-500 text-sm font-medium">
-              Order ID: {selectedRestaurant?.orderId || 'ORD1234567890'}
+              Order ID: {selectedRestaurant?.orderId || 'Unavailable'}
             </p>
           </div>
 
@@ -11078,7 +10911,7 @@ export default function DeliveryHome() {
                 </select>
               ) : (
                 <p className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-wider whitespace-nowrap overflow-x-auto min-w-0">
-                  {activeReceiptOrder?.orderId || activeReceiptOrder?.id || selectedRestaurant?.orderId || newOrder?.orderId || newOrder?.orderMongoId || 'ORD1234567890'}
+                  {activeReceiptOrder?.orderId || selectedRestaurant?.orderId || newOrder?.orderId || 'Unavailable'}
                 </p>
               )}
             </div>
@@ -11337,7 +11170,7 @@ export default function DeliveryHome() {
               {selectedRestaurant?.customerAddress || 'Customer Address'}
             </p>
             <p className="text-gray-500 text-sm font-medium">
-              Order ID: {selectedRestaurant?.orderId || 'ORD1234567890'}
+              Order ID: {selectedRestaurant?.orderId || 'Unavailable'}
             </p>
           </div>
 
@@ -11699,7 +11532,7 @@ export default function DeliveryHome() {
             {/* Header */}
             <div className="bg-green-500 text-white px-6 py-6">
               <h1 className="text-2xl font-bold mb-2">Payment</h1>
-              <p className="text-white/90 text-sm">Order ID: {selectedRestaurant?.orderId || 'ORD1234567890'}</p>
+              <p className="text-white/90 text-sm">Order ID: {selectedRestaurant?.orderId || 'Unavailable'}</p>
             </div>
 
             {/* Payment Amount */}

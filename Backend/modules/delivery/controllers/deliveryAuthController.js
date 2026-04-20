@@ -7,6 +7,7 @@ import {
 } from "../../../shared/utils/response.js";
 import { asyncHandler } from "../../../shared/middleware/asyncHandler.js";
 import winston from "winston";
+import { getDeliverySignupProgress } from "../utils/signupProgress.js";
 
 const logger = winston.createLogger({
   level: "info",
@@ -175,17 +176,8 @@ export const verifyOTP = asyncHandler(async (req, res) => {
       // legacy missing optional fields.
       const requiresFullProfileStatus =
         !["approved", "active"].includes(delivery.status);
-
-      const hasMissingProfileFields =
-        !delivery.location?.city ||
-        !delivery.vehicle?.number ||
-        !delivery.documents?.pan?.number ||
-        !delivery.documents?.aadhar?.number ||
-        !delivery.documents?.aadhar?.document ||
-        !delivery.documents?.pan?.document ||
-        !delivery.documents?.drivingLicense?.document;
-
-      const needsSignup = requiresFullProfileStatus && hasMissingProfileFields;
+      const signupProgress = getDeliverySignupProgress(delivery);
+      const needsSignup = requiresFullProfileStatus && signupProgress.needsSignup;
 
       if (needsSignup) {
         // Generate tokens for signup flow
@@ -224,6 +216,7 @@ export const verifyOTP = asyncHandler(async (req, res) => {
               rejectionReason: delivery.rejectionReason || null, // Include rejection reason for blocked accounts
             },
             needsSignup: true, // Signal that signup needs to be completed
+            nextSignupStep: signupProgress.nextSignupStep,
           },
         );
       }
@@ -369,6 +362,12 @@ export const logout = asyncHandler(async (req, res) => {
  */
 export const getCurrentDelivery = asyncHandler(async (req, res) => {
   // Delivery boy is attached by authenticate middleware
+  const signupProgress = getDeliverySignupProgress(req.delivery);
+  const requiresFullProfileStatus = !["approved", "active"].includes(
+    req.delivery.status,
+  );
+  const needsSignup = requiresFullProfileStatus && signupProgress.needsSignup;
+
   return successResponse(res, 200, "Delivery boy retrieved successfully", {
     user: {
       id: req.delivery._id,
@@ -392,6 +391,9 @@ export const getCurrentDelivery = asyncHandler(async (req, res) => {
       wallet: req.delivery.wallet,
       level: req.delivery.level,
       lastLogin: req.delivery.lastLogin,
+      signupComplete: signupProgress.signupComplete,
+      needsSignup,
+      nextSignupStep: signupProgress.nextSignupStep,
     },
   });
 });

@@ -21,21 +21,8 @@ export function OrdersProvider({ children }) {
     }
   }, [orders])
 
-  const createOrder = (orderData) => {
-    const newOrder = {
-      id: `ORD-${Date.now()}`,
-      ...orderData,
-      status: "confirmed",
-      createdAt: new Date().toISOString(),
-      tracking: {
-        confirmed: { status: true, timestamp: new Date().toISOString() },
-        preparing: { status: false, timestamp: null },
-        outForDelivery: { status: false, timestamp: null },
-        delivered: { status: false, timestamp: null }
-      }
-    }
-    setOrders([newOrder, ...orders])
-    return newOrder.id
+  const createOrder = () => {
+    throw new Error("Local order creation is disabled. Use orderAPI.createOrder so the backend creates the single canonical order ID.")
   }
 
   const getOrderById = (orderId) => {
@@ -85,4 +72,3 @@ export function useOrders() {
   }
   return context
 }
-

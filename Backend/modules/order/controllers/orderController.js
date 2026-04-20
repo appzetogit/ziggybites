@@ -98,6 +98,45 @@ export const createOrder = async (req, res) => {
       });
     }
 
+    const normalizedItems = items.map((item) => {
+      const quantity = Number(item.quantity);
+      const price = Number(item.price);
+
+      return {
+        ...item,
+        quantity,
+        price,
+        itemId: item.itemId || item.id || item._id,
+        name: typeof item.name === "string" ? item.name.trim() : item.name,
+        subCategory: item.subCategory || "",
+      };
+    });
+
+    const invalidItem = normalizedItems.find(
+      (item) =>
+        !item.itemId ||
+        !item.name ||
+        !Number.isFinite(item.quantity) ||
+        item.quantity < 1 ||
+        !Number.isFinite(item.price) ||
+        item.price < 0,
+    );
+
+    if (invalidItem) {
+      if (process.env.NODE_ENV !== "production") {
+        logger.warn("Invalid item in order creation payload", {
+          itemId: invalidItem.itemId,
+          name: invalidItem.name,
+          quantity: invalidItem.quantity,
+          price: invalidItem.price,
+        });
+      }
+      return res.status(400).json({
+        success: false,
+        message: "Each order item must include a valid item, quantity, and price",
+      });
+    }
+
     if (!address) {
       return res.status(400).json({
         success: false,
@@ -357,10 +396,7 @@ export const createOrder = async (req, res) => {
       userId,
       restaurantId: assignedRestaurantId,
       restaurantName: assignedRestaurantName,
-      items: items.map((item) => ({
-        ...item,
-        subCategory: item.subCategory || "",
-      })),
+      items: normalizedItems,
       address,
       pricing: {
         ...pricing,

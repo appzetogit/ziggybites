@@ -936,6 +936,34 @@ export const markOrderReady = asyncHandler(async (req, res) => {
       }
     }
 
+    if (!populatedOrder.deliveryPartnerId) {
+      try {
+        const coords = populatedOrder.restaurantId?.location?.coordinates;
+        if (coords?.length >= 2) {
+          const [restaurantLng, restaurantLat] = coords;
+          const priorityDeliveryBoys = await findNearestDeliveryBoys(restaurantLat, restaurantLng, restaurantId, 5);
+          const deliveryPartnerIds = priorityDeliveryBoys.map(db => db.deliveryPartnerId);
+
+          if (deliveryPartnerIds.length > 0) {
+            await Order.updateOne(
+              { _id: order._id },
+              {
+                $set: {
+                  'assignmentInfo.priorityNotifiedAt': new Date(),
+                  'assignmentInfo.priorityDeliveryPartnerIds': deliveryPartnerIds,
+                  'assignmentInfo.notificationPhase': 'priority_ready'
+                }
+              }
+            );
+            await notifyMultipleDeliveryBoys(populatedOrder, deliveryPartnerIds, 'priority_ready');
+            console.log(`✅ Ready order ${order.orderId} sent to ${deliveryPartnerIds.length} delivery partner(s)`);
+          }
+        }
+      } catch (deliverySearchError) {
+        console.error('Error notifying delivery partners for ready order:', deliverySearchError);
+      }
+    }
+
     return successResponse(res, 200, 'Order marked as ready', {
       order: populatedOrder || order
     });

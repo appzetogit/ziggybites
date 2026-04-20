@@ -106,6 +106,12 @@ export async function notifyDeliveryBoyNewOrder(order, deliveryPartnerId) {
     );
     return { success: false, reason: "Order is cancelled" };
   }
+  if (order.status !== "ready" && order.preparationStatus !== "ready") {
+    console.log(
+      `⏳ Order ${order.orderId} is not ready yet. Skipping delivery notification.`,
+    );
+    return { success: false, reason: "Order is not ready" };
+  }
   try {
     const io = await getIOInstance();
 
@@ -443,6 +449,13 @@ export async function notifyMultipleDeliveryBoys(
   phase = "priority",
 ) {
   try {
+    if (order.status !== "ready" && order.preparationStatus !== "ready") {
+      console.log(
+        `⏳ Order ${order.orderId || order._id} is not ready yet. Skipping delivery availability notifications.`,
+      );
+      return { success: false, notified: 0, reason: "Order is not ready" };
+    }
+
     if (!deliveryPartnerIds || deliveryPartnerIds.length === 0) {
       return { success: false, notified: 0 };
     }
@@ -662,6 +675,12 @@ export async function notifyMultipleDeliveryBoys(
           }
         : null,
       totalAmount: orderWithUser.pricing?.total || 0,
+      items: (orderWithUser.items || []).map((item) => ({
+        itemId: item.itemId,
+        name: item.name,
+        quantity: item.quantity,
+        price: item.price,
+      })),
       deliveryFee: deliveryFeeFromOrder,
       estimatedEarnings: estimatedEarnings,
       deliveryDistance:
@@ -823,11 +842,47 @@ export async function notifyDeliveryBoyOrderReady(order, deliveryPartnerId) {
     const coords = order.restaurantId?.location?.coordinates;
     const orderReadyNotification = {
       orderId: order.orderId || order._id,
+      orderMongoId: order._id?.toString(),
       mongoId: order._id?.toString(),
       status: "ready",
+      preparationStatus: "ready",
       restaurantName: order.restaurantName || order.restaurantId?.name,
       restaurantAddress:
         order.restaurantId?.address || order.restaurantId?.location?.address,
+      restaurantLocation: coords
+        ? {
+            latitude: coords?.[1],
+            longitude: coords?.[0],
+            address:
+              order.restaurantId?.location?.formattedAddress ||
+              order.restaurantId?.location?.address ||
+              order.restaurantId?.address ||
+              "",
+          }
+        : null,
+      customerName: order.userId?.name || "Customer",
+      customerPhone: order.userId?.phone || "",
+      customerLocation: order.address?.location
+        ? {
+            latitude: order.address.location.coordinates?.[1],
+            longitude: order.address.location.coordinates?.[0],
+            address:
+              order.address.formattedAddress ||
+              order.address.address ||
+              order.deliveryAddress ||
+              "",
+          }
+        : null,
+      items: (order.items || []).map((item) => ({
+        itemId: item.itemId,
+        name: item.name,
+        quantity: item.quantity,
+        price: item.price,
+      })),
+      total: order.pricing?.total || 0,
+      totalAmount: order.pricing?.total || 0,
+      deliveryFee: order.pricing?.deliveryFee || 0,
+      paymentMethod: order.payment?.method || "cash",
       message: `Order ${order.orderId} is ready for pickup`,
       timestamp: new Date().toISOString(),
       // Include restaurant coords so delivery app can show Reached Pickup when rider is near (coordinates: [lng, lat])
@@ -869,12 +924,10 @@ export async function notifyDeliveryBoyOrderReady(order, deliveryPartnerId) {
         `✅ Order ready notification sent to delivery partner ${normalizedDeliveryPartnerId} in room ${foundRoom}`,
       );
     } else {
-      // Fallback: broadcast to all delivery sockets
+      // Do not broadcast assigned order-ready events to all riders.
       console.warn(
-        `⚠️ Delivery partner ${normalizedDeliveryPartnerId} not found in any room, broadcasting to all`,
+        `Delivery partner ${normalizedDeliveryPartnerId} not connected; order_ready socket was not broadcast`,
       );
-      deliveryNamespace.emit("order_ready", orderReadyNotification);
-      notificationSent = true;
     }
 
     await sendEntityPushNotification(normalizedDeliveryPartnerId, "delivery", {

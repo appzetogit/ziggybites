@@ -16,6 +16,20 @@ import { deliveryAPI } from "@/lib/api"
 import { toast } from "sonner"
 import { useCompanyName } from "@/lib/hooks/useCompanyName"
 
+const getDeliveryOrderKey = (order) => {
+  const value = order?.orderId || order?._id || order?.id
+  return value != null ? String(value) : ""
+}
+
+const isRenderableDeliveryOrder = (order) => {
+  return Boolean(
+    getDeliveryOrderKey(order) &&
+      (order?.restaurantName || order?.restaurantId?.name) &&
+      Array.isArray(order?.items) &&
+      order.items.length > 0,
+  )
+}
+
 export default function MyOrders() {
   const navigate = useNavigate()
   const [orders, setOrders] = useState([])
@@ -69,7 +83,7 @@ export default function MyOrders() {
         console.log('✅ Orders sample:', ordersData.slice(0, 2))
         
         if (ordersData && ordersData.length > 0) {
-          setOrders(ordersData)
+          setOrders(ordersData.filter(isRenderableDeliveryOrder))
           console.log('✅ Orders state updated successfully')
         } else {
           console.warn('⚠️ No orders found - trying getOrders API as fallback...')
@@ -82,7 +96,7 @@ export default function MyOrders() {
             if (fallbackResponse?.data?.success && fallbackResponse?.data?.data?.orders) {
               const fallbackOrders = fallbackResponse.data.data.orders || []
               console.log('✅ Fallback API found orders:', fallbackOrders.length)
-              setOrders(fallbackOrders)
+              setOrders(fallbackOrders.filter(isRenderableDeliveryOrder))
     } else {
               setOrders([])
             }
@@ -338,7 +352,8 @@ export default function MyOrders() {
               // Rating - check if available in order data (might be in deliveryState or separate field)
               const rating = order.rating || order.deliveryState?.rating || null
 
-              const orderKey = order.orderId || order._id || `order-${Math.random()}`
+              const orderKey = getDeliveryOrderKey(order)
+              if (!orderKey) return null
               
               return (
                 <div key={orderKey} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">

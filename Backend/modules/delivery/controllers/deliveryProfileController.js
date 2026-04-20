@@ -7,6 +7,7 @@ import Delivery from "../models/Delivery.js";
 import { validate } from "../../../shared/middleware/validate.js";
 import Joi from "joi";
 import winston from "winston";
+import { getDeliverySignupProgress } from "../utils/signupProgress.js";
 
 const logger = winston.createLogger({
   level: "info",
@@ -35,8 +36,20 @@ export const getProfile = asyncHandler(async (req, res) => {
       return errorResponse(res, 404, "Delivery partner not found");
     }
 
+    const signupProgress = getDeliverySignupProgress(profile);
+    const requiresFullProfileStatus = !["approved", "active"].includes(
+      profile.status,
+    );
+    const needsSignup =
+      requiresFullProfileStatus && signupProgress.needsSignup;
+
     return successResponse(res, 200, "Profile retrieved successfully", {
-      profile,
+      profile: {
+        ...profile,
+        signupComplete: signupProgress.signupComplete,
+        needsSignup,
+        nextSignupStep: signupProgress.nextSignupStep,
+      },
     });
   } catch (error) {
     logger.error(`Error fetching delivery profile: ${error.message}`);

@@ -178,6 +178,10 @@ export default function RestaurantOnboarding() {
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const mainContentRef = useRef(null)
+  const menuImagesInputRef = useRef(null)
+  const profileImageInputRef = useRef(null)
+  const panImageInputRef = useRef(null)
+  const fssaiImageInputRef = useRef(null)
   const hasLocalDraftRef = useRef(false)
   const [error, setError] = useState("")
   const digitsOnly = (value) => String(value || "").replace(/\D/g, "")
@@ -1106,6 +1110,86 @@ export default function RestaurantOnboarding() {
     }))
   }
 
+  const fileFromNativeGallery = (nativeFile, fallbackName = "gallery-image") => {
+    const base64 = nativeFile?.base64
+    if (!base64) return null
+
+    const mimeType = nativeFile?.mimeType || "image/jpeg"
+    const binary = atob(base64)
+    const bytes = new Uint8Array(binary.length)
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index)
+    }
+
+    return new File([bytes], nativeFile?.name || `${fallbackName}.jpg`, { type: mimeType })
+  }
+
+  const openNativeGallery = async ({ multiple = false, fallbackInputRef, onFiles }) => {
+    const flutterBridge = window?.flutter_inappwebview
+    if (!flutterBridge?.callHandler) {
+      fallbackInputRef?.current?.click()
+      return
+    }
+
+    try {
+      const response = await flutterBridge.callHandler("nativeGallery", { multiple })
+      if (!response?.success) {
+        if (response?.cancelled) return
+        throw new Error(response?.error || "Gallery selection failed")
+      }
+
+      const files = (response.files || [])
+        .map((file, index) => fileFromNativeGallery(file, `gallery-image-${index + 1}`))
+        .filter(Boolean)
+
+      if (files.length) {
+        onFiles(files)
+      }
+    } catch (error) {
+      console.warn("Native gallery unavailable, using file input fallback:", error)
+      fallbackInputRef?.current?.click()
+    }
+  }
+
+  const openMenuGallery = () => {
+    openNativeGallery({
+      multiple: true,
+      fallbackInputRef: menuImagesInputRef,
+      onFiles: (files) => {
+        setStep2((prev) => ({
+          ...prev,
+          menuImages: [...(prev.menuImages || []), ...files],
+        }))
+      },
+    })
+  }
+
+  const openProfileGallery = () => {
+    openNativeGallery({
+      fallbackInputRef: profileImageInputRef,
+      onFiles: ([file]) => {
+        setStep2((prev) => ({
+          ...prev,
+          profileImage: file,
+        }))
+      },
+    })
+  }
+
+  const openPanGallery = () => {
+    openNativeGallery({
+      fallbackInputRef: panImageInputRef,
+      onFiles: ([file]) => setStep3((prev) => ({ ...prev, panImage: file })),
+    })
+  }
+
+  const openFssaiGallery = () => {
+    openNativeGallery({
+      fallbackInputRef: fssaiImageInputRef,
+      onFiles: ([file]) => setStep3((prev) => ({ ...prev, fssaiImage: file })),
+    })
+  }
+
   const handleBackNavigation = () => {
     if (saving) return
 
@@ -1307,13 +1391,14 @@ export default function RestaurantOnboarding() {
               </div>
             </div>
             <div className="grid w-full grid-cols-2 gap-2">
-              <label
-                htmlFor="menuImagesInput"
+              <button
+                type="button"
+                onClick={openMenuGallery}
                 className="inline-flex justify-center items-center gap-1.5 px-3 py-2 rounded-sm bg-white text-black text-xs font-medium cursor-pointer border border-gray-300"
               >
                 <Upload className="w-4.5 h-4.5" />
                 <span>Gallery</span>
-              </label>
+              </button>
               <label
                 htmlFor="menuImagesCameraInput"
                 className="inline-flex justify-center items-center gap-1.5 px-3 py-2 rounded-sm bg-white text-black text-xs font-medium cursor-pointer border border-gray-300"
@@ -1323,6 +1408,7 @@ export default function RestaurantOnboarding() {
               </label>
             </div>
             <input
+              ref={menuImagesInputRef}
               id="menuImagesInput"
               type="file"
               multiple
@@ -1459,13 +1545,14 @@ export default function RestaurantOnboarding() {
 
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <label
-              htmlFor="profileImageInput"
+            <button
+              type="button"
+              onClick={openProfileGallery}
               className="inline-flex justify-center items-center gap-1.5 px-3 py-2 rounded-sm bg-white text-black text-xs font-medium cursor-pointer border border-gray-300"
             >
               <Upload className="w-4.5 h-4.5" />
               <span>Gallery</span>
-            </label>
+            </button>
             <label
               htmlFor="profileImageCameraInput"
               className="inline-flex justify-center items-center gap-1.5 px-3 py-2 rounded-sm bg-white text-black text-xs font-medium cursor-pointer border border-gray-300"
@@ -1475,6 +1562,7 @@ export default function RestaurantOnboarding() {
             </label>
           </div>
           <input
+            ref={profileImageInputRef}
             id="profileImageInput"
             type="file"
             accept="image/*"
@@ -1621,16 +1709,21 @@ export default function RestaurantOnboarding() {
         <div>
           <Label className="text-xs text-gray-700">PAN image</Label>
           <div className="flex flex-wrap gap-2 mt-1">
-            <label className="inline-flex items-center gap-1.5 px-3 py-2 border border-gray-200 rounded-md bg-white text-sm cursor-pointer hover:bg-gray-50">
+            <button
+              type="button"
+              onClick={openPanGallery}
+              className="inline-flex items-center gap-1.5 px-3 py-2 border border-gray-200 rounded-md bg-white text-sm cursor-pointer hover:bg-gray-50"
+            >
               <Upload className="w-4 h-4" />
               <span>Gallery</span>
               <Input
+                ref={panImageInputRef}
                 type="file"
                 accept="image/*"
                 className="hidden"
                 onChange={(e) => setStep3({ ...step3, panImage: e.target.files?.[0] || null })}
               />
-            </label>
+            </button>
             <label className="inline-flex items-center gap-1.5 px-3 py-2 border border-gray-200 rounded-md bg-white text-sm cursor-pointer hover:bg-gray-50">
               <Camera className="w-4 h-4" />
               <span>Camera</span>
@@ -1749,16 +1842,21 @@ export default function RestaurantOnboarding() {
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <label className="inline-flex items-center gap-1.5 px-3 py-2 border border-gray-200 rounded-md bg-white text-sm cursor-pointer hover:bg-gray-50">
+          <button
+            type="button"
+            onClick={openFssaiGallery}
+            className="inline-flex items-center gap-1.5 px-3 py-2 border border-gray-200 rounded-md bg-white text-sm cursor-pointer hover:bg-gray-50"
+          >
             <Upload className="w-4 h-4" />
             <span>Gallery</span>
             <Input
+              ref={fssaiImageInputRef}
               type="file"
               accept="image/*"
               className="hidden"
               onChange={(e) => setStep3({ ...step3, fssaiImage: e.target.files?.[0] || null })}
             />
-          </label>
+          </button>
           <label className="inline-flex items-center gap-1.5 px-3 py-2 border border-gray-200 rounded-md bg-white text-sm cursor-pointer hover:bg-gray-50">
             <Camera className="w-4 h-4" />
             <span>Camera</span>
