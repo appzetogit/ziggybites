@@ -348,6 +348,19 @@ const getOrderDatabaseId = (order) => {
   return rawId != null ? String(rawId) : ""
 }
 
+const getPreferredDeliveryOrderApiId = (order, { preferDisplayId = false } = {}) => {
+  if (!order) return ""
+
+  const displayId = order?.orderId != null ? String(order.orderId) : ""
+  const databaseId = getOrderDatabaseId(order)
+
+  if (preferDisplayId) {
+    return displayId || databaseId
+  }
+
+  return databaseId || displayId
+}
+
 const isValidDeliveryOrder = (order = {}) => {
   const displayOrderId = order?.orderId || order?.orderCode || order?.code
   const databaseId = getOrderDatabaseId(order)
@@ -712,6 +725,37 @@ export default function DeliveryHome() {
   const [routePolyline, setRoutePolyline] = useState([])
   const [showRoutePath, setShowRoutePath] = useState(false) // Toggle to show/hide route path - disabled by default
   const [directionsResponse, setDirectionsResponse] = useState(null) // Directions API response for road-based routing
+
+  const hasActiveDeliveryFlow = useMemo(() => {
+    if (!selectedRestaurant) return false
+
+    const orderStatus = String(
+      selectedRestaurant?.orderStatus || selectedRestaurant?.status || "",
+    ).toLowerCase()
+    const deliveryPhase = String(
+      selectedRestaurant?.deliveryPhase || selectedRestaurant?.deliveryState?.currentPhase || "",
+    ).toLowerCase()
+    const deliveryStateStatus = String(
+      selectedRestaurant?.deliveryState?.status || "",
+    ).toLowerCase()
+
+    const isCompleted =
+      orderStatus === "delivered" ||
+      orderStatus === "completed" ||
+      orderStatus === "cancelled" ||
+      deliveryPhase === "completed" ||
+      deliveryPhase === "delivered" ||
+      deliveryStateStatus === "delivered"
+
+    return !isCompleted
+  }, [
+    selectedRestaurant?.orderId,
+    selectedRestaurant?.status,
+    selectedRestaurant?.orderStatus,
+    selectedRestaurant?.deliveryPhase,
+    selectedRestaurant?.deliveryState?.currentPhase,
+    selectedRestaurant?.deliveryState?.status,
+  ])
 
   // Reset per-order earnings whenever the active order changes
   useEffect(() => {
@@ -2463,7 +2507,7 @@ export default function DeliveryHome() {
       // Accept order via backend API and get route
       const acceptOrderAndShowRoute = async () => {
         // Get order ID from selectedRestaurant or newOrder (define outside try-catch for error handling)
-        const orderId = selectedRestaurant?.id || newOrder?.orderMongoId || newOrder?.orderId
+        const orderId = getPreferredDeliveryOrderApiId(selectedRestaurant || newOrder)
         
         console.log('🔍 Order ID lookup:', {
           selectedRestaurantId: selectedRestaurant?.id,
@@ -3367,9 +3411,8 @@ export default function DeliveryHome() {
       setTimeout(async () => {
         setShowreachedPickupPopup(false)
         
-        // Get order ID - prioritize orderId (string) over id (MongoDB _id) for better compatibility
-        // Backend accepts both _id and orderId, but orderId is more reliable
-        const orderId = selectedRestaurant?.orderId || selectedRestaurant?.id || newOrder?.orderId || newOrder?.orderMongoId
+        // Use the database id first for reached-pickup so assignment lookups stay consistent
+        const orderId = getPreferredDeliveryOrderApiId(selectedRestaurant || newOrder)
         
         console.log('🔍 Order ID lookup for reached pickup:', {
           selectedRestaurantId: selectedRestaurant?.id,
@@ -3465,11 +3508,8 @@ export default function DeliveryHome() {
               console.error('❌ Failed to confirm reached pickup:', response.data)
               toast.error(response.data?.message || 'Failed to confirm reached pickup. Please try again.')
               // Ensure reached pickup popup is closed
-              setShowreachedPickupPopup(false)
-              // Still show order ID popup even if API call fails, after delay
               setTimeout(() => {
-                setShowOrderIdConfirmationPopup(true)
-                console.log('⚠️ Showing Order ID confirmation popup despite API failure')
+                setShowreachedPickupPopup(true)
               }, 300)
             }
           } catch (error) {
@@ -3487,23 +3527,15 @@ export default function DeliveryHome() {
                                (error.response?.status === 404 ? 'Order not found. Please refresh and try again.' : 'Failed to confirm reached pickup. Please try again.')
             toast.error(errorMessage)
             
-            // Ensure reached pickup popup is closed
-            setShowreachedPickupPopup(false)
-            // Still show order ID popup even if API call fails, after delay
             setTimeout(() => {
-              setShowOrderIdConfirmationPopup(true)
-              console.log('⚠️ Showing Order ID confirmation popup despite error')
+              setShowreachedPickupPopup(true)
             }, 300)
           }
         } else {
-          console.error('❌ No order ID found for reached pickup confirmation')
+          console.error('No order ID found for reached pickup confirmation')
           toast.error('Order ID not found. Please refresh and try again.')
-          // Ensure reached pickup popup is closed
-          setShowreachedPickupPopup(false)
-          // Show order ID popup even if no order ID (fallback), after delay
           setTimeout(() => {
-            setShowOrderIdConfirmationPopup(true)
-            console.log('⚠️ Showing Order ID confirmation popup without order ID (fallback)')
+            setShowreachedPickupPopup(true)
           }, 300)
         }
         
@@ -3586,11 +3618,7 @@ export default function DeliveryHome() {
         // Get order ID - prioritize MongoDB _id over orderId string for API call
         // Backend expects _id (MongoDB ObjectId) in the URL parameter
         // Use _id (MongoDB ObjectId) if available, otherwise fallback to orderId string
-        const orderIdForApi = selectedRestaurant?.id || 
-                             newOrder?.orderMongoId || 
-                             newOrder?._id ||
-                             selectedRestaurant?.orderId || 
-                             newOrder?.orderId
+        const orderIdForApi = getPreferredDeliveryOrderApiId(activeReceiptOrder || selectedRestaurant || newOrder)
         console.log('🔍 Order ID lookup for reached drop:', {
           selectedRestaurantId: selectedRestaurant?.id,
           selectedRestaurantOrderId: selectedRestaurant?.orderId,
@@ -4412,12 +4440,9 @@ export default function DeliveryHome() {
                 )
               }) ||
               null
-            const orderIdForApi =
-              selectedRestaurant?.id ||
-              newOrder?.orderMongoId ||
-              newOrder?._id ||
-              selectedRestaurant?.orderId ||
-              newOrder?.orderId
+            const orderIdForApi = getPreferredDeliveryOrderApiId(
+              activeReceiptOrder || selectedRestaurant || newOrder,
+            )
             if (!orderIdForApi) {
               console.error("❌ Order ID not available for completeDelivery", {
                 selectedRestaurant,
@@ -4743,6 +4768,15 @@ export default function DeliveryHome() {
       }
       
       console.log('📦 New order received from Socket.IO:', newOrder)
+
+      if (hasActiveDeliveryFlow || showreachedPickupPopup || showOrderIdConfirmationPopup || showReachedDropPopup || showOrderDeliveredAnimation || showPaymentPage) {
+        console.log('ℹ️ Active delivery flow already in progress, skipping new order popup:', {
+          incomingOrderId: orderId,
+          activeOrderId: selectedRestaurant?.orderId || selectedRestaurant?.id,
+        })
+        clearNewOrder()
+        return
+      }
       
       // Transform newOrder data to match selectedRestaurant format
       // Extract restaurant address with proper priority
@@ -4836,7 +4870,19 @@ export default function DeliveryHome() {
       setShowNewOrderPopup(true)
       setCountdownSeconds(300) // Reset countdown to 5 minutes
     }
-  }, [newOrder, calculateTimeAway, riderLocation])
+  }, [
+    newOrder,
+    calculateTimeAway,
+    riderLocation,
+    hasActiveDeliveryFlow,
+    selectedRestaurant?.orderId,
+    selectedRestaurant?.id,
+    showreachedPickupPopup,
+    showOrderIdConfirmationPopup,
+    showReachedDropPopup,
+    showOrderDeliveredAnimation,
+    showPaymentPage,
+  ])
 
   // Recalculate distance when rider location becomes available
   useEffect(() => {
@@ -4883,7 +4929,7 @@ export default function DeliveryHome() {
         selectedRestaurant.address === 'Restaurant address' || 
         selectedRestaurant.address === 'Restaurant Address') {
       // Address is missing, fetch order details to get restaurant address
-      const orderId = selectedRestaurant.orderId || selectedRestaurant.id
+      const orderId = getPreferredDeliveryOrderApiId(selectedRestaurant)
       console.log('🔄 Fetching restaurant address for order:', orderId)
       
       const fetchAddress = async () => {
@@ -5234,10 +5280,14 @@ export default function DeliveryHome() {
             amount: firstOrder.pricing?.total || 0
           }
           
-          setSelectedRestaurant(restaurantData)
-          setShowNewOrderPopup(true)
-          setCountdownSeconds(300) // Reset countdown to 5 minutes
-          console.log('✅ Showing pending order notification:', orderId)
+          if (hasActiveDeliveryFlow || showNewOrderPopup || showreachedPickupPopup || showOrderIdConfirmationPopup || showReachedDropPopup) {
+            console.log('ℹ️ Pending order found, but an active delivery flow/popup is already visible. Skipping duplicate popup:', orderId)
+          } else {
+            setSelectedRestaurant(restaurantData)
+            setShowNewOrderPopup(true)
+            setCountdownSeconds(300) // Reset countdown to 5 minutes
+            console.log('✅ Showing pending order notification:', orderId)
+          }
         } else {
           console.log('ℹ️ No pending orders found')
         }
@@ -5248,7 +5298,7 @@ export default function DeliveryHome() {
       console.error('❌ Error fetching assigned orders:', error)
       // Don't show error to user, just log it
     }
-  }, [isOnline, calculateTimeAway])
+  }, [isOnline, calculateTimeAway, hasActiveDeliveryFlow, showNewOrderPopup, showreachedPickupPopup, showOrderIdConfirmationPopup, showReachedDropPopup])
 
   // Fetch assigned orders when delivery person goes online
   useEffect(() => {
@@ -6883,10 +6933,22 @@ export default function DeliveryHome() {
         const activeOrderData = JSON.parse(savedOrder);
         console.log('📦 Found active order in localStorage:', activeOrderData);
 
+        if (
+          isRestaurantDemoAssignment(activeOrderData) ||
+          isRestaurantDemoAssignment(activeOrderData?.restaurantInfo)
+        ) {
+          console.log('⚠️ Saved active order is a demo/static payload, removing from localStorage');
+          localStorage.removeItem('deliveryActiveOrder');
+          setSelectedRestaurant(null);
+          return;
+        }
+
         // Get order ID from saved data
         const orderId = activeOrderData.orderId || activeOrderData.restaurantInfo?.id || activeOrderData.restaurantInfo?.orderId;
+        const savedDatabaseId =
+          getOrderDatabaseId(activeOrderData) || getOrderDatabaseId(activeOrderData?.restaurantInfo);
         
-        if (!orderId) {
+        if (!orderId || !savedDatabaseId) {
           console.log('⚠️ No order ID found in saved data, removing from localStorage');
           localStorage.removeItem('deliveryActiveOrder');
           setSelectedRestaurant(null);
@@ -6928,8 +6990,10 @@ export default function DeliveryHome() {
             setSelectedRestaurant(null);
             return;
           }
-          // For other errors (network, etc.), still try to restore but log warning
-          console.warn('⚠️ Could not verify order, but restoring anyway:', verifyError.message);
+          console.warn('⚠️ Could not verify saved order, removing it from localStorage:', verifyError.message);
+          localStorage.removeItem('deliveryActiveOrder');
+          setSelectedRestaurant(null);
+          return;
         }
 
         // Check if order is still valid (not too old - e.g., within 24 hours)
@@ -7179,9 +7243,9 @@ export default function DeliveryHome() {
       return; // No active order to verify
     }
 
-    const orderId = selectedRestaurant.orderId || selectedRestaurant.id;
+    const orderId = getPreferredDeliveryOrderApiId(selectedRestaurant);
     
-    const verifyOrderInterval = setInterval(async () => {
+    const verifyCurrentOrder = async () => {
       try {
         const orderResponse = await deliveryAPI.getOrderDetails(orderId);
         
@@ -7229,12 +7293,16 @@ export default function DeliveryHome() {
         }
         // Ignore other errors (network issues, etc.)
       }
-    }, 30000); // Check every 30 seconds
+    }
+
+    verifyCurrentOrder()
+
+    const verifyOrderInterval = setInterval(verifyCurrentOrder, 30000); // Check every 30 seconds
 
     return () => {
       clearInterval(verifyOrderInterval);
     };
-  }, [selectedRestaurant?.id, selectedRestaurant?.orderId, clearOrderData])
+  }, [selectedRestaurant?.id, selectedRestaurant?.orderId, clearOrderData, showPaymentPage, showOrderDeliveredAnimation])
 
   // Handle route polyline visibility toggle
   // Only show fallback polyline if DirectionsRenderer is NOT active
@@ -7277,6 +7345,17 @@ export default function DeliveryHome() {
 
     let restaurantInfo = selectedRestaurant
     const order = orderReady.order || orderReady
+    const incomingOrderKey = getOrderKey(order) || getOrderDatabaseId(order)
+    const currentOrderKey = getOrderKey(selectedRestaurant) || getOrderDatabaseId(selectedRestaurant)
+
+    if (hasActiveDeliveryFlow && currentOrderKey && incomingOrderKey && currentOrderKey !== incomingOrderKey) {
+      console.log('ℹ️ Ignoring order_ready event for a different order while another delivery flow is active:', {
+        incomingOrderKey,
+        currentOrderKey,
+      })
+      clearOrderReady()
+      return
+    }
 
     // Update selectedRestaurant with order data from orderReady if we don't have it
     if ((orderReady.orderId || order?.orderId) && order && !selectedRestaurant?.orderId) {
@@ -7352,12 +7431,12 @@ export default function DeliveryHome() {
       }
       setSelectedRestaurant(restaurantInfo)
       console.log('🏪 Updated restaurant info from orderReady event:', restaurantInfo)
-      if (!selectedRestaurant) {
+      if (!selectedRestaurant && !hasActiveDeliveryFlow && !showNewOrderPopup) {
         setShowNewOrderPopup(true)
         clearOrderReady()
         return
       }
-    } else if (selectedRestaurant) {
+    } else if (selectedRestaurant && (!incomingOrderKey || incomingOrderKey === currentOrderKey)) {
       // Always set orderStatus to 'ready' so location monitor shows Reached Pickup when rider is within 500m
       setSelectedRestaurant(prev => ({ ...prev, orderStatus: 'ready' }))
     }
@@ -7386,7 +7465,7 @@ export default function DeliveryHome() {
     setShowreachedPickupPopup(true)
 
     clearOrderReady()
-  }, [orderReady, selectedRestaurant])
+  }, [orderReady, selectedRestaurant, hasActiveDeliveryFlow, showNewOrderPopup])
 
   // Fetch order details when Reached Pickup popup is shown to ensure we have restaurant address
   useEffect(() => {
@@ -8195,8 +8274,7 @@ export default function DeliveryHome() {
                              deliveryPhase === 'picked_up' ||
                              deliveryPhase === 'at_delivery' ||
                              deliveryStateStatus === 'order_confirmed' ||
-                             deliveryStateStatus === 'en_route_to_delivery' ||
-                             orderStatus === 'ready')
+                             deliveryStateStatus === 'en_route_to_delivery')
 
     // Don't show if other popups are active (but allow if Order ID confirmation was just completed)
     // NOTE: If showReachedDropPopup is already true, don't hide it - it was explicitly set after Order ID confirmation

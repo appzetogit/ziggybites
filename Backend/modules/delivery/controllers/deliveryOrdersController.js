@@ -117,6 +117,16 @@ function isAssignedToDelivery(order, delivery) {
   return Boolean(assignedId && deliveryIds.has(assignedId));
 }
 
+async function findAssignedOrderForDelivery(orderId, delivery) {
+  const lookupQuery = buildOrderLookupQuery(orderId);
+  if (!lookupQuery) return null;
+
+  const matchingOrders = await Order.find(lookupQuery);
+  if (!matchingOrders?.length) return null;
+
+  return matchingOrders.find((order) => isAssignedToDelivery(order, delivery)) || null;
+}
+
 function isValidDeliveryOrder(order) {
   return Boolean(
     order?.orderId &&
@@ -1129,22 +1139,7 @@ export const confirmReachedPickup = asyncHandler(async (req, res) => {
       `📍 confirmReachedPickup called - orderId: ${orderId}, deliveryId: ${deliveryId}`,
     );
 
-    // Find order by _id or orderId field
-    let order = null;
-
-    // Check if orderId is a valid MongoDB ObjectId
-    if (mongoose.Types.ObjectId.isValid(orderId) && orderId.length === 24) {
-      order = await Order.findOne({
-        _id: orderId,
-        deliveryPartnerId: deliveryId,
-      });
-    } else {
-      // If not a valid ObjectId, search by orderId field
-      order = await Order.findOne({
-        orderId: orderId,
-        deliveryPartnerId: deliveryId,
-      });
-    }
+    const order = await findAssignedOrderForDelivery(orderId, delivery);
 
     if (!order) {
       console.warn(
@@ -1802,43 +1797,13 @@ export const confirmReachedDrop = asyncHandler(async (req, res) => {
       return errorResponse(res, 400, "Order ID is required");
     }
 
-    // Find order by _id or orderId, and ensure it's assigned to this delivery partner
-    // Try multiple comparison methods for deliveryPartnerId (ObjectId vs string)
     const deliveryId = delivery._id;
 
     console.log(
       `🔍 Searching for order: ${orderId}, Delivery ID: ${deliveryId}`,
     );
 
-    // Try finding order with different deliveryPartnerId comparison methods
-    // First try without lean() to get Mongoose document (needed for proper ObjectId comparison)
-    let order = await Order.findOne({
-      $and: [
-        {
-          $or: [{ _id: orderId }, { orderId: orderId }],
-        },
-        {
-          deliveryPartnerId: deliveryId, // Try as ObjectId first (most common)
-        },
-      ],
-    });
-
-    // If not found, try with string comparison
-    if (!order) {
-      console.log(
-        `⚠️ Order not found with ObjectId comparison, trying string comparison...`,
-      );
-      order = await Order.findOne({
-        $and: [
-          {
-            $or: [{ _id: orderId }, { orderId: orderId }],
-          },
-          {
-            deliveryPartnerId: deliveryId.toString(), // Try as string
-          },
-        ],
-      });
-    }
+    const order = await findAssignedOrderForDelivery(orderId, delivery);
 
     if (!order) {
       console.error(
@@ -1991,46 +1956,17 @@ export const completeDelivery = asyncHandler(async (req, res) => {
       return errorResponse(res, 400, "Order ID is required");
     }
 
-    // Find order - try both by _id and orderId, and ensure it's assigned to this delivery partner
     const deliveryId = delivery._id;
-    let order = null;
+    let order = await findAssignedOrderForDelivery(orderId, delivery);
 
-    // Check if orderId is a valid MongoDB ObjectId
-    if (mongoose.Types.ObjectId.isValid(orderId) && orderId.length === 24) {
-      order = await Order.findOne({
-        _id: orderId,
-        deliveryPartnerId: deliveryId,
-      })
-        .populate("restaurantId", "name location address phone ownerPhone")
-        .populate("userId", "name phone")
-        .lean();
-    } else {
-      // If not a valid ObjectId, search by orderId field
-      order = await Order.findOne({
-        orderId: orderId,
-        deliveryPartnerId: deliveryId,
-      })
-        .populate("restaurantId", "name location address phone ownerPhone")
-        .populate("userId", "name phone")
-        .lean();
-    }
-
-    // If still not found, try with string comparison for deliveryPartnerId
     if (!order) {
-      order = await Order.findOne({
-        $and: [
-          {
-            $or: [{ _id: orderId }, { orderId: orderId }],
-          },
-          {
-            deliveryPartnerId: deliveryId.toString(),
-          },
-        ],
-      })
-        .populate("restaurantId", "name location address phone ownerPhone")
-        .populate("userId", "name phone")
-        .lean();
+      return errorResponse(res, 404, "Order not found or not assigned to you");
     }
+
+    order = await Order.findById(order._id)
+      .populate("restaurantId", "name location address phone ownerPhone")
+      .populate("userId", "name phone")
+      .lean();
 
     if (!order) {
       return errorResponse(res, 404, "Order not found or not assigned to you");
