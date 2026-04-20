@@ -52,6 +52,8 @@ export default function SignupStep1() {
   const [formData, setFormData] = useState({
     name: "",
     email: "",
+    phone: "",
+    primaryContact: "",
     address: "",
     city: "",
     state: "",
@@ -103,9 +105,19 @@ export default function SignupStep1() {
     const { name, value } = e.target
     let nextValue = value
 
+    if (name === "name") {
+      // Allow only alphabets and spaces
+      nextValue = value.replace(/[^a-zA-Z\s]/g, "")
+    }
+
     if (name === "city") {
       // Allow only alphabets and spaces
       nextValue = value.replace(/[^a-zA-Z\s]/g, "")
+    }
+
+    if (name === "phone" || name === "primaryContact") {
+      // Allow only numbers and + for country code
+      nextValue = value.replace(/[^\d+]/g, "")
     }
 
     if (name === "vehicleNumber") {
@@ -150,10 +162,23 @@ export default function SignupStep1() {
     switch (name) {
       case "name":
         if (!trimmed) fieldError = "Name is required"
+        else if (!/^[A-Za-z\s]{2,}$/.test(trimmed)) {
+          fieldError = "Enter valid name (letters only)"
+        }
         break
       case "email":
         if (trimmed && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
           fieldError = "Invalid email format"
+        }
+        break
+      case "phone":
+        if (trimmed && !/^\+?\d{10,15}$/.test(trimmed)) {
+          fieldError = "Enter valid phone number"
+        }
+        break
+      case "primaryContact":
+        if (trimmed && !/^\+?\d{10,15}$/.test(trimmed)) {
+          fieldError = "Enter valid contact number"
         }
         break
       case "address":
@@ -210,10 +235,20 @@ export default function SignupStep1() {
 
     if (!formData.name.trim()) {
       newErrors.name = "Name is required"
+    } else if (!/^[A-Za-z\s]{2,}$/.test(formData.name.trim())) {
+      newErrors.name = "Enter valid name (letters only)"
     }
 
     if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
       newErrors.email = "Invalid email format"
+    }
+
+    if (formData.phone && !/^\+?\d{10,15}$/.test(formData.phone.trim())) {
+      newErrors.phone = "Enter valid phone number"
+    }
+
+    if (formData.primaryContact && !/^\+?\d{10,15}$/.test(formData.primaryContact.trim())) {
+      newErrors.primaryContact = "Enter valid contact number"
     }
 
     if (!formData.address.trim()) {
@@ -266,6 +301,8 @@ export default function SignupStep1() {
       const response = await deliveryAPI.submitSignupDetails({
         name: formData.name.trim(),
         email: formData.email.trim() || null,
+        phone: formData.phone.trim() || null,
+        primaryContact: formData.primaryContact.trim() || null,
         address: formData.address.trim(),
         city: formData.city.trim(),
         state: formData.state.trim(),
@@ -331,7 +368,7 @@ export default function SignupStep1() {
           {/* Email */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Email (Optional)
+              Email Address (Optional)
             </label>
             <input
               type="email"
@@ -341,9 +378,47 @@ export default function SignupStep1() {
               className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 ${
                 errors.email ? "border-red-500" : "border-gray-300"
               }`}
-              placeholder="Enter your email"
+              placeholder="Enter your email address"
             />
             {errors.email && <p className="text-red-500 text-sm mt-1">{errors.email}</p>}
+          </div>
+
+          {/* Phone Number */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Phone Number*
+            </label>
+            <input
+              type="tel"
+              name="phone"
+              value={formData.phone}
+              onChange={handleChange}
+              maxLength={15}
+              className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 ${
+                errors.phone ? "border-red-500" : "border-gray-300"
+              }`}
+              placeholder="+91 98XXXXXXX"
+            />
+            {errors.phone && <p className="text-red-500 text-sm mt-1">{errors.phone}</p>}
+          </div>
+
+          {/* Primary Contact Number */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Primary Contact Number
+            </label>
+            <input
+              type="tel"
+              name="primaryContact"
+              value={formData.primaryContact}
+              onChange={handleChange}
+              maxLength={10}
+              className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 ${
+                errors.primaryContact ? "border-red-500" : "border-gray-300"
+              }`}
+              placeholder="Enter your primary contact number"
+            />
+            {errors.primaryContact && <p className="text-red-500 text-sm mt-1">{errors.primaryContact}</p>}
           </div>
 
           {/* Address */}

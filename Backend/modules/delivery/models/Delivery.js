@@ -264,6 +264,11 @@ const deliverySchema = new mongoose.Schema(
       trim: true,
       sparse: true,
     },
+    primaryContact: {
+      type: String,
+      trim: true,
+      sparse: true,
+    },
     profileImage: {
       url: String,
       publicId: String,

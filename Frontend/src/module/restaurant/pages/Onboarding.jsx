@@ -189,6 +189,18 @@ export default function RestaurantOnboarding() {
     /^[A-Za-z][A-Za-z\s'.-]*$/.test(String(value || "").trim())
   const isValidStepOneEmail = (value) =>
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim())
+  const isValidUploadedImage = (image) =>
+    image instanceof File ||
+    (image?.url && typeof image.url === 'string') ||
+    (typeof image === 'string' && image.startsWith('http'))
+  const normalizeUploadedImage = (image) => {
+    if (image instanceof File) return image
+    if (image?.url) return image
+    if (typeof image === 'string' && image.startsWith('http')) {
+      return { url: image }
+    }
+    return null
+  }
 
   const [step1, setStep1] = useState({
     restaurantName: "",
@@ -246,7 +258,7 @@ export default function RestaurantOnboarding() {
     const stepParam = searchParams.get("step")
     if (stepParam) {
       const stepNum = parseInt(stepParam, 10)
-      if (stepNum >= 1 && stepNum <= 3) {
+      if (stepNum >= 1 && stepNum <= 4) {
         setStep(stepNum)
       }
     }
@@ -398,17 +410,17 @@ export default function RestaurantOnboarding() {
             setStep3({
               panNumber: data.step3.pan?.panNumber || "",
               nameOnPan: data.step3.pan?.nameOnPan || "",
-              panImage: null, // Don't load images from API, user needs to re-upload
+              panImage: normalizeUploadedImage(data.step3.pan?.image),
               gstRegistered: data.step3.gst?.isRegistered || false,
               gstNumber: data.step3.gst?.gstNumber || "",
               gstLegalName: data.step3.gst?.legalName || "",
               gstAddress: data.step3.gst?.address || "",
-              gstImage: null, // Don't load images from API, user needs to re-upload
+              gstImage: normalizeUploadedImage(data.step3.gst?.image),
               fssaiNumber: data.step3.fssai?.registrationNumber || "",
               fssaiExpiry: data.step3.fssai?.expiryDate
                 ? data.step3.fssai.expiryDate.slice(0, 10)
                 : "",
-              fssaiImage: null, // Don't load images from API, user needs to re-upload
+              fssaiImage: normalizeUploadedImage(data.step3.fssai?.image),
               accountNumber: data.step3.bank?.accountNumber || "",
               confirmAccountNumber: data.step3.bank?.accountNumber || "",
               ifscCode: data.step3.bank?.ifscCode || "",
@@ -509,10 +521,7 @@ export default function RestaurantOnboarding() {
     } else {
       // Verify that menu images are either File objects or have valid URLs
       const validMenuImages = step2.menuImages.filter(img => {
-        if (img instanceof File) return true
-        if (img?.url && typeof img.url === 'string') return true
-        if (typeof img === 'string' && img.startsWith('http')) return true
-        return false
+        return isValidUploadedImage(img)
       })
       if (validMenuImages.length === 0) {
         errors.push("Please upload at least one valid menu image")
@@ -525,9 +534,7 @@ export default function RestaurantOnboarding() {
     } else {
       // Verify profile image is either a File or has a valid URL
       const isValidProfileImage =
-        step2.profileImage instanceof File ||
-        (step2.profileImage?.url && typeof step2.profileImage.url === 'string') ||
-        (typeof step2.profileImage === 'string' && step2.profileImage.startsWith('http'))
+        isValidUploadedImage(step2.profileImage)
       if (!isValidProfileImage) {
         errors.push("Please upload a valid restaurant profile image")
       }
@@ -582,9 +589,7 @@ export default function RestaurantOnboarding() {
       errors.push("PAN image is required")
     } else {
       const isValidPanImage =
-        step3.panImage instanceof File ||
-        (step3.panImage?.url && typeof step3.panImage.url === 'string') ||
-        (typeof step3.panImage === 'string' && step3.panImage.startsWith('http'))
+        isValidUploadedImage(step3.panImage)
       if (!isValidPanImage) {
         errors.push("Please upload a valid PAN image")
       }
@@ -592,18 +597,20 @@ export default function RestaurantOnboarding() {
 
     if (!step3.fssaiNumber?.trim()) {
       errors.push("FSSAI number is required")
+    } else if (!/^\d{14}$/.test(step3.fssaiNumber.trim())) {
+      errors.push("FSSAI number should be 14 digits")
     }
     if (!step3.fssaiExpiry?.trim()) {
       errors.push("FSSAI expiry date is required")
+    } else if (new Date(`${step3.fssaiExpiry}T23:59:59`) < new Date()) {
+      errors.push("FSSAI expiry date must be in the future")
     }
     // Validate FSSAI image - must be a File or existing URL
     if (!step3.fssaiImage) {
       errors.push("FSSAI image is required")
     } else {
       const isValidFssaiImage =
-        step3.fssaiImage instanceof File ||
-        (step3.fssaiImage?.url && typeof step3.fssaiImage.url === 'string') ||
-        (typeof step3.fssaiImage === 'string' && step3.fssaiImage.startsWith('http'))
+        isValidUploadedImage(step3.fssaiImage)
       if (!isValidFssaiImage) {
         errors.push("Please upload a valid FSSAI image")
       }
@@ -613,6 +620,8 @@ export default function RestaurantOnboarding() {
     if (step3.gstRegistered) {
       if (!step3.gstNumber?.trim()) {
         errors.push("GST number is required when GST registered")
+      } else if (!/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(step3.gstNumber.trim().toUpperCase())) {
+        errors.push("GST number format is invalid")
       }
       if (!step3.gstLegalName?.trim()) {
         errors.push("GST legal name is required when GST registered")
@@ -625,9 +634,7 @@ export default function RestaurantOnboarding() {
         errors.push("GST image is required when GST registered")
       } else {
         const isValidGstImage =
-          step3.gstImage instanceof File ||
-          (step3.gstImage?.url && typeof step3.gstImage.url === 'string') ||
-          (typeof step3.gstImage === 'string' && step3.gstImage.startsWith('http'))
+          isValidUploadedImage(step3.gstImage)
         if (!isValidGstImage) {
           errors.push("Please upload a valid GST image")
         }
@@ -636,6 +643,8 @@ export default function RestaurantOnboarding() {
 
     if (!step3.accountNumber?.trim()) {
       errors.push("Account number is required")
+    } else if (!/^\d{9,18}$/.test(step3.accountNumber.trim())) {
+      errors.push("Account number should be 9 to 18 digits")
     }
     if (!step3.confirmAccountNumber?.trim()) {
       errors.push("Please confirm your account number")
@@ -645,6 +654,8 @@ export default function RestaurantOnboarding() {
     }
     if (!step3.ifscCode?.trim()) {
       errors.push("IFSC code is required")
+    } else if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(step3.ifscCode.trim().toUpperCase())) {
+      errors.push("IFSC code format is invalid")
     }
     if (!step3.accountHolderName?.trim()) {
       errors.push("Account holder name is required")
@@ -971,7 +982,7 @@ export default function RestaurantOnboarding() {
             },
             gst: {
               isRegistered: step3.gstRegistered || false,
-              gstNumber: step3.gstNumber || "",
+              gstNumber: step3.gstNumber?.trim().toUpperCase() || "",
               legalName: step3.gstLegalName || "",
               address: step3.gstAddress || "",
               image: gstImageUpload,
@@ -983,7 +994,7 @@ export default function RestaurantOnboarding() {
             },
             bank: {
               accountNumber: step3.accountNumber || "",
-              ifscCode: step3.ifscCode || "",
+              ifscCode: step3.ifscCode?.trim().toUpperCase() || "",
               accountHolderName: step3.accountHolderName || "",
               accountType: step3.accountType || "",
             },

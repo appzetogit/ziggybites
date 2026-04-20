@@ -5,6 +5,107 @@ import {
 } from "../../../shared/utils/response.js";
 import { createRestaurantFromOnboarding } from "./restaurantController.js";
 
+const hasText = (value) => typeof value === "string" && value.trim().length > 0;
+const hasImage = (image) =>
+  !!(
+    image &&
+    ((typeof image === "string" && image.startsWith("http")) ||
+      (typeof image.url === "string" && image.url.trim().length > 0))
+  );
+const isFutureDate = (value) => {
+  if (!value) return false;
+  const expiryDate = new Date(value);
+  if (Number.isNaN(expiryDate.getTime())) return false;
+  expiryDate.setHours(23, 59, 59, 999);
+  return expiryDate >= new Date();
+};
+const getOnboardingValidationErrors = (onboarding, completedSteps = 0) => {
+  const errors = [];
+
+  if (completedSteps >= 1) {
+    const step1 = onboarding.step1 || {};
+    if (!hasText(step1.restaurantName)) errors.push("Restaurant name is required");
+    if (!hasText(step1.ownerName)) errors.push("Owner name is required");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(step1.ownerEmail || "").trim())) {
+      errors.push("Valid owner email is required");
+    }
+    if (!hasText(step1.ownerPhone)) errors.push("Owner phone number is required");
+    if (!/^\d{10}$/.test(String(step1.primaryContactNumber || "").replace(/\D/g, ""))) {
+      errors.push("Primary contact number should be 10 digits");
+    }
+    if (!hasText(step1.location?.area)) errors.push("Area/Sector/Locality is required");
+    if (!hasText(step1.location?.city)) errors.push("City is required");
+  }
+
+  if (completedSteps >= 2) {
+    const step2 = onboarding.step2 || {};
+    if (!Array.isArray(step2.menuImageUrls) || step2.menuImageUrls.length === 0) {
+      errors.push("At least one menu image is required");
+    } else if (!step2.menuImageUrls.some(hasImage)) {
+      errors.push("Please upload at least one valid menu image");
+    }
+    if (!hasImage(step2.profileImageUrl)) {
+      errors.push("Restaurant profile image is required");
+    }
+    if (!Array.isArray(step2.cuisines) || step2.cuisines.length === 0) {
+      errors.push("Please select at least one cuisine");
+    }
+    if (!hasText(step2.deliveryTimings?.openingTime)) errors.push("Opening time is required");
+    if (!hasText(step2.deliveryTimings?.closingTime)) errors.push("Closing time is required");
+    if (!Array.isArray(step2.openDays) || step2.openDays.length === 0) {
+      errors.push("Please select at least one open day");
+    }
+  }
+
+  if (completedSteps >= 3) {
+    const step3 = onboarding.step3 || {};
+    if (!/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(String(step3.pan?.panNumber || "").trim().toUpperCase())) {
+      errors.push("PAN format is invalid");
+    }
+    if (!hasText(step3.pan?.nameOnPan)) errors.push("Name on PAN is required");
+    if (!hasImage(step3.pan?.image)) errors.push("PAN image is required");
+    if (!/^\d{14}$/.test(String(step3.fssai?.registrationNumber || "").trim())) {
+      errors.push("FSSAI number should be 14 digits");
+    }
+    if (!isFutureDate(step3.fssai?.expiryDate)) {
+      errors.push("FSSAI expiry date must be in the future");
+    }
+    if (!hasImage(step3.fssai?.image)) errors.push("FSSAI image is required");
+
+    if (step3.gst?.isRegistered) {
+      const gstNumber = String(step3.gst?.gstNumber || "").trim().toUpperCase();
+      if (!/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(gstNumber)) {
+        errors.push("GST number format is invalid");
+      }
+      if (!hasText(step3.gst?.legalName)) errors.push("GST legal name is required");
+      if (!hasText(step3.gst?.address)) errors.push("GST registered address is required");
+      if (!hasImage(step3.gst?.image)) errors.push("GST image is required");
+    }
+
+    if (!/^\d{9,18}$/.test(String(step3.bank?.accountNumber || "").trim())) {
+      errors.push("Account number should be 9 to 18 digits");
+    }
+    if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(String(step3.bank?.ifscCode || "").trim().toUpperCase())) {
+      errors.push("IFSC code format is invalid");
+    }
+    if (!hasText(step3.bank?.accountHolderName)) errors.push("Account holder name is required");
+    if (!hasText(step3.bank?.accountType)) errors.push("Account type is required");
+  }
+
+  if (completedSteps >= 4) {
+    const step4 = onboarding.step4 || {};
+    const featuredPrice = Number(step4.featuredPrice);
+    if (!hasText(step4.estimatedDeliveryTime)) errors.push("Estimated delivery time is required");
+    if (!hasText(step4.featuredDish)) errors.push("Featured dish name is required");
+    if (!Number.isFinite(featuredPrice) || featuredPrice <= 0) {
+      errors.push("Featured dish price is required and must be greater than 0");
+    }
+    if (!hasText(step4.offer)) errors.push("Special offer/promotion is required");
+  }
+
+  return errors;
+};
+
 // Get current restaurant's onboarding data
 export const getOnboarding = async (req, res) => {
   try {
@@ -63,13 +164,35 @@ export const upsertOnboarding = async (req, res) => {
       update["onboarding.step4"] = step4;
     }
 
+    const requestedCompletedSteps =
+      typeof completedSteps === "number"
+        ? Math.max(0, Math.min(4, completedSteps))
+        : existingOnboarding.completedSteps || 0;
+
     // Update completedSteps if provided (always update, even if 0)
     if (
       typeof completedSteps === "number" &&
       completedSteps !== null &&
       completedSteps !== undefined
     ) {
-      update["onboarding.completedSteps"] = completedSteps;
+      update["onboarding.completedSteps"] = requestedCompletedSteps;
+    }
+    const mergedOnboarding = {
+      ...existingOnboarding,
+      ...(step1 !== undefined ? { step1 } : {}),
+      ...(step2 !== undefined ? { step2 } : {}),
+      ...(step3 !== undefined ? { step3 } : {}),
+      ...(step4 !== undefined ? { step4 } : {}),
+      completedSteps: requestedCompletedSteps,
+    };
+    const validationErrors = getOnboardingValidationErrors(
+      mergedOnboarding,
+      requestedCompletedSteps,
+    );
+    if (validationErrors.length > 0) {
+      return errorResponse(res, 400, "Invalid onboarding data", {
+        errors: validationErrors,
+      });
     }
 
     console.log("📝 Onboarding update payload:", {
@@ -467,11 +590,11 @@ export const createRestaurantFromOnboardingManual = async (req, res) => {
       );
     }
 
-    if (restaurant.onboarding.completedSteps !== 3) {
+    if (restaurant.onboarding.completedSteps !== 4) {
       return errorResponse(
         res,
         400,
-        `Onboarding not complete. Current step: ${restaurant.onboarding.completedSteps}/3`,
+        `Onboarding not complete. Current step: ${restaurant.onboarding.completedSteps}/4`,
       );
     }
 

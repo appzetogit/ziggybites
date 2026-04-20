@@ -62,6 +62,8 @@ const INDIAN_STATES = [
 const signupDetailsSchema = Joi.object({
   name: Joi.string().trim().min(2).max(100).required(),
   email: Joi.string().email().lowercase().trim().optional().allow(null, ''),
+  phone: Joi.string().trim().pattern(/^\+?\d{10,15}$/).optional().allow(null, ''),
+  primaryContact: Joi.string().trim().pattern(/^\+?\d{10,15}$/).optional().allow(null, ''),
   address: Joi.string().trim().required(),
   city: Joi.string()
     .trim()
@@ -102,6 +104,8 @@ export const submitSignupDetails = asyncHandler(async (req, res) => {
     const {
       name,
       email,
+      phone,
+      primaryContact,
       address,
       city,
       state,
@@ -122,6 +126,8 @@ export const submitSignupDetails = asyncHandler(async (req, res) => {
     const updateData = {
       name: name.trim(),
       email: email ? email.trim().toLowerCase() : null,
+      phone: phone ? phone.trim() : null,
+      primaryContact: primaryContact ? primaryContact.trim() : null,
       location: {
         addressLine1: address.trim(),
         city: city.trim(),

@@ -58,6 +58,17 @@ const isStepComplete = (stepData, stepNumber) => {
     )
   }
 
+  if (stepNumber === 4) {
+    const featuredPrice = Number(stepData.featuredPrice)
+    return (
+      stepData.estimatedDeliveryTime &&
+      stepData.featuredDish &&
+      Number.isFinite(featuredPrice) &&
+      featuredPrice > 0 &&
+      stepData.offer
+    )
+  }
+
   return false
 }
 
@@ -85,7 +96,11 @@ export const determineStepToShow = (data) => {
     return 3
   }
 
-  // All steps complete
+  // Check step 4
+  if (!isStepComplete(data.step4, 4)) {
+    return 4
+  }
+
   return null
 }
 
@@ -115,4 +130,3 @@ export const checkOnboardingStatus = async () => {
     return 1
   }
 }
-

@@ -12,6 +12,7 @@ import DeliveryBoyCommission from "../../admin/models/DeliveryBoyCommission.js";
 import RestaurantWallet from "../../restaurant/models/RestaurantWallet.js";
 import RestaurantCommission from "../../admin/models/RestaurantCommission.js";
 import AdminCommission from "../../admin/models/AdminCommission.js";
+import OrderSettlement from "../../order/models/OrderSettlement.js";
 import {
   syncAssignedOrderForDelivery,
   updateAssignedOrderStatusForDelivery,
@@ -78,6 +79,24 @@ function normalizeId(id) {
   if (typeof id === "string") return id;
   if (id.toString) return id.toString();
   return String(id);
+}
+
+function getEstimatedEarningAmount(estimatedEarnings) {
+  if (estimatedEarnings == null) return 0;
+  if (typeof estimatedEarnings === "number") {
+    return Number.isFinite(estimatedEarnings) ? estimatedEarnings : 0;
+  }
+  if (typeof estimatedEarnings === "object") {
+    const amount =
+      estimatedEarnings.totalEarning ??
+      estimatedEarnings.amount ??
+      estimatedEarnings.earning ??
+      estimatedEarnings.total;
+    const numericAmount = Number(amount);
+    return Number.isFinite(numericAmount) ? numericAmount : 0;
+  }
+  const numericAmount = Number(estimatedEarnings);
+  return Number.isFinite(numericAmount) ? numericAmount : 0;
 }
 
 function getDeliveryIdentitySet(delivery) {
@@ -1054,6 +1073,43 @@ export const acceptOrder = asyncHandler(async (req, res) => {
           minDistance: 4,
         },
       };
+    }
+
+    const estimatedEarningAmount = getEstimatedEarningAmount(estimatedEarnings);
+    if (estimatedEarningAmount > 0) {
+      try {
+        const roundedEarningAmount =
+          Math.round(estimatedEarningAmount * 100) / 100;
+        const roundedEarningDistance =
+          Math.round(deliveryDistance * 100) / 100;
+
+        await Order.updateOne(
+          { _id: updatedOrder._id },
+          {
+            $set: {
+              "assignmentInfo.distance": deliveryDistance,
+              "assignmentInfo.estimatedEarningAmount": roundedEarningAmount,
+              "assignmentInfo.estimatedEarningDistance": roundedEarningDistance,
+              "assignmentInfo.estimatedEarnings": estimatedEarnings,
+            },
+          },
+        );
+        updatedOrder.assignmentInfo = {
+          ...(updatedOrder.assignmentInfo || {}),
+          distance: deliveryDistance,
+          estimatedEarningAmount: roundedEarningAmount,
+          estimatedEarningDistance: roundedEarningDistance,
+          estimatedEarnings,
+        };
+        console.log(
+          `âœ… Stored accepted earning estimate â‚¹${roundedEarningAmount.toFixed(2)} for order ${updatedOrder.orderId}`,
+        );
+      } catch (estimateSaveError) {
+        console.warn(
+          "âš ï¸ Could not store accepted earning estimate:",
+          estimateSaveError.message,
+        );
+      }
     }
 
     // Resolve payment method for delivery boy (COD vs Online) - use Payment collection if order.payment is wrong
@@ -2163,6 +2219,64 @@ export const completeDelivery = asyncHandler(async (req, res) => {
       }
     }
 
+    const acceptedEstimate =
+      order.assignmentInfo?.estimatedEarnings ||
+      order.assignmentInfo?.estimatedEarningAmount ||
+      null;
+    const acceptedEstimatedEarningAmount =
+      getEstimatedEarningAmount(acceptedEstimate);
+    if (acceptedEstimatedEarningAmount > 0) {
+      try {
+        const estimatedBreakdown =
+          typeof order.assignmentInfo?.estimatedEarnings === "object"
+            ? order.assignmentInfo.estimatedEarnings
+            : {};
+        const breakdown = estimatedBreakdown.breakdown || estimatedBreakdown;
+        const estimatedDistance =
+          Number(order.assignmentInfo?.estimatedEarningDistance) ||
+          Number(estimatedBreakdown.distance) ||
+          Number(breakdown.distance) ||
+          Number(order.assignmentInfo?.distance) ||
+          0;
+
+        await OrderSettlement.updateOne(
+          { orderId: orderMongoId },
+          {
+            $set: {
+              deliveryPartnerId: delivery._id,
+              "deliveryPartnerEarning.basePayout":
+                Number(estimatedBreakdown.basePayout ?? breakdown.basePayout) ||
+                0,
+              "deliveryPartnerEarning.distance":
+                Math.round(estimatedDistance * 100) / 100,
+              "deliveryPartnerEarning.commissionPerKm":
+                Number(
+                  estimatedBreakdown.commissionPerKm ??
+                    breakdown.commissionPerKm,
+                ) || 0,
+              "deliveryPartnerEarning.distanceCommission":
+                Number(
+                  estimatedBreakdown.distanceCommission ??
+                    breakdown.distanceCommission,
+                ) || 0,
+              "deliveryPartnerEarning.surgeMultiplier": 1,
+              "deliveryPartnerEarning.surgeAmount": 0,
+              "deliveryPartnerEarning.totalEarning": 0,
+              "deliveryPartnerEarning.status": "pending",
+            },
+          },
+        );
+        console.log(
+          `âœ… Settlement delivery pre-credit paused; wallet will use accepted estimate â‚¹${acceptedEstimatedEarningAmount.toFixed(2)} for order ${orderIdForLog}`,
+        );
+      } catch (settlementUpdateError) {
+        console.warn(
+          "âš ï¸ Could not sync accepted earning estimate to settlement:",
+          settlementUpdateError.message,
+        );
+      }
+    }
+
     // Release escrow and distribute funds (this handles all wallet credits)
     try {
       const { releaseEscrow } =
@@ -2222,7 +2336,37 @@ export const completeDelivery = asyncHandler(async (req, res) => {
     let totalEarning = 0;
     let commissionBreakdown = null;
 
-    try {
+    if (acceptedEstimatedEarningAmount > 0) {
+      totalEarning = Math.round(acceptedEstimatedEarningAmount * 100) / 100;
+      const estimatedBreakdown =
+        typeof order.assignmentInfo?.estimatedEarnings === "object"
+          ? order.assignmentInfo.estimatedEarnings
+          : {};
+      const breakdown = estimatedBreakdown.breakdown || estimatedBreakdown;
+      commissionBreakdown = {
+        basePayout:
+          Number(estimatedBreakdown.basePayout ?? breakdown.basePayout) || 0,
+        distance:
+          Number(order.assignmentInfo?.estimatedEarningDistance) ||
+          Number(estimatedBreakdown.distance) ||
+          Number(breakdown.distance) ||
+          deliveryDistance,
+        commissionPerKm:
+          Number(
+            estimatedBreakdown.commissionPerKm ?? breakdown.commissionPerKm,
+          ) || 0,
+        distanceCommission:
+          Number(
+            estimatedBreakdown.distanceCommission ??
+              breakdown.distanceCommission,
+          ) || 0,
+        estimatedAmountUsed: true,
+      };
+      console.log(
+        `ðŸ’° Delivery earnings using accepted estimate: â‚¹${totalEarning.toFixed(2)} for order ${orderIdForLog}`,
+      );
+    } else {
+      try {
       // Use DeliveryBoyCommission model to calculate commission based on distance
       const commissionResult =
         await DeliveryBoyCommission.calculateCommission(deliveryDistance);
@@ -2256,6 +2400,8 @@ export const completeDelivery = asyncHandler(async (req, res) => {
       console.warn(
         `⚠️ Using fallback earnings (delivery fee): ₹${totalEarning.toFixed(2)}`,
       );
+    }
+
     }
 
     // Add earning to delivery boy's wallet
@@ -2294,6 +2440,36 @@ export const completeDelivery = asyncHandler(async (req, res) => {
         });
 
         await wallet.save();
+
+        try {
+          await OrderSettlement.updateOne(
+            { orderId: orderMongoId || order._id },
+            {
+              $set: {
+                deliveryPartnerId: delivery._id,
+                "deliveryPartnerEarning.basePayout":
+                  Number(commissionBreakdown?.basePayout) || 0,
+                "deliveryPartnerEarning.distance":
+                  Number(commissionBreakdown?.distance) || deliveryDistance || 0,
+                "deliveryPartnerEarning.commissionPerKm":
+                  Number(commissionBreakdown?.commissionPerKm) || 0,
+                "deliveryPartnerEarning.distanceCommission":
+                  Number(commissionBreakdown?.distanceCommission) || 0,
+                "deliveryPartnerEarning.surgeMultiplier": 1,
+                "deliveryPartnerEarning.surgeAmount": 0,
+                "deliveryPartnerEarning.totalEarning": totalEarning,
+                "deliveryPartnerEarning.status": "credited",
+                "deliveryPartnerEarning.creditedAt": new Date(),
+                deliveryPartnerSettled: true,
+              },
+            },
+          );
+        } catch (settlementCreditError) {
+          console.warn(
+            "âš ï¸ Could not mark delivery earning credited in settlement:",
+            settlementCreditError.message,
+          );
+        }
 
         // COD: add cash collected (order total) to cashInHand so Pocket balance shows it
         const codAmount = Number(order.pricing?.total) || 0;

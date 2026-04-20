@@ -344,6 +344,9 @@ const orderSchema = new mongoose.Schema(
       expandedNotifiedAt: Date,
       notificationPhase: String,
       assignedAt: Date,
+      estimatedEarningAmount: Number,
+      estimatedEarningDistance: Number,
+      estimatedEarnings: mongoose.Schema.Types.Mixed,
     },
     deliveryState: {
       status: {
