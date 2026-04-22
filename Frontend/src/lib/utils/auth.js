@@ -54,6 +54,21 @@ export function isTokenExpired(token) {
 }
 
 /**
+ * Check if token is about to expire (within 1 hour)
+ * @param {string} token - JWT token
+ * @returns {boolean} - True if token will expire within 1 hour
+ */
+export function isTokenExpiringSoon(token) {
+  const decoded = decodeToken(token);
+  if (!decoded) return true;
+  if (!decoded.exp) return false;
+
+  // Check if token expires within 1 hour (3600000 ms)
+  const oneHourFromNow = Date.now() + 3600000;
+  return decoded.exp * 1000 < oneHourFromNow;
+}
+
+/**
  * Get user ID from token
  * @param {string} token - JWT token
  * @returns {string|null} - User ID or null if not found

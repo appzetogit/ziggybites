@@ -5,6 +5,7 @@ import {
   getRoleFromToken,
   getModuleToken,
   clearModuleAuth,
+  isTokenExpiringSoon,
 } from "../utils/auth.js";
 
 // Network error tracking to prevent spam
@@ -15,6 +16,13 @@ const networkErrorState = {
   toastShown: false,
   COOLDOWN_PERIOD: 30000, // 30 seconds cooldown for console errors
   TOAST_COOLDOWN_PERIOD: 60000, // 60 seconds cooldown for toast notifications
+};
+
+// Proactive token refresh tracking
+const tokenRefreshState = {
+  lastRefreshCheck: 0,
+  refreshInProgress: false,
+  CHECK_INTERVAL: 5 * 60 * 1000, // Check every 5 minutes
 };
 
 // Validate API base URL on import
@@ -50,6 +58,67 @@ const apiClient = axios.create({
   },
   withCredentials: true, // Include cookies for refresh token
 });
+
+/**
+ * Proactively refresh token if it's about to expire
+ * @param {string} module - Module name
+ * @returns {Promise<void>}
+ */
+async function proactiveTokenRefresh(module) {
+  if (tokenRefreshState.refreshInProgress) return;
+  
+  const now = Date.now();
+  if (now - tokenRefreshState.lastRefreshCheck < tokenRefreshState.CHECK_INTERVAL) return;
+  
+  const token = getModuleToken(module);
+  if (!token || isTokenExpired(token)) return;
+  
+  if (isTokenExpiringSoon(token)) {
+    tokenRefreshState.refreshInProgress = true;
+    tokenRefreshState.lastRefreshCheck = now;
+    
+    try {
+      let refreshEndpoint = "/auth/refresh-token";
+      
+      if (module === "admin") {
+        refreshEndpoint = "/admin/auth/refresh-token";
+      } else if (module === "restaurant") {
+        refreshEndpoint = "/restaurant/auth/refresh-token";
+      } else if (module === "delivery") {
+        refreshEndpoint = "/delivery/auth/refresh-token";
+      }
+      
+      const response = await axios.post(
+        `${API_BASE_URL}${refreshEndpoint}`,
+        {},
+        { withCredentials: true }
+      );
+      
+      const { accessToken } = response.data.data || response.data;
+      
+      if (accessToken) {
+        const tokenKey = `${module}_accessToken`;
+        const currentUserToken = getModuleToken(module);
+        
+        if (module === "user" && sessionStorage.getItem("user_accessToken") === currentUserToken) {
+          sessionStorage.setItem("user_accessToken", accessToken);
+        } else {
+          localStorage.setItem(tokenKey, accessToken);
+        }
+        
+        if (import.meta.env.DEV) {
+          console.log(`[Token Refresh] Proactively refreshed ${module} token`);
+        }
+      }
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.warn(`[Token Refresh] Failed to proactively refresh ${module} token:`, error.message);
+      }
+    } finally {
+      tokenRefreshState.refreshInProgress = false;
+    }
+  }
+}
 
 /**
  * Get the appropriate module token based on the current route
@@ -92,9 +161,26 @@ function getTokenForCurrentRoute() {
  * Adds authentication token to requests based on current route
  */
 apiClient.interceptors.request.use(
-  (config) => {
+  async (config) => {
     // Get access token for the current module based on route
     let accessToken = getTokenForCurrentRoute();
+    
+    // Proactively refresh token if it's about to expire (non-blocking)
+    const currentPath = window.location.pathname;
+    let currentModule = "user";
+    
+    if (currentPath.startsWith("/admin")) {
+      currentModule = "admin";
+    } else if (currentPath.startsWith("/restaurant") && !currentPath.startsWith("/restaurants")) {
+      currentModule = "restaurant";
+    } else if (currentPath.startsWith("/delivery")) {
+      currentModule = "delivery";
+    }
+    
+    // Don't block the request, but trigger proactive refresh in background
+    proactiveTokenRefresh(currentModule).catch(() => {
+      // Ignore errors in proactive refresh
+    });
 
     // Fallback to legacy token if module-specific token not found
     if (!accessToken || accessToken.trim() === "") {

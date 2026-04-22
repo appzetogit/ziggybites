@@ -307,8 +307,10 @@ export const verifyOTP = asyncHandler(async (req, res) => {
     res.cookie("refreshToken", tokens.refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+      path: "/",
+      domain: process.env.NODE_ENV === "production" ? undefined : "localhost"
     });
 
     // Return access token and user info
@@ -484,7 +486,9 @@ export const logout = asyncHandler(async (req, res) => {
   res.clearCookie("refreshToken", {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
+    sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
+    path: "/",
+    domain: process.env.NODE_ENV === "production" ? undefined : "localhost"
   });
 
   return successResponse(res, 200, "Logged out successfully");
@@ -559,8 +563,10 @@ export const register = asyncHandler(async (req, res) => {
   res.cookie("refreshToken", tokens.refreshToken, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
+    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+    path: "/",
+    domain: process.env.NODE_ENV === "production" ? undefined : "localhost"
   });
 
   logger.info(`New user registered via email: ${user._id}`, {
@@ -661,8 +667,10 @@ export const login = asyncHandler(async (req, res) => {
   res.cookie("refreshToken", tokens.refreshToken, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
+    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+    path: "/",
+    domain: process.env.NODE_ENV === "production" ? undefined : "localhost"
   });
 
   logger.info(`User logged in via email: ${user._id}`, {
