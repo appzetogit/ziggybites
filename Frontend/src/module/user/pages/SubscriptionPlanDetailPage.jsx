@@ -79,6 +79,7 @@ export default function SubscriptionPlanDetailPage() {
   const [priceBreakdown, setPriceBreakdown] = useState(null)
   const [priceLoading, setPriceLoading] = useState(false)
   const [deliveryPerDay, setDeliveryPerDay] = useState(30)
+  const [sameDurationPurchased, setSameDurationPurchased] = useState(false)
   const fetchPriceAbortRef = useRef(null)
   const lastFetchKeyRef = useRef("")
 
@@ -201,8 +202,10 @@ export default function SubscriptionPlanDetailPage() {
         setPlan(found || (typeof duration === "number" ? FALLBACK_PLANS.find((p) => p.durationDays === duration) : null) || null)
         if (purchasedRes?.data?.success && Array.isArray(purchasedRes.data.data)) {
           const purchased = purchasedRes.data.data.some((p) => p.planDays === duration)
+          setSameDurationPurchased(purchased)
           setAlreadyPurchased(purchased)
         } else {
+          setSameDurationPurchased(false)
           setAlreadyPurchased(false)
         }
       } catch (e) {
@@ -266,7 +269,9 @@ export default function SubscriptionPlanDetailPage() {
   const totalPrice = priceBreakdown?.totalPrice ?? (isDynamicPlan ? null : plan.price)
   const hasPositivePrice = isDynamicPlan ? (priceBreakdown?.totalPrice > 0) : (plan.price > 0)
   const mealsReady = hasAnyMealSelection(displayItems)
-  const canPay = !alreadyPurchased && hasPositivePrice && mealsReady
+  const canExtendCurrentPlan = activeSubscriptions.length > 0
+  const showPurchasedState = sameDurationPurchased && !canExtendCurrentPlan
+  const canPay = !showPurchasedState && hasPositivePrice && mealsReady
   const mealRestaurantId =
     displayItems?.find((item) => item?.restaurantId)?.restaurantId || "ziggybites"
   const mealRestaurantName =
@@ -278,7 +283,7 @@ export default function SubscriptionPlanDetailPage() {
       : `Pay ₹${(priceBreakdown?.breakdown?.totalPrice ?? totalPrice ?? 0).toLocaleString("en-IN")}`
 
   const handlePayNow = async () => {
-    if (alreadyPurchased || !canPay) return
+    if (showPurchasedState || !canPay) return
     if (!duration || !plan) return
     if (!mealsReady) {
       setError("Add at least one meal on the Subscription page before paying.")
@@ -390,7 +395,7 @@ export default function SubscriptionPlanDetailPage() {
               {plan.name}
             </h1>
 
-            {alreadyPurchased ? (
+            {showPurchasedState ? (
               <div className="mt-8 space-y-6">
                 <div className="p-5 rounded-2xl border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/30 text-green-800 dark:text-green-200">
                   <div className="flex items-center gap-2 font-bold mb-1">
@@ -404,7 +409,7 @@ export default function SubscriptionPlanDetailPage() {
                 
                 <button
                   type="button"
-                  onClick={() => navigate("/subscription")}
+                  onClick={() => navigate("/subscription/manage")}
                   className="w-full inline-flex items-center justify-center gap-3 rounded-2xl bg-[#DC2626] px-8 py-5 text-xl font-bold text-white hover:bg-[#B91C1C] transition-all shadow-[0_10px_25px_-5px_rgba(220,38,38,0.4)] active:scale-[0.98]"
                 >
                   Manage Subscription
@@ -562,7 +567,7 @@ export default function SubscriptionPlanDetailPage() {
         </div>
 
         {/* Mobile: fixed pay bar above bottom nav so CTAs are never hidden */}
-        {!alreadyPurchased && (
+        {!showPurchasedState && (
           <div
             className="md:hidden fixed left-0 right-0 z-[45] border-t border-gray-200 dark:border-gray-700 bg-white/98 dark:bg-gray-900/98 backdrop-blur-md shadow-[0_-8px_30px_rgba(0,0,0,0.08)] px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
             style={{ bottom: "4.75rem" }}

@@ -16,6 +16,8 @@ router.use(authenticate);
 router.post('/signup/details', validate(Joi.object({
   name: Joi.string().trim().min(2).max(100).required(),
   email: Joi.string().email().lowercase().trim().optional().allow(null, ''),
+  phone: Joi.string().trim().pattern(/^\+?\d{10,15}$/).optional().allow(null, ''),
+  primaryContact: Joi.string().trim().pattern(/^\+?\d{10,15}$/).optional().allow(null, ''),
   address: Joi.string().trim().required(),
   city: Joi.string().trim().required(),
   state: Joi.string().trim().required(),
@@ -46,4 +48,3 @@ router.post('/signup/documents', validate(Joi.object({
 })), submitSignupDocuments);
 
 export default router;
-

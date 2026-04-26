@@ -20,6 +20,27 @@ const cuisinesOptions = [
 
 const daysOfWeek = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const PHONE_REGEX = /^\d{10}$/
+const CITY_REGEX = /^[A-Za-z][A-Za-z\s.-]{1,49}$/
+const PINCODE_REGEX = /^\d{6}$/
+const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]$/
+const GST_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/
+const FSSAI_REGEX = /^\d{14}$/
+const ACCOUNT_NUMBER_REGEX = /^\d{9,18}$/
+const IFSC_REGEX = /^[A-Z]{4}0[A-Z0-9]{6}$/
+const PERSON_NAME_REGEX = /^[A-Za-z][A-Za-z\s.'-]{1,79}$/
+
+const digitsOnly = (value) => String(value || "").replace(/\D/g, "")
+const upperTrim = (value) => String(value || "").trim().toUpperCase()
+const isFutureOrToday = (value) => {
+  if (!value) return false
+  const expiryDate = new Date(value)
+  if (Number.isNaN(expiryDate.getTime())) return false
+  expiryDate.setHours(23, 59, 59, 999)
+  return expiryDate >= new Date()
+}
+
 export default function AddRestaurant() {
   const navigate = useNavigate()
   const [step, setStep] = useState(1)
@@ -121,12 +142,19 @@ export default function AddRestaurant() {
     const errors = []
     if (!step1.restaurantName?.trim()) errors.push("Restaurant name is required")
     if (!step1.ownerName?.trim()) errors.push("Owner name is required")
+    else if (!PERSON_NAME_REGEX.test(step1.ownerName.trim())) errors.push("Owner name should be in format")
     if (!step1.ownerEmail?.trim()) errors.push("Owner email is required")
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(step1.ownerEmail)) errors.push("Please enter a valid email address")
+    else if (!EMAIL_REGEX.test(step1.ownerEmail.trim())) errors.push("Owner email should be in format")
     if (!step1.ownerPhone?.trim()) errors.push("Owner phone number is required")
+    else if (!PHONE_REGEX.test(digitsOnly(step1.ownerPhone))) errors.push("Owner phone number should be in format")
     if (!step1.primaryContactNumber?.trim()) errors.push("Primary contact number is required")
+    else if (!PHONE_REGEX.test(digitsOnly(step1.primaryContactNumber))) errors.push("Restaurant phone number should be in format")
     if (!step1.location?.area?.trim()) errors.push("Area/Sector/Locality is required")
     if (!step1.location?.city?.trim()) errors.push("City is required")
+    else if (!CITY_REGEX.test(step1.location.city.trim())) errors.push("City field should be in format")
+    if (step1.location?.pincode?.trim() && !PINCODE_REGEX.test(digitsOnly(step1.location.pincode))) {
+      errors.push("Pin Code field should be in format")
+    }
     return errors
   }
 
@@ -144,22 +172,32 @@ export default function AddRestaurant() {
   const validateStep3 = () => {
     const errors = []
     if (!step3.panNumber?.trim()) errors.push("PAN number is required")
+    else if (!PAN_REGEX.test(upperTrim(step3.panNumber))) errors.push("Pan no. should be in format")
     if (!step3.nameOnPan?.trim()) errors.push("Name on PAN is required")
+    else if (!PERSON_NAME_REGEX.test(step3.nameOnPan.trim())) errors.push("Pan holder name should be in format")
     if (!step3.panImage) errors.push("PAN image is required")
     if (!step3.fssaiNumber?.trim()) errors.push("FSSAI number is required")
+    else if (!FSSAI_REGEX.test(digitsOnly(step3.fssaiNumber))) errors.push("FSSAI no. should be in format")
     if (!step3.fssaiExpiry?.trim()) errors.push("FSSAI expiry date is required")
+    else if (!isFutureOrToday(step3.fssaiExpiry)) errors.push("Expiry date should not take past date")
     if (!step3.fssaiImage) errors.push("FSSAI image is required")
     if (step3.gstRegistered) {
       if (!step3.gstNumber?.trim()) errors.push("GST number is required when GST registered")
+      else if (!GST_REGEX.test(upperTrim(step3.gstNumber))) errors.push("GST no. should be in format")
       if (!step3.gstLegalName?.trim()) errors.push("GST legal name is required when GST registered")
+      else if (!PERSON_NAME_REGEX.test(step3.gstLegalName.trim())) errors.push("GST legal name should be in format")
       if (!step3.gstAddress?.trim()) errors.push("GST registered address is required when GST registered")
       if (!step3.gstImage) errors.push("GST image is required when GST registered")
     }
     if (!step3.accountNumber?.trim()) errors.push("Account number is required")
+    else if (!ACCOUNT_NUMBER_REGEX.test(digitsOnly(step3.accountNumber))) errors.push("Account no. should be in format")
     if (step3.accountNumber !== step3.confirmAccountNumber) errors.push("Account number and confirmation do not match")
     if (!step3.ifscCode?.trim()) errors.push("IFSC code is required")
+    else if (!IFSC_REGEX.test(upperTrim(step3.ifscCode))) errors.push("IFSC code should be in format")
     if (!step3.accountHolderName?.trim()) errors.push("Account holder name is required")
+    else if (!PERSON_NAME_REGEX.test(step3.accountHolderName.trim())) errors.push("Account Holder name should be in format")
     if (!step3.accountType?.trim()) errors.push("Account type is required")
+    else if (!["savings", "current"].includes(step3.accountType.trim().toLowerCase())) errors.push("Account type should give dropdown for saving & current")
     return errors
   }
 
@@ -177,7 +215,8 @@ export default function AddRestaurant() {
   const validateAuth = () => {
     const errors = []
     if (!auth.email && !auth.phone) errors.push("Either email or phone is required")
-    if (auth.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(auth.email)) errors.push("Please enter a valid email address")
+    if (auth.email && !EMAIL_REGEX.test(auth.email.trim())) errors.push("Authentication email should be in format")
+    if (auth.phone && !PHONE_REGEX.test(digitsOnly(auth.phone))) errors.push("Authentication phone number should be in format")
     return errors
   }
 
@@ -359,7 +398,7 @@ export default function AddRestaurant() {
             <Input
               type="email"
               value={step1.ownerEmail || ""}
-              onChange={(e) => setStep1({ ...step1, ownerEmail: e.target.value })}
+              onChange={(e) => setStep1({ ...step1, ownerEmail: e.target.value.trim() })}
               className="mt-1 bg-white text-sm text-black placeholder-black"
               placeholder="owner@example.com"
             />
@@ -368,7 +407,7 @@ export default function AddRestaurant() {
             <Label className="text-xs text-gray-700">Phone number*</Label>
             <Input
               value={step1.ownerPhone || ""}
-              onChange={(e) => setStep1({ ...step1, ownerPhone: e.target.value })}
+              onChange={(e) => setStep1({ ...step1, ownerPhone: digitsOnly(e.target.value).slice(0, 10) })}
               className="mt-1 bg-white text-sm text-black placeholder-black"
               placeholder="+91 98XXXXXX"
             />
@@ -381,8 +420,8 @@ export default function AddRestaurant() {
         <div>
           <Label className="text-xs text-gray-700">Primary contact number*</Label>
           <Input
-            value={step1.primaryContactNumber || ""}
-            onChange={(e) => setStep1({ ...step1, primaryContactNumber: e.target.value })}
+          value={step1.primaryContactNumber || ""}
+          onChange={(e) => setStep1({ ...step1, primaryContactNumber: digitsOnly(e.target.value).slice(0, 10) })}
             className="mt-1 bg-white text-sm text-black placeholder-black"
             placeholder="Restaurant's primary contact number"
           />
@@ -396,7 +435,7 @@ export default function AddRestaurant() {
           />
           <Input
             value={step1.location?.city || ""}
-            onChange={(e) => setStep1({ ...step1, location: { ...step1.location, city: e.target.value } })}
+            onChange={(e) => setStep1({ ...step1, location: { ...step1.location, city: e.target.value.replace(/[^A-Za-z\s.-]/g, "").slice(0, 50) } })}
             className="bg-white text-sm"
             placeholder="City*"
           />
@@ -420,7 +459,7 @@ export default function AddRestaurant() {
           />
           <Input
             value={step1.location?.pincode || ""}
-            onChange={(e) => setStep1({ ...step1, location: { ...step1.location, pincode: e.target.value } })}
+            onChange={(e) => setStep1({ ...step1, location: { ...step1.location, pincode: digitsOnly(e.target.value).slice(0, 6) } })}
             className="bg-white text-sm"
             placeholder="Pin code (optional)"
           />
@@ -605,7 +644,7 @@ export default function AddRestaurant() {
             <Label className="text-xs text-gray-700">PAN number*</Label>
             <Input
               value={step3.panNumber || ""}
-              onChange={(e) => setStep3({ ...step3, panNumber: e.target.value })}
+              onChange={(e) => setStep3({ ...step3, panNumber: upperTrim(e.target.value).slice(0, 10) })}
               className="mt-1 bg-white text-sm text-black placeholder-black"
             />
           </div>
@@ -613,7 +652,7 @@ export default function AddRestaurant() {
             <Label className="text-xs text-gray-700">Name on PAN*</Label>
             <Input
               value={step3.nameOnPan || ""}
-              onChange={(e) => setStep3({ ...step3, nameOnPan: e.target.value })}
+              onChange={(e) => setStep3({ ...step3, nameOnPan: e.target.value.replace(/[^A-Za-z\s.'-]/g, "").slice(0, 80) })}
               className="mt-1 bg-white text-sm text-black placeholder-black"
             />
           </div>
@@ -650,8 +689,8 @@ export default function AddRestaurant() {
         </div>
         {step3.gstRegistered && (
           <div className="space-y-3">
-            <Input value={step3.gstNumber || ""} onChange={(e) => setStep3({ ...step3, gstNumber: e.target.value })} className="bg-white text-sm" placeholder="GST number*" />
-            <Input value={step3.gstLegalName || ""} onChange={(e) => setStep3({ ...step3, gstLegalName: e.target.value })} className="bg-white text-sm" placeholder="Legal name*" />
+            <Input value={step3.gstNumber || ""} onChange={(e) => setStep3({ ...step3, gstNumber: upperTrim(e.target.value).slice(0, 15) })} className="bg-white text-sm" placeholder="GST number*" />
+            <Input value={step3.gstLegalName || ""} onChange={(e) => setStep3({ ...step3, gstLegalName: e.target.value.replace(/[^A-Za-z\s.'-]/g, "").slice(0, 80) })} className="bg-white text-sm" placeholder="Legal name*" />
             <Input value={step3.gstAddress || ""} onChange={(e) => setStep3({ ...step3, gstAddress: e.target.value })} className="bg-white text-sm" placeholder="Registered address*" />
             <Input type="file" accept="image/*" onChange={(e) => setStep3({ ...step3, gstImage: e.target.files?.[0] || null })} className="bg-white text-sm" />
           </div>
@@ -661,7 +700,7 @@ export default function AddRestaurant() {
       <section className="bg-white p-4 sm:p-6 rounded-md space-y-4">
         <h2 className="text-lg font-semibold text-black">FSSAI details</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Input value={step3.fssaiNumber || ""} onChange={(e) => setStep3({ ...step3, fssaiNumber: e.target.value })} className="bg-white text-sm" placeholder="FSSAI number*" />
+          <Input value={step3.fssaiNumber || ""} onChange={(e) => setStep3({ ...step3, fssaiNumber: digitsOnly(e.target.value).slice(0, 14) })} className="bg-white text-sm" placeholder="FSSAI number*" />
           <div>
             <Label className="text-xs text-gray-700 mb-1 block">FSSAI expiry date*</Label>
             <Input
@@ -678,14 +717,22 @@ export default function AddRestaurant() {
       <section className="bg-white p-4 sm:p-6 rounded-md space-y-4">
         <h2 className="text-lg font-semibold text-black">Bank account details</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Input value={step3.accountNumber || ""} onChange={(e) => setStep3({ ...step3, accountNumber: e.target.value.trim() })} className="bg-white text-sm" placeholder="Account number*" />
-          <Input value={step3.confirmAccountNumber || ""} onChange={(e) => setStep3({ ...step3, confirmAccountNumber: e.target.value.trim() })} className="bg-white text-sm" placeholder="Re-enter account number*" />
+          <Input value={step3.accountNumber || ""} onChange={(e) => setStep3({ ...step3, accountNumber: digitsOnly(e.target.value).slice(0, 18) })} className="bg-white text-sm" placeholder="Account number*" />
+          <Input value={step3.confirmAccountNumber || ""} onChange={(e) => setStep3({ ...step3, confirmAccountNumber: digitsOnly(e.target.value).slice(0, 18) })} className="bg-white text-sm" placeholder="Re-enter account number*" />
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Input value={step3.ifscCode || ""} onChange={(e) => setStep3({ ...step3, ifscCode: e.target.value })} className="bg-white text-sm" placeholder="IFSC code*" />
-          <Input value={step3.accountType || ""} onChange={(e) => setStep3({ ...step3, accountType: e.target.value })} className="bg-white text-sm" placeholder="Account type (savings / current)*" />
+          <Input value={step3.ifscCode || ""} onChange={(e) => setStep3({ ...step3, ifscCode: upperTrim(e.target.value).slice(0, 11) })} className="bg-white text-sm" placeholder="IFSC code*" />
+          <select
+            value={step3.accountType || ""}
+            onChange={(e) => setStep3({ ...step3, accountType: e.target.value })}
+            className="flex h-9 w-full rounded-md border border-input bg-white px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          >
+            <option value="">Select account type*</option>
+            <option value="savings">Savings</option>
+            <option value="current">Current</option>
+          </select>
         </div>
-        <Input value={step3.accountHolderName || ""} onChange={(e) => setStep3({ ...step3, accountHolderName: e.target.value })} className="bg-white text-sm" placeholder="Account holder name*" />
+        <Input value={step3.accountHolderName || ""} onChange={(e) => setStep3({ ...step3, accountHolderName: e.target.value.replace(/[^A-Za-z\s.'-]/g, "").slice(0, 80) })} className="bg-white text-sm" placeholder="Account holder name*" />
       </section>
     </div>
   )
@@ -776,7 +823,7 @@ export default function AddRestaurant() {
           <Input
             type="email"
             value={String(auth.email || "")}
-            onChange={(e) => setAuth({ ...auth, email: e.target.value || "", signupMethod: e.target.value ? 'email' : 'phone' })}
+            onChange={(e) => setAuth({ ...auth, email: (e.target.value || "").trim(), signupMethod: e.target.value ? 'email' : 'phone' })}
             className="mt-1 bg-white text-sm"
             placeholder="restaurant@example.com"
           />
@@ -786,7 +833,7 @@ export default function AddRestaurant() {
           <Input
             type="tel"
             value={String(auth.phone || "")}
-            onChange={(e) => setAuth({ ...auth, phone: e.target.value || "", signupMethod: !auth.email ? 'phone' : 'email' })}
+            onChange={(e) => setAuth({ ...auth, phone: digitsOnly(e.target.value).slice(0, 10), signupMethod: !auth.email ? 'phone' : 'email' })}
             className="mt-1 bg-white text-sm"
             placeholder="+91 9876543210"
           />

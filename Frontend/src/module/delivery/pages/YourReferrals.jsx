@@ -78,10 +78,14 @@ export default function YourReferrals() {
           <ArrowLeft className="w-5 h-5" />
         </button>
         <h1 className="text-lg font-bold">Your referrals</h1>
-        <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => navigate("/delivery/help/tickets")}
+          className="flex items-center gap-2 rounded-full px-2 py-1 hover:bg-gray-800 transition-colors"
+        >
           <Headphones className="w-5 h-5" />
           <span className="text-sm">Help</span>
-        </div>
+        </button>
       </div>
 
       {/* Earnings Card */}
@@ -224,4 +228,3 @@ export default function YourReferrals() {
     </div>
   )
 }
-

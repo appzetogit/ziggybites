@@ -4,9 +4,7 @@ import {
   Calendar,
   Package,
   Check,
-  MessageCircle,
   Info,
-  ChevronRight,
   PauseCircle,
   Truck,
 } from "lucide-react"
@@ -35,7 +33,6 @@ const FALLBACK_PLANS = [
   { durationDays: 90, name: "90 Days (Value)", price: 1299, discountPercent: 25, description: "Quarterly value plan. Best value." },
 ]
 
-const WHATSAPP_SUPPORT = "https://wa.me/919769203828?text=" + encodeURIComponent("Hi, I need help with my subscription on Ziggybites.")
 const REQUEST_TIMEOUT_MS = 8000
 
 function withRequestTimeout(promise, fallback) {
@@ -200,9 +197,6 @@ export default function SubscriptionPage() {
   const [showPolicy, setShowPolicy] = useState(false)
   const planPurchased = location.state?.planPurchased
   const [draftItems, setDraftItems] = useState(() => readSubscriptionDraftFromStorage())
-  const [walletBalance, setWalletBalance] = useState(null)
-  const [recentOrders, setRecentOrders] = useState([])
-
   const { userProfile: profileFromContext } = useProfile()
   const displayProfile = profile || profileFromContext
   const skipMealRedirect = Boolean(location.state?.skipMealRedirect)
@@ -287,23 +281,6 @@ export default function SubscriptionPage() {
           navigate(location.pathname, { replace: true, state: { planPurchased: location.state?.planPurchased } })
         }
 
-        void Promise.all([
-          withRequestTimeout(api.get("/order?limit=10"), { data: { success: false, data: { orders: [] } } }),
-          withRequestTimeout(userAPI.getWallet(), { data: { success: false, data: { balance: 0 } } }),
-        ]).then(([ordersRes, walletRes]) => {
-          if (cancelled) return
-
-          if (walletRes?.data?.success) {
-            const walletData = walletRes.data.data?.wallet || walletRes.data.data
-            setWalletBalance(walletData?.balance ?? 0)
-          }
-
-          if (ordersRes?.data?.success) {
-            const resData = ordersRes.data.data || ordersRes.data
-            const allOrders = resData?.orders || (Array.isArray(resData) ? resData : [])
-            setRecentOrders(allOrders.filter((o) => o.source?.type === "subscription" || o.source?.subscriptionId))
-          }
-        })
       } catch (e) {
         if (cancelled) return
         setError(e.message)
@@ -339,27 +316,6 @@ export default function SubscriptionPage() {
     const { skipMealRedirect: _skip, ...rest } = location.state || {}
     navigate(location.pathname, { replace: true, state: Object.keys(rest).length ? rest : undefined })
   }, [location.state, location.pathname, navigate])
-
-  useEffect(() => {
-    if (!hasActive || !primarySubscription) {
-      setWalletBalance(null)
-      return
-    }
-    let cancelled = false
-    ;(async () => {
-      try {
-        const r = await userAPI.getWallet()
-        const w = r?.data?.data?.wallet ?? r?.data?.wallet ?? r?.data?.data
-        const b = typeof w?.balance === "number" ? w.balance : null
-        if (!cancelled) setWalletBalance(b)
-      } catch {
-        if (!cancelled) setWalletBalance(null)
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [hasActive, primarySubscription?._id])
 
   const refreshMealSubscriptions = async () => {
     try {
@@ -433,7 +389,14 @@ export default function SubscriptionPage() {
 
 
   const displayPlans = plans.length > 0 ? plans : FALLBACK_PLANS
-  const latestPurchased = purchasedPlans.length > 0 ? purchasedPlans[0] : null
+  const sortedPurchasedPlans = useMemo(() => {
+    return [...purchasedPlans].sort((a, b) => {
+      const aTime = a?.purchasedAt ? new Date(a.purchasedAt).getTime() : 0
+      const bTime = b?.purchasedAt ? new Date(b.purchasedAt).getTime() : 0
+      return bTime - aTime
+    })
+  }, [purchasedPlans])
+  const latestPurchased = sortedPurchasedPlans.length > 0 ? sortedPurchasedPlans[0] : null
 
   const purchasedPlanMeta =
     latestPurchased && displayPlans.find((p) => p.durationDays === latestPurchased.planDays)
@@ -444,14 +407,14 @@ export default function SubscriptionPage() {
   let totalPurchasedDays = 0
 
   // Combine validity of all purchased plans
-  if (purchasedPlans.length > 0) {
-    const totalDays = purchasedPlans.reduce(
+  if (sortedPurchasedPlans.length > 0) {
+    const totalDays = sortedPurchasedPlans.reduce(
       (sum, p) => sum + (Number(p.planDays) || 0),
       0,
     )
     totalPurchasedDays = totalDays
 
-    const withDates = purchasedPlans.filter((p) => p.purchasedAt)
+    const withDates = sortedPurchasedPlans.filter((p) => p.purchasedAt)
     const earliest =
       withDates.length > 0
         ? withDates.reduce((earliestSoFar, current) =>
@@ -498,70 +461,6 @@ export default function SubscriptionPage() {
     return days * itemsCount;
   }, [displayRemainingDays, primarySubscription]);
 
-  const recentActivity = useMemo(() => {
-    const activities = []
-
-    recentOrders.forEach((order) => {
-      const createdAt = order?.createdAt ? new Date(order.createdAt) : null
-      activities.push({
-        id: `order-${order._id || createdAt?.getTime?.() || Math.random()}`,
-        title: order.status === "delivered" ? "Meal Delivered" : `${order.status || "Pending"} Order`,
-        subtitle:
-          createdAt && !Number.isNaN(createdAt.getTime())
-            ? `${createdAt.toLocaleDateString()} at ${createdAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
-            : "Subscription order update",
-        value: order.status === "delivered" ? "+1 Meal" : `₹${order.pricing?.total || 0}`,
-        icon: order.status === "delivered" ? "delivered" : "order",
-        at: createdAt,
-      })
-    })
-
-    if (latestPurchased?.purchasedAt) {
-      const purchasedAt = new Date(latestPurchased.purchasedAt)
-      activities.push({
-        id: `plan-${latestPurchased._id || purchasedAt.getTime()}`,
-        title: "Plan Purchased",
-        subtitle: !Number.isNaN(purchasedAt.getTime())
-          ? purchasedAt.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
-          : "Subscription plan purchase",
-        value: `${latestPurchased.planDays || 0} Days`,
-        icon: "plan",
-        at: purchasedAt,
-      })
-    }
-
-    if (primarySubscription?.nextDeliveryAt) {
-      const nextDeliveryAt = new Date(primarySubscription.nextDeliveryAt)
-      activities.push({
-        id: `next-delivery-${primarySubscription._id || nextDeliveryAt.getTime()}`,
-        title: primarySubscription.status === "paused" ? "Delivery Paused" : "Next Delivery Scheduled",
-        subtitle: !Number.isNaN(nextDeliveryAt.getTime())
-          ? formatNextDeliveryLabel(primarySubscription.nextDeliveryAt)
-          : "Upcoming subscription delivery",
-        value: primarySubscription.status === "paused" ? "Paused" : "Upcoming",
-        icon: primarySubscription.status === "paused" ? "paused" : "scheduled",
-        at: nextDeliveryAt,
-      })
-    } else if (primarySubscription?.createdAt) {
-      const createdAt = new Date(primarySubscription.createdAt)
-      activities.push({
-        id: `subscription-${primarySubscription._id || createdAt.getTime()}`,
-        title: "Subscription Active",
-        subtitle: !Number.isNaN(createdAt.getTime())
-          ? `Started on ${createdAt.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}`
-          : "Subscription started",
-        value: primarySubscription.planName?.replace(/ plan$/i, "") || `${primarySubscription.planDays || 0} Days`,
-        icon: "plan",
-        at: createdAt,
-      })
-    }
-
-    return activities
-      .filter((activity) => activity.at && !Number.isNaN(activity.at.getTime()))
-      .sort((a, b) => b.at.getTime() - a.at.getTime())
-      .slice(0, 3)
-  }, [recentOrders, latestPurchased, primarySubscription])
-
   const hasBillingPlan = !!(dashboard?.activePlan || purchasedPlanMeta)
 
 
@@ -596,15 +495,7 @@ export default function SubscriptionPage() {
             <Info className="h-3.5 w-3.5 text-[#DC2626]" />
             7-day cancellation
           </button>
-          <a
-            href={WHATSAPP_SUPPORT}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 rounded-full border border-[#DC2626]/20 bg-white px-3.5 py-2 text-xs font-semibold text-[#DC2626] shadow-sm"
-          >
-            <MessageCircle className="h-3.5 w-3.5" />
-            WhatsApp
-          </a>
+
         </div>
 
         {planPurchased && !showMandatePrompt && (
@@ -660,132 +551,50 @@ export default function SubscriptionPage() {
                   />
                </div>
 
-               <div className="flex items-center justify-between border-t border-black/10 pt-6">
-                 <div>
+               <div className="flex items-end justify-between gap-4 border-t border-black/10 pt-6">
+                 <div className="min-w-0">
                    <p className="mb-1 text-[10px] font-black uppercase leading-none tracking-widest text-black/45">Valid Until</p>
                    <p className="text-sm font-black leading-none text-black">
                      {displayEndDate}
                    </p>
                  </div>
-                 <Button 
-                   variant={dashboard?.cancellationRequestedAt ? "outline" : "default"}
-                   onClick={dashboard?.cancellationRequestedAt ? () => {} : () => navigate("/subscription/plans")}
-                   className={`h-12 px-8 rounded-2xl font-black text-sm ${
-                     dashboard?.cancellationRequestedAt 
-                     ? "border-[#DC2626] bg-white text-[#DC2626]" 
-                     : "bg-[#DC2626] text-white hover:bg-[#B91C1C]"
-                   }`}
-                 >
-                   {dashboard?.cancellationRequestedAt ? "Cancellation Pending" : "Extend Plan"}
-                 </Button>
+                 <div className="flex flex-col items-stretch gap-2 sm:min-w-[11rem]">
+                   <Button
+                     variant="outline"
+                     onClick={() => navigate("/subscription/manage")}
+                     className="h-11 rounded-2xl border-black/10 bg-white px-5 font-black text-sm text-black hover:bg-black/[0.03]"
+                   >
+                     Manage Plan
+                   </Button>
+                   <Button 
+                     variant={dashboard?.cancellationRequestedAt ? "outline" : "default"}
+                     onClick={dashboard?.cancellationRequestedAt ? () => {} : () => navigate("/subscription/plans")}
+                     className={`h-12 rounded-2xl px-5 font-black text-sm ${
+                       dashboard?.cancellationRequestedAt 
+                       ? "border-[#DC2626] bg-white text-[#DC2626]" 
+                       : "bg-[#DC2626] text-white hover:bg-[#B91C1C]"
+                     }`}
+                   >
+                     {dashboard?.cancellationRequestedAt ? "Cancellation Pending" : "Extend Plan"}
+                   </Button>
+                 </div>
                </div>
             </section>
 
-            {/* Wallet Card */}
-            <div className="flex items-center justify-between rounded-[2rem] border border-black/10 bg-white p-6">
-               <div className="flex items-center gap-4">
-                 <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-red-50">
-                    <div className="h-8 w-8 rounded-lg bg-[#DC143C] flex items-center justify-center text-white">
-                       <div className="h-4 w-4 border-2 border-white rounded-[2px] flex items-center justify-center">
-                          <div className="h-1 w-2 bg-white rounded-full translate-x-1" />
-                       </div>
-                    </div>
-                 </div>
-                 <div>
-                    <p className="mb-0.5 text-[10px] font-black uppercase tracking-widest text-black/45">Wallet Balance</p>
-                    <p className="text-2xl font-black text-black">
-                       ₹{walletBalance != null ? Number(walletBalance).toFixed(2) : "0.00"}
-                    </p>
-                 </div>
-               </div>
-               <Link to="/wallet" className="text-xs font-black uppercase tracking-widest text-[#DC2626]">
-                 Add Money
-               </Link>
-            </div>
 
-            {/* Deliveries Card */}
+            {/* Remaining Meals Card */}
             <Link to="/subscription/manage" className="flex items-center gap-5 rounded-[2rem] border border-black/10 bg-white p-6 shadow-sm">
                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-red-50 text-[#DC2626]">
                   <Truck className="h-6 w-6" strokeWidth={2.5} />
                </div>
                 <div>
-                  <p className="mb-0.5 text-[10px] font-black uppercase tracking-widest text-black/45">Remaining Deliveries</p>
+                  <p className="mb-0.5 text-[10px] font-black uppercase tracking-widest text-black/45">Remaining Meals</p>
                    <p className="text-lg font-black text-black">
-                     {remainingDeliveries} Meals Total
+                     {remainingDeliveries} Meals
                    </p>
                 </div>
             </Link>
 
-            {/* Recent Activity */}
-            <div className="pt-4">
-               <div className="flex items-center justify-between mb-4">
-                 <h3 className="text-xl font-extrabold text-black">Recent Activity</h3>
-                 <Link to="/orders" className="text-[10px] font-black uppercase tracking-widest text-black/45">View All</Link>
-               </div>
-               <div className="space-y-3">
-                 {recentActivity.length > 0 ? recentActivity.map((activity) => (
-                   <div key={activity.id} className="flex items-center justify-between rounded-3xl border border-black/10 bg-white p-5">
-                    <div className="flex items-center gap-4">
-                       <div className={`flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white ${
-                         activity.icon === 'delivered'
-                           ? 'text-[#DC2626]'
-                           : activity.icon === 'plan'
-                             ? 'text-[#DC2626]'
-                           : activity.icon === 'paused'
-                               ? 'text-black'
-                               : 'text-black'
-                       }`}>
-                          {activity.icon === 'delivered' ? (
-                            <Check className="h-5 w-5" strokeWidth={3} />
-                          ) : activity.icon === 'plan' ? (
-                            <Package className="h-5 w-5" strokeWidth={2.2} />
-                          ) : activity.icon === 'paused' ? (
-                            <PauseCircle className="h-5 w-5" strokeWidth={2.2} />
-                          ) : activity.icon === 'scheduled' ? (
-                            <Calendar className="h-5 w-5" strokeWidth={2.2} />
-                          ) : (
-                            <Truck className="h-5 w-5" strokeWidth={2} />
-                          )}
-                       </div>
-                       <div>
-                          <p className="text-sm font-black leading-tight capitalize text-black">
-                            {activity.title}
-                          </p>
-                          <p className="mt-1 text-[10px] font-bold leading-none text-black/45">
-                            {activity.subtitle}
-                          </p>
-                       </div>
-                    </div>
-                    <span className="text-xs font-black uppercase tracking-widest text-black">
-                      {activity.value}
-                    </span>
-                  </div>
-                 )) : (
-                   <div className="rounded-3xl border border-dashed border-black/15 bg-white p-8 text-center">
-                      <p className="text-xs font-bold uppercase tracking-widest text-black/45">No recent subscription activity</p>
-                   </div>
-                 )}
-               </div>
-            </div>
-
-            {/* Help Card */}
-            <a 
-              href={WHATSAPP_SUPPORT}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-between rounded-3xl border border-black/10 bg-white p-6"
-            >
-               <div className="flex items-center gap-5">
-                 <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[#DC2626] text-white">
-                    <MessageCircle className="h-7 w-7 fill-white" strokeWidth={1} />
-                 </div>
-                 <div>
-                    <p className="font-extrabold leading-tight text-black">Need any help?</p>
-                    <p className="mt-1 text-[11px] font-bold text-black/60">Chat with us on WhatsApp</p>
-                 </div>
-               </div>
-               <ChevronRight className="h-5 w-5 text-[#DC2626]" />
-            </a>
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center py-20 text-center">
@@ -834,7 +643,7 @@ export default function SubscriptionPage() {
 
       {/* 7-day policy popup */}
       <Dialog open={showPolicy} onOpenChange={setShowPolicy}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md rounded-3xl p-0 overflow-hidden">
           <DialogHeader>
             <DialogTitle>7-day cancellation policy</DialogTitle>
           </DialogHeader>
@@ -847,3 +656,7 @@ export default function SubscriptionPage() {
     </div>
   )
 }
+
+
+
+

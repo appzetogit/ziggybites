@@ -87,6 +87,11 @@ export default function CollectionDetail() {
                 </p>
               </div>
             </div>
+            <Link to="/user" className="shrink-0">
+              <Button className="rounded-full px-4 text-sm">
+                Add Items
+              </Button>
+            </Link>
           </div>
         </ScrollReveal>
 

@@ -252,6 +252,77 @@ const getReadableAddress = (...candidates) => {
   return value?.trim() || ""
 }
 
+const LOCATION_UNAVAILABLE = "Location unavailable"
+
+const getNumericDistanceKm = (value) => {
+  if (typeof value === "number" && Number.isFinite(value)) return value
+  if (typeof value === "string") {
+    const match = value.match(/-?\d+(\.\d+)?/)
+    if (match) {
+      const parsed = Number(match[0])
+      return Number.isFinite(parsed) ? parsed : null
+    }
+  }
+  return null
+}
+
+const formatPopupDistance = (value) => {
+  if (typeof value === "string" && value.trim()) {
+    const normalized = value.trim()
+    if (normalized.toLowerCase().includes("calculating")) return LOCATION_UNAVAILABLE
+    if (normalized.toLowerCase().includes("updating")) return LOCATION_UNAVAILABLE
+    if (normalized.toLowerCase().includes("fetching")) return LOCATION_UNAVAILABLE
+    return normalized
+  }
+
+  const numericValue = getNumericDistanceKm(value)
+  return numericValue != null ? `${numericValue.toFixed(2)} km` : LOCATION_UNAVAILABLE
+}
+
+const formatPopupDuration = (value) => {
+  if (typeof value === "string" && value.trim()) {
+    const normalized = value.trim()
+    if (normalized.toLowerCase().includes("calculating")) return LOCATION_UNAVAILABLE
+    if (normalized.toLowerCase().includes("updating")) return LOCATION_UNAVAILABLE
+    if (normalized.toLowerCase().includes("fetching")) return LOCATION_UNAVAILABLE
+    return normalized
+  }
+
+  const numericValue = Number(value)
+  return Number.isFinite(numericValue) ? `${Math.max(1, Math.ceil(numericValue))} mins` : LOCATION_UNAVAILABLE
+}
+
+const getEarningsAmount = (earnings, fallback = 0) => {
+  if (typeof earnings === "object" && earnings) {
+    const value =
+      earnings.totalEarning ??
+      earnings.amount ??
+      earnings.basePayout ??
+      earnings.total
+    const numericValue = Number(value)
+    if (Number.isFinite(numericValue) && numericValue > 0) return numericValue
+  }
+
+  const directValue = Number(earnings)
+  if (Number.isFinite(directValue) && directValue > 0) return directValue
+
+  const fallbackValue = Number(fallback)
+  return Number.isFinite(fallbackValue) && fallbackValue > 0 ? fallbackValue : 0
+}
+
+const isCompleteNewOrderPayload = (order = {}) => {
+  const orderDatabaseId = getOrderDatabaseId(order)
+  const orderDisplayId = order?.orderId || order?.orderCode || order?.code
+  const restaurantName = order?.restaurantName || order?.name || order?.restaurantId?.name
+  const itemsCount =
+    order?.orderItemsCount ??
+    (Array.isArray(order?.items)
+      ? order.items.reduce((sum, item) => sum + (Number(item?.quantity) || 0), 0)
+      : 0)
+
+  return Boolean(orderDatabaseId && orderDisplayId && restaurantName && itemsCount > 0)
+}
+
 const normalizeBatchOrder = (order = {}) => {
   const restaurantCoords = order?.restaurantId?.location?.coordinates || order?.restaurantLocation?.coordinates
   const customerCoords = order?.address?.location?.coordinates || order?.customerLocation?.coordinates
@@ -4780,67 +4851,38 @@ export default function DeliveryHome() {
       
       // Transform newOrder data to match selectedRestaurant format
       // Extract restaurant address with proper priority
-      let restaurantAddress = '';
-      if (newOrder.restaurantLocation?.address) {
-        restaurantAddress = newOrder.restaurantLocation.address;
-      } else if (newOrder.restaurantLocation?.formattedAddress) {
-        restaurantAddress = newOrder.restaurantLocation.formattedAddress;
-      } else if (newOrder.restaurantAddress) {
-        restaurantAddress = newOrder.restaurantAddress;
+      if (!isCompleteNewOrderPayload(newOrder)) {
+        console.warn('⚠️ Incomplete new order payload received, popup skipped:', newOrder)
+        clearNewOrder()
+        return
       }
+
+      const restaurantAddress =
+        getReadableAddress(
+          newOrder.restaurantLocation?.address,
+          newOrder.restaurantLocation?.formattedAddress,
+          newOrder.restaurantAddress,
+        ) || LOCATION_UNAVAILABLE
       
       // Extract earnings from notification - backend now calculates and sends estimatedEarnings
-      const deliveryFee = newOrder.deliveryFee ?? 0;
-      const earned = newOrder.estimatedEarnings;
-      let earnedValue = 0;
-      
-      if (earned) {
-        if (typeof earned === 'object' && earned.totalEarning != null) {
-          earnedValue = Number(earned.totalEarning) || 0;
-        } else if (typeof earned === 'number') {
-          earnedValue = earned;
-        }
-      }
-      
-      // Use calculated earnings if available, otherwise fallback to deliveryFee
-      const effectiveEarnings = earnedValue > 0 ? earned : (deliveryFee > 0 ? deliveryFee : 0);
-      
-      console.log('💰 Earnings from notification:', {
-        earned,
-        earnedValue,
-        deliveryFee,
-        effectiveEarnings,
-        type: typeof effectiveEarnings
-      });
+      const deliveryFee = newOrder.deliveryFee ?? 0
+      const earnedValue = getEarningsAmount(newOrder.estimatedEarnings, deliveryFee)
+      const pickupDistance = formatPopupDistance(newOrder.pickupDistance)
+      const dropDistance = formatPopupDistance(newOrder.dropDistance || newOrder.deliveryDistance)
+      const pickupTime = formatPopupDuration(newOrder.estimatedPickupTime)
 
-      // Calculate pickup distance if not provided
-      let pickupDistance = newOrder.pickupDistance;
-      if (!pickupDistance || pickupDistance === '0 km') {
-        // Try to calculate from driver's current location to restaurant
-        const currentLocation = riderLocation || lastLocationRef.current;
-        const restaurantLat = newOrder.restaurantLocation?.latitude;
-        const restaurantLng = newOrder.restaurantLocation?.longitude;
-        
-        if (currentLocation && currentLocation.length === 2 && 
-            restaurantLat && restaurantLng && 
-            !isNaN(restaurantLat) && !isNaN(restaurantLng)) {
-          // Calculate distance in meters, then convert to km
-          const distanceInMeters = calculateDistance(
-            currentLocation[0], 
-            currentLocation[1], 
-            restaurantLat, 
-            restaurantLng
-          );
-          const distanceInKm = distanceInMeters / 1000;
-          pickupDistance = `${distanceInKm.toFixed(2)} km`;
-          console.log('📍 Calculated pickup distance:', pickupDistance);
-        }
-      }
-      
-      // Default to 'Calculating...' if still no distance
-      if (!pickupDistance || pickupDistance === '0 km') {
-        pickupDistance = 'Calculating...';
-      }
+      console.log('Normalized popup payload:', {
+        orderId: newOrder.orderId,
+        orderMongoId: newOrder.orderMongoId,
+        restaurantName: newOrder.restaurantName,
+        restaurantAddress,
+        pickupDistance,
+        dropDistance,
+        pickupTime,
+        earnedValue,
+        paymentMode: newOrder.paymentMode || newOrder.paymentMethod,
+        orderItemsCount: newOrder.orderItemsCount,
+      })
 
       const restaurantData = {
         id: newOrder.orderMongoId || newOrder.orderId,
@@ -4852,18 +4894,23 @@ export default function DeliveryHome() {
         lat: newOrder.restaurantLocation?.latitude,
         lng: newOrder.restaurantLocation?.longitude,
         distance: pickupDistance,
-        timeAway: pickupDistance !== 'Calculating...' ? calculateTimeAway(pickupDistance) : 'Calculating...',
-        dropDistance: newOrder.deliveryDistance || 'Calculating...',
+        timeAway: pickupTime,
+        dropDistance: dropDistance,
         pickupDistance: pickupDistance,
-        estimatedEarnings: effectiveEarnings,
+        estimatedPickupTime: pickupTime,
+        estimatedDropTime: formatPopupDuration(newOrder.estimatedDropTime),
+        totalDistance: formatPopupDistance(newOrder.totalDistance),
+        estimatedEarnings: newOrder.estimatedEarnings,
         deliveryFee,
-        amount: earnedValue > 0 ? earnedValue : (deliveryFee > 0 ? deliveryFee : 0),
+        amount: earnedValue,
         customerName: newOrder.customerName,
-        customerAddress: newOrder.customerLocation?.address || '',
+        customerAddress: newOrder.customerLocation?.address || newOrder.customerAddress || LOCATION_UNAVAILABLE,
         customerLat: newOrder.customerLocation?.latitude,
         customerLng: newOrder.customerLocation?.longitude,
         items: newOrder.items || [],
-        total: newOrder.total || newOrder.totalAmount || 0
+        total: newOrder.total || newOrder.totalAmount || 0,
+        orderItemsCount: newOrder.orderItemsCount || (newOrder.items || []).reduce((sum, item) => sum + (Number(item?.quantity) || 0), 0),
+        paymentMode: newOrder.paymentMode || newOrder.paymentMethod || 'cash'
       }
       
       setSelectedRestaurant(restaurantData)
@@ -4883,87 +4930,6 @@ export default function DeliveryHome() {
     showOrderDeliveredAnimation,
     showPaymentPage,
   ])
-
-  // Recalculate distance when rider location becomes available
-  useEffect(() => {
-    if (!selectedRestaurant || !showNewOrderPopup) return
-    
-    // Only recalculate if distance is missing or showing '0 km' or 'Calculating...'
-    const currentDistance = selectedRestaurant.distance || selectedRestaurant.pickupDistance
-    if (currentDistance && currentDistance !== '0 km' && currentDistance !== 'Calculating...') {
-      return // Distance already calculated
-    }
-    
-    const currentLocation = riderLocation || lastLocationRef.current
-    const restaurantLat = selectedRestaurant.lat
-    const restaurantLng = selectedRestaurant.lng
-    
-    if (currentLocation && currentLocation.length === 2 && 
-        restaurantLat && restaurantLng && 
-        !isNaN(restaurantLat) && !isNaN(restaurantLng)) {
-      // Calculate distance in meters, then convert to km
-      const distanceInMeters = calculateDistance(
-        currentLocation[0], 
-        currentLocation[1], 
-        restaurantLat, 
-        restaurantLng
-      )
-      const distanceInKm = distanceInMeters / 1000
-      const pickupDistance = `${distanceInKm.toFixed(2)} km`
-      
-      console.log('📍 Recalculated pickup distance:', pickupDistance)
-      
-      setSelectedRestaurant(prev => ({
-        ...prev,
-        distance: pickupDistance,
-        pickupDistance: pickupDistance,
-        timeAway: calculateTimeAway(pickupDistance)
-      }))
-    }
-  }, [riderLocation, selectedRestaurant, showNewOrderPopup, calculateTimeAway])
-
-  // Fetch restaurant address if missing when selectedRestaurant is set
-  useEffect(() => {
-    if (!selectedRestaurant?.orderId && !selectedRestaurant?.id) return
-    if (!selectedRestaurant?.address || 
-        selectedRestaurant.address === 'Restaurant address' || 
-        selectedRestaurant.address === 'Restaurant Address') {
-      // Address is missing, fetch order details to get restaurant address
-      const orderId = getPreferredDeliveryOrderApiId(selectedRestaurant)
-      console.log('🔄 Fetching restaurant address for order:', orderId)
-      
-      const fetchAddress = async () => {
-        try {
-          const response = await deliveryAPI.getOrderDetails(orderId)
-          if (response?.data?.success && response?.data?.data) {
-            const order = response.data.data.order || response.data.data
-            
-            // Extract restaurant address
-            let restaurantAddress = null
-            if (order.restaurantId?.address) {
-              restaurantAddress = order.restaurantId.address
-            } else if (order.restaurantId?.location?.formattedAddress) {
-              restaurantAddress = order.restaurantId.location.formattedAddress
-            } else if (order.restaurantId?.location?.address) {
-              restaurantAddress = order.restaurantId.location.address
-            }
-            
-            if (restaurantAddress && restaurantAddress !== 'Restaurant address' && restaurantAddress !== 'Restaurant Address') {
-              setSelectedRestaurant(prev => ({
-                ...prev,
-                address: restaurantAddress
-              }))
-              console.log('✅ Restaurant address fetched and updated:', restaurantAddress)
-            }
-          }
-        } catch (error) {
-          console.error('❌ Error fetching restaurant address:', error)
-        }
-      }
-      
-      fetchAddress()
-    }
-  }, [selectedRestaurant?.orderId, selectedRestaurant?.id, selectedRestaurant?.address])
 
   // Handle online toggle - check for booked gigs
   const handleToggleOnline = () => {
@@ -10403,22 +10369,18 @@ export default function DeliveryHome() {
                     <div className="flex items-center gap-1.5 text-gray-500 text-sm mb-2">
                       <Clock className="w-4 h-4" />
                       <span>
-                        {selectedRestaurant?.timeAway && selectedRestaurant.timeAway !== 'Calculating...' 
-                          ? `${selectedRestaurant.timeAway} away`
-                          : (newOrder?.pickupDistance && newOrder.pickupDistance !== '0 km' && newOrder.pickupDistance !== 'Calculating...'
-                            ? `${calculateTimeAway(newOrder.pickupDistance)} away`
-                            : 'Calculating...')}
+                        {selectedRestaurant?.timeAway && selectedRestaurant.timeAway !== LOCATION_UNAVAILABLE
+                          ? selectedRestaurant.timeAway
+                          : LOCATION_UNAVAILABLE}
                       </span>
                     </div>
                     
                     <div className="flex items-center gap-1.5 text-gray-500 text-sm">
                       <MapPin className="w-4 h-4" />
                       <span>
-                        {selectedRestaurant?.distance && selectedRestaurant.distance !== '0 km' && selectedRestaurant.distance !== 'Calculating...'
+                        {selectedRestaurant?.distance && selectedRestaurant.distance !== '0 km'
                           ? `${selectedRestaurant.distance} away`
-                          : (newOrder?.pickupDistance && newOrder.pickupDistance !== '0 km' && newOrder.pickupDistance !== 'Calculating...'
-                            ? `${newOrder.pickupDistance} away`
-                            : 'Calculating...')}
+                          : LOCATION_UNAVAILABLE}
                       </span>
                     </div>
                   </div>

@@ -40,8 +40,6 @@ import { API_BASE_URL } from "@/lib/api/config"
 import OptimizedImage from "@/components/OptimizedImage"
 // Explore More Icons
 import exploreOffers from "@/assets/explore more icons/offers.png"
-import exploreGourmet from "@/assets/explore more icons/gourmet.png"
-import exploreTop10 from "@/assets/explore more icons/top 10.png"
 import exploreCollection from "@/assets/explore more icons/collection.png"
 
 // Banner images for hero carousel - will be fetched from API
@@ -1758,18 +1756,6 @@ export default function Home() {
                   label: 'Offers',
                   image: exploreOffers,
                   href: '/user/offers'
-                },
-                {
-                  id: 'gourmet',
-                  label: 'Gourmet',
-                  image: exploreGourmet,
-                  href: '/user/gourmet'
-                },
-                {
-                  id: 'top10',
-                  label: 'Top 10',
-                  image: exploreTop10,
-                  href: '/user/top-10'
                 },
                 {
                   id: 'collection',

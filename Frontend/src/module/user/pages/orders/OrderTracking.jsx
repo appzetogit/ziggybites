@@ -18,7 +18,8 @@ import {
   Receipt,
   CircleSlash,
   Loader2,
-  Star
+  Star,
+  HelpCircle
 } from "lucide-react"
 import AnimatedPage from "../../components/AnimatedPage"
 import { Card, CardContent } from "@/components/ui/card"
@@ -665,6 +666,25 @@ export default function OrderTracking() {
     window.location.href = `tel:${tel}`;
   };
 
+  const handleOpenSafetyHelp = () => {
+    navigate("/profile/report-safety-emergency", {
+      state: {
+        source: "order-tracking",
+        orderId,
+        orderNumber: order?.id || order?.orderId || orderId,
+        restaurantName: order?.restaurant || null,
+      },
+    });
+  };
+
+  const handleOpenOrderDetails = () => {
+    navigate(`/orders/${orderId}/details`);
+  };
+
+  const handleOpenOrderHelp = () => {
+    navigate(`/help/orders/${orderId}`);
+  };
+
   const handleOpenDeliveryInstructions = () => {
     setDeliveryInstructionsText(order?.deliveryInstructions ?? "");
     setShowDeliveryInstructionsDialog(true);
@@ -839,7 +859,7 @@ export default function OrderTracking() {
         <div className="max-w-lg mx-auto text-center py-20">
           <h1 className="text-lg sm:text-xl md:text-2xl font-bold mb-4">Order Not Found</h1>
           <p className="text-gray-600 mb-6">{error || 'The order you\'re looking for doesn\'t exist.'}</p>
-          <Link to="/user/orders">
+          <Link to="/orders">
             <Button>Back to Orders</Button>
           </Link>
         </div>
@@ -876,6 +896,9 @@ export default function OrderTracking() {
   }
 
   const currentStatus = statusConfig[orderStatus] || statusConfig.placed
+  const canCancelOrder = !["cancelled", "delivered", "completed", "restaurant_cancelled"].includes(
+    order?.status || orderStatus
+  )
 
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-[#0a0a0a]">
@@ -933,7 +956,7 @@ export default function OrderTracking() {
       >
         {/* Navigation bar */}
         <div className="flex items-center justify-between px-4 py-3">
-          <Link to="/user/orders">
+          <Link to="/orders">
             <motion.button
               className="w-10 h-10 flex items-center justify-center"
               whileTap={{ scale: 0.9 }}
@@ -1136,6 +1159,7 @@ export default function OrderTracking() {
 
         {/* Delivery Partner Safety */}
         <motion.button
+          onClick={handleOpenSafetyHelp}
           className="w-full bg-white rounded-xl p-4 shadow-sm flex items-center gap-3"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -1284,7 +1308,11 @@ export default function OrderTracking() {
           </div>
 
           {/* Order Items */}
-          <div className="p-4 border-b border-dashed border-gray-200">
+          <button
+            type="button"
+            onClick={handleOpenOrderDetails}
+            className="w-full p-4 border-b border-dashed border-gray-200 text-left hover:bg-gray-50 transition-colors"
+          >
             <div className="flex items-start gap-3">
               <Receipt className="w-5 h-5 text-gray-500 mt-0.5" />
               <div className="flex-1">
@@ -1302,7 +1330,7 @@ export default function OrderTracking() {
               </div>
               <ChevronRight className="w-5 h-5 text-gray-400" />
             </div>
-          </div>
+          </button>
         </motion.div>
 
         {/* Help Section */}
@@ -1313,11 +1341,19 @@ export default function OrderTracking() {
           transition={{ delay: 0.8 }}
         >
           <SectionItem
-            icon={CircleSlash}
-            title="Cancel order"
-            subtitle=""
-            onClick={handleCancelOrder}
+            icon={HelpCircle}
+            title="Need help with this order?"
+            subtitle="See order help and support options"
+            onClick={handleOpenOrderHelp}
           />
+          {canCancelOrder && (
+            <SectionItem
+              icon={CircleSlash}
+              title="Cancel order"
+              subtitle=""
+              onClick={handleCancelOrder}
+            />
+          )}
         </motion.div>
 
       </div>

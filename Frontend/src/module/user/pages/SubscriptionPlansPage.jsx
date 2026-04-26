@@ -43,6 +43,7 @@ export default function SubscriptionPlansPage() {
   const navigate = useNavigate()
   const [plans, setPlans] = useState([])
   const [purchasedPlans, setPurchasedPlans] = useState([])
+  const [activeSubscriptions, setActiveSubscriptions] = useState([])
   const [loading, setLoading] = useState(true)
   const [draftItems, setDraftItems] = useState(() => readSubscriptionDraftFromStorage())
 
@@ -64,9 +65,10 @@ export default function SubscriptionPlansPage() {
     const fetchData = async () => {
       try {
         setLoading(true)
-        const [plansRes, purchasedRes] = await Promise.all([
+        const [plansRes, purchasedRes, activeRes] = await Promise.all([
           api.get("/subscription/plans").catch(() => ({ data: { success: false, data: [] } })),
           api.get("/subscription/purchased-plans").catch(() => ({ data: { success: false, data: [] } })),
+          api.get("/subscription/active").catch(() => ({ data: { success: false, data: [] } })),
         ])
 
         if (plansRes?.data?.success) {
@@ -79,6 +81,12 @@ export default function SubscriptionPlansPage() {
         if (purchasedRes?.data?.success) {
           const pp = Array.isArray(purchasedRes.data.data) ? purchasedRes.data.data : (Array.isArray(purchasedRes.data) ? purchasedRes.data : [])
           setPurchasedPlans(pp)
+        }
+        if (activeRes?.data?.success) {
+          const active = Array.isArray(activeRes.data.data) ? activeRes.data.data : []
+          setActiveSubscriptions(active)
+        } else {
+          setActiveSubscriptions([])
         }
       } catch (e) {
         console.error("Error fetching plans:", e)
@@ -97,6 +105,7 @@ export default function SubscriptionPlansPage() {
   }, [loading, draftItems, navigate])
 
   const displayPlans = plans.filter((p) => p.isActive !== false)
+  const hasActiveSubscription = activeSubscriptions.length > 0
 
   if (loading) {
     return (
@@ -155,6 +164,7 @@ export default function SubscriptionPlansPage() {
         <div className="space-y-4">
           {displayPlans.map((plan) => {
             const isPurchased = purchasedPlans.some((p) => p.planDays === plan.durationDays)
+            const canExtendPlan = isPurchased && hasActiveSubscription
             const isPopular = plan.durationDays === 30
             return (
               <div
@@ -207,10 +217,15 @@ export default function SubscriptionPlansPage() {
                       }`}
                     >
                       <Link to={`/subscription/plan/${plan.durationDays}`}>
-                        {isPurchased ? (
+                        {isPurchased && !canExtendPlan ? (
                           <span className="flex items-center gap-2">
                             <Check className="h-5 w-5" strokeWidth={3} />
                             Already Purchased
+                          </span>
+                        ) : canExtendPlan ? (
+                          <span className="flex items-center gap-2">
+                            Extend this plan
+                            <ChevronRight className="h-5 w-5" />
                           </span>
                         ) : (
                           <span className="flex items-center gap-2">

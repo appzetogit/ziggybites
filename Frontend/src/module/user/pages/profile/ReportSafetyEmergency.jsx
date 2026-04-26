@@ -44,7 +44,7 @@ export default function ReportSafetyEmergency() {
 
   return (
     <AnimatedPage className="min-h-screen bg-[#f5f5f5] dark:bg-[#0a0a0a]">
-      <div className="max-w-5xl mx-auto px-4 md:px-6 lg:px-8 py-4 md:py-6 lg:py-8">
+      <div className="max-w-5xl mx-auto px-4 md:px-6 lg:px-8 py-4 md:py-6 lg:py-8 pb-28 md:pb-10">
         {/* Header */}
         <div className="flex items-center gap-3 md:gap-4 mb-4 md:mb-6 lg:mb-8">
           <Link to="/user/profile">
@@ -111,7 +111,7 @@ export default function ReportSafetyEmergency() {
                   placeholder="Please provide details about the safety issue..."
                   value={report}
                   onChange={(e) => setReport(e.target.value)}
-                  className="min-h-[150px] md:min-h-[200px] lg:min-h-[250px] w-full resize-y text-sm md:text-base leading-relaxed"
+                  className="min-h-[150px] md:min-h-[200px] lg:min-h-[250px] w-full resize-y px-4 py-3 text-sm md:text-base leading-relaxed"
                   dir="ltr"
                   style={{
                     direction: 'ltr',
@@ -128,20 +128,22 @@ export default function ReportSafetyEmergency() {
             </Card>
 
             {/* Submit Button */}
-            <Button
-              onClick={handleSubmit}
-              disabled={!report.trim() || isSubmitting}
-              className="w-full bg-red-600 hover:bg-red-700 text-white text-sm md:text-base h-10 md:h-12 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Submitting...
-                </>
-              ) : (
-                'Report Safety Issue'
-              )}
-            </Button>
+            <div className="sticky bottom-0 left-0 right-0 bg-[#f5f5f5] dark:bg-[#0a0a0a] pt-3 pb-4">
+              <Button
+                onClick={handleSubmit}
+                disabled={!report.trim() || isSubmitting}
+                className="w-full bg-red-600 hover:bg-red-700 text-white text-sm md:text-base h-10 md:h-12 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Submitting...
+                  </>
+                ) : (
+                  'Report Safety Issue'
+                )}
+              </Button>
+            </div>
           </>
         ) : (
           /* Success State */
@@ -164,4 +166,3 @@ export default function ReportSafetyEmergency() {
     </AnimatedPage>
   )
 }
-

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   CalendarClock,
   Download,
@@ -78,9 +78,14 @@ export default function ActiveSubscriptionsPage() {
   const [sourceFilter, setSourceFilter] = useState("all")
   const [planFilter, setPlanFilter] = useState("all")
   const [selectedSub, setSelectedSub] = useState(null)
+  const hasLoadedRef = useRef(false)
+  const inFlightRef = useRef(false)
 
-  const fetchSubscriptions = async () => {
+  const fetchSubscriptions = useCallback(async ({ silent = false } = {}) => {
+    if (inFlightRef.current) return
+
     try {
+      inFlightRef.current = true
       setLoading(true)
       const token = localStorage.getItem("admin_accessToken")
       if (!token) {
@@ -88,22 +93,32 @@ export default function ActiveSubscriptionsPage() {
         return
       }
 
-      const res = await api.get("/admin/subscriptions").catch(() => null)
+      const res = await api
+        .get("/admin/subscriptions", { suppressErrorToast: silent })
+        .catch(() => null)
       if (res?.data?.success && Array.isArray(res.data.data)) {
-        setSubscriptions(res.data.data)
+        const sortedSubscriptions = [...res.data.data].sort((a, b) => {
+          const aTime = new Date(a?.createdAt || a?.startDate || 0).getTime()
+          const bTime = new Date(b?.createdAt || b?.startDate || 0).getTime()
+          return bTime - aTime
+        })
+        setSubscriptions(sortedSubscriptions)
       } else {
         setSubscriptions([])
       }
     } catch {
       setSubscriptions([])
     } finally {
+      inFlightRef.current = false
       setLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
-    fetchSubscriptions()
-  }, [])
+    if (hasLoadedRef.current) return
+    hasLoadedRef.current = true
+    fetchSubscriptions({ silent: true })
+  }, [fetchSubscriptions])
 
   const planOptions = useMemo(() => {
     return [...new Set(subscriptions.map((sub) => sub.planName).filter(Boolean))].sort()

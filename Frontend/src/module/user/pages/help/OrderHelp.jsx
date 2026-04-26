@@ -173,10 +173,10 @@ export default function OrderHelp() {
   const handleAction = (action) => {
     switch (action) {
       case "track":
-        navigate(`/user/orders/${orderId}`)
+        navigate(`/orders/${orderId}`)
         break
       case "invoice":
-        navigate(`/user/orders/${orderId}/invoice`)
+        navigate(`/orders/${orderId}/invoice`)
         break
       case "support":
         // Scroll to support section or open contact modal
@@ -202,10 +202,10 @@ export default function OrderHelp() {
                 We couldn't find an order with ID: {orderId}
               </p>
               <div className="flex gap-4 justify-center">
-                <Link to="/user/orders">
+                <Link to="/orders">
                   <Button variant="outline">View All Orders</Button>
                 </Link>
-                <Link to="/user/help">
+                <Link to="/help">
                   <Button>Go to Help Center</Button>
                 </Link>
               </div>
@@ -222,7 +222,7 @@ export default function OrderHelp() {
         {/* Header */}
         <ScrollReveal>
           <div className="flex items-center gap-3 md:gap-4 mb-4 md:mb-6">
-            <Link to="/user/help">
+            <Link to="/help">
               <Button variant="ghost" size="icon" className="rounded-full h-8 w-8 md:h-10 md:w-10">
                 <ArrowLeft className="h-4 w-4 md:h-5 md:w-5" />
               </Button>
@@ -353,7 +353,7 @@ export default function OrderHelp() {
             </CardHeader>
             <CardContent className="p-4 md:p-5 lg:p-6">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-5 lg:gap-6">
-                <Link to={`/user/orders/${orderId}`}>
+                <Link to={`/orders/${orderId}`}>
                   <Button
                     variant="outline"
                     className="w-full justify-start gap-2 h-auto py-3"
@@ -365,7 +365,7 @@ export default function OrderHelp() {
                     </div>
                   </Button>
                 </Link>
-                <Link to={`/user/orders/${orderId}/invoice`}>
+                <Link to={`/orders/${orderId}/invoice`}>
                   <Button
                     variant="outline"
                     className="w-full justify-start gap-2 h-auto py-3"
@@ -458,13 +458,13 @@ export default function OrderHelp() {
         {/* Back to Orders */}
         <ScrollReveal delay={0.5}>
           <div className="flex gap-4">
-            <Link to="/user/orders" className="flex-1">
+            <Link to="/orders" className="flex-1">
               <Button variant="outline" className="w-full">
                 <ArrowLeft className="h-4 w-4 mr-2" />
                 Back to All Orders
               </Button>
             </Link>
-            <Link to="/user/help" className="flex-1">
+            <Link to="/help" className="flex-1">
               <Button variant="outline" className="w-full">
                 <HelpCircle className="h-4 w-4 mr-2" />
                 Help Center

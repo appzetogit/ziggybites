@@ -1338,7 +1338,7 @@ export default function Cart() {
               type="button"
               variant="ghost"
               size="icon"
-              className="h-7 w-7 md:h-8 md:w-8 flex-shrink-0"
+              className="h-7 w-7 md:h-8 md:w-8 flex-shrink-0 relative z-10"
               onClick={async () => {
                 const companyName = await getCompanyNameAsync()
                 await handleShare({

@@ -427,6 +427,7 @@ apiClient.interceptors.response.use(
   },
   async (error) => {
     const originalRequest = error.config;
+    const shouldSuppressErrorToast = !!originalRequest?.suppressErrorToast;
 
     // If error is 401 and we haven't tried to refresh yet
     if (error.response?.status === 401 && !originalRequest._retry) {
@@ -537,7 +538,7 @@ apiClient.interceptors.response.use(
         }
       } catch (refreshError) {
         // Show error toast in development mode for refresh errors
-        if (import.meta.env.DEV) {
+        if (import.meta.env.DEV && !shouldSuppressErrorToast) {
           const refreshErrorMessage =
             refreshError.response?.data?.message ||
             refreshError.response?.data?.error ||
@@ -608,7 +609,7 @@ apiClient.interceptors.response.use(
 
     // Handle network errors specifically (backend not running)
     if (error.code === "ERR_NETWORK" || error.message === "Network Error") {
-      if (import.meta.env.DEV) {
+      if (import.meta.env.DEV && !shouldSuppressErrorToast) {
         const now = Date.now();
         const timeSinceLastError = now - networkErrorState.lastErrorTime;
         const timeSinceLastToast = now - networkErrorState.lastToastTime;
@@ -663,7 +664,7 @@ apiClient.interceptors.response.use(
     if (error.code === "ECONNABORTED" || error.message?.includes("timeout")) {
       // Timeout errors are usually due to slow backend or network issues
       // Don't spam console with timeout errors, but handle them gracefully
-      if (import.meta.env.DEV) {
+      if (import.meta.env.DEV && !shouldSuppressErrorToast) {
         const now = Date.now();
         const timeSinceLastError = now - networkErrorState.lastErrorTime;
         const timeSinceLastToast = now - networkErrorState.lastToastTime;
@@ -705,7 +706,7 @@ apiClient.interceptors.response.use(
 
     // Handle 404 errors (route not found)
     if (error.response?.status === 404) {
-      if (import.meta.env.DEV) {
+      if (import.meta.env.DEV && !shouldSuppressErrorToast) {
         const url = error.config?.url || "unknown";
         // 404 error logging removed - errors handled via toast notifications
 
@@ -770,7 +771,7 @@ apiClient.interceptors.response.use(
     }
 
     // Show error toast in development mode only
-    if (import.meta.env.DEV) {
+    if (import.meta.env.DEV && !shouldSuppressErrorToast) {
       // Extract error messages from various possible locations
       const errorData = error.response?.data;
 

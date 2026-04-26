@@ -127,6 +127,25 @@ export default function Notifications() {
             {notifications.map((notification) => {
               const visual = getNotificationVisual(notification)
               const Icon = visual.icon
+              const notificationTitle =
+                notification.title ||
+                notification.subject ||
+                notification.metadata?.title ||
+                "Notification"
+              const notificationMessage =
+                notification.message ||
+                notification.body ||
+                notification.description ||
+                notification.text ||
+                notification.metadata?.message ||
+                notification.metadata?.body ||
+                ""
+              const notificationTime =
+                notification.time ||
+                notification.relativeTime ||
+                notification.createdAt ||
+                notification.sentAt ||
+                ""
 
               return (
                 <Card
@@ -152,14 +171,14 @@ export default function Notifications() {
                         <h3 className={`text-sm sm:text-base md:text-lg font-semibold mb-1 md:mb-2 ${
                           !notification.read ? "text-gray-900 dark:text-white" : "text-gray-700 dark:text-gray-300"
                         }`}>
-                          {notification.title}
+                          {notificationTitle}
                         </h3>
                         <p className="text-xs sm:text-sm md:text-base text-gray-600 dark:text-gray-400 mb-2 md:mb-3 line-clamp-2">
-                          {notification.message}
+                          {notificationMessage || "Open to view details"}
                         </p>
                         <div className="flex items-center gap-1 text-xs md:text-sm text-gray-500 dark:text-gray-400">
                           <Clock className="h-3 w-3 md:h-4 md:w-4" />
-                          <span>{notification.time}</span>
+                          <span>{notificationTime}</span>
                         </div>
                       </div>
                     </div>

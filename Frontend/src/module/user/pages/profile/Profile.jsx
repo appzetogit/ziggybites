@@ -38,9 +38,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { authAPI } from "@/lib/api"
-import { firebaseAuth } from "@/lib/firebase"
-import { clearModuleAuth } from "@/lib/utils/auth"
 
 export default function Profile() {
   const { userProfile, vegMode, setVegMode, updateUserProfile } = useProfile()
@@ -203,66 +200,9 @@ export default function Profile() {
   const profileCompletion = calculateProfileCompletion()
   const isComplete = profileCompletion === 100
 
-  // Handle logout
-  const handleLogout = async () => {
-    if (isLoggingOut) return // Prevent multiple clicks
-
-    setIsLoggingOut(true)
-
-    try {
-      // Call backend logout API to invalidate refresh token
-      try {
-        await authAPI.logout()
-      } catch (apiError) {
-        // Continue with logout even if API call fails (network issues, etc.)
-        console.warn("Logout API call failed, continuing with local cleanup:", apiError)
-      }
-
-      // Sign out from Firebase if user logged in via Google
-      try {
-        const { signOut } = await import("firebase/auth")
-        const currentUser = firebaseAuth.currentUser
-        if (currentUser) {
-          await signOut(firebaseAuth)
-        }
-      } catch (firebaseError) {
-        // Continue even if Firebase logout fails
-        console.warn("Firebase logout failed, continuing with local cleanup:", firebaseError)
-      }
-
-      // Clear user module authentication data using utility function
-      clearModuleAuth("user")
-
-      // Clear legacy token data for backward compatibility
-      localStorage.removeItem("accessToken")
-      localStorage.removeItem("user_authenticated")
-      localStorage.removeItem("user_user")
-      localStorage.removeItem("user")
-
-      // Dispatch auth change event to notify other components
-      window.dispatchEvent(new Event("userAuthChanged"))
-
-      // Navigate to sign in page
-      navigate("/user/auth/sign-in", { replace: true })
-    } catch (err) {
-      // Even if there's an error, we should still clear local data and logout
-      console.error("Error during logout:", err)
-
-      // Clear local data anyway using utility function
-      clearModuleAuth("user")
-
-      // Clear legacy token data for backward compatibility
-      localStorage.removeItem("accessToken")
-      localStorage.removeItem("user_authenticated")
-      localStorage.removeItem("user_user")
-      localStorage.removeItem("user")
-      window.dispatchEvent(new Event("userAuthChanged"))
-
-      // Still navigate to login page
-      navigate("/user/auth/sign-in", { replace: true })
-    } finally {
-      setIsLoggingOut(false)
-    }
+  const handleLogout = () => {
+    if (isLoggingOut) return
+    navigate("/user/profile/logout")
   }
 
   return (

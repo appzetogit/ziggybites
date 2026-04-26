@@ -45,7 +45,7 @@ export default function UserOrderDetails() {
           orderData = response.data.order
         } else {
           toast.error("Order not found")
-          navigate("/user/orders")
+          navigate("/orders")
           return
         }
 
@@ -71,7 +71,7 @@ export default function UserOrderDetails() {
         toast.error(
           error?.response?.data?.message || "Failed to load order details"
         )
-        navigate("/user/orders")
+        navigate("/orders")
       } finally {
         setLoading(false)
       }
@@ -130,7 +130,7 @@ export default function UserOrderDetails() {
         <div className="text-center space-y-3">
           <p className="text-gray-700 text-sm font-medium">Order not found</p>
           <button
-            onClick={() => navigate("/user/orders")}
+            onClick={() => navigate("/orders")}
             className="px-4 py-2 rounded-lg bg-[#E23744] text-white text-sm font-semibold"
           >
             Back to Orders
@@ -141,6 +141,8 @@ export default function UserOrderDetails() {
   }
 
   const orderIdDisplay = order.orderId || order._id || orderId
+  const normalizedOrderStatus = String(order.status || "").toLowerCase()
+  const canRaiseComplaint = !["pending", "cancelled", "canceled"].includes(normalizedOrderStatus)
   // Use fetched restaurant data if available, otherwise use order.restaurantId or order.restaurant
   const restaurantObj = restaurant || order.restaurantId || order.restaurant || {}
   const restaurantName =
@@ -403,7 +405,7 @@ export default function UserOrderDetails() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-24 font-sans relative">
+    <div className="min-h-screen bg-gray-50 pb-40 font-sans relative">
       {/* Header */}
       <div className="bg-white p-4 flex items-center sticky top-0 z-20 shadow-sm">
         <div className="flex items-center gap-3">
@@ -419,7 +421,7 @@ export default function UserOrderDetails() {
       </div>
 
       {/* Scrollable Content */}
-      <div className="p-4 space-y-4">
+      <div className="p-4 space-y-4 pb-32">
         {/* Status Card */}
         <div className="bg-white p-4 rounded-xl flex items-center gap-3 shadow-sm">
           <div className="bg-gray-100 p-2 rounded-lg">
@@ -771,10 +773,38 @@ export default function UserOrderDetails() {
             </button>
           </div>
         )}
+
+        {canRaiseComplaint && (
+          <button
+            type="button"
+            onClick={() => {
+              const orderMongoId = order._id || orderId
+
+              if (!orderMongoId) {
+                console.error("Order ID not available:", {
+                  order: order ? { _id: order._id, orderId: order.orderId } : null,
+                  routeOrderId: orderId
+                })
+                toast.error("Order ID not available. Please refresh the page.")
+                return
+              }
+
+              const orderIdString = typeof orderMongoId === "object" && orderMongoId.toString
+                ? orderMongoId.toString()
+                : String(orderMongoId)
+
+              navigate(`/complaints/submit/${encodeURIComponent(orderIdString)}`)
+            }}
+            className="w-full bg-orange-50 border border-orange-200 text-orange-700 py-3 rounded-lg font-semibold flex items-center justify-center gap-2 hover:bg-orange-100 transition-colors"
+          >
+            <FileText className="w-4 h-4" />
+            Restaurant Complaint
+          </button>
+        )}
       </div>
 
       {/* Fixed Bottom Buttons */}
-      <div className="fixed bottom-0 w-full bg-white border-t border-gray-200 p-4 flex gap-3 z-20">
+      <div className="fixed bottom-0 left-0 right-0 w-full bg-white border-t border-gray-200 p-4 flex gap-3 z-20 safe-area-pb">
         <button
           type="button"
           onClick={() => navigate(`/user/restaurants/${order.restaurantId || ""}`)}
@@ -792,43 +822,6 @@ export default function UserOrderDetails() {
           Invoice
         </button>
       </div>
-
-      {/* Restaurant Complaint Button - Below Order Details */}
-      {order && (
-        <div className="p-4 pb-24">
-          <button
-            type="button"
-            onClick={() => {
-              // Use MongoDB _id (ObjectId) for the API call - backend complaint controller expects ObjectId
-              // Priority: order._id (MongoDB ObjectId) > orderId from route params
-              const orderMongoId = order._id || orderId
-
-              if (!orderMongoId) {
-                console.error("Order ID not available:", {
-                  order: order ? { _id: order._id, orderId: order.orderId } : null,
-                  routeOrderId: orderId
-                })
-                toast.error("Order ID not available. Please refresh the page.")
-                return
-              }
-
-              // Convert to string if it's an ObjectId object
-              const orderIdString = typeof orderMongoId === 'object' && orderMongoId.toString
-                ? orderMongoId.toString()
-                : String(orderMongoId)
-
-              console.log("Navigating to complaint page with orderId:", orderIdString)
-              navigate(`/user/complaints/submit/${encodeURIComponent(orderIdString)}`)
-            }}
-            className="w-full bg-orange-50 border border-orange-200 text-orange-700 py-3 rounded-lg font-semibold flex items-center justify-center gap-2 hover:bg-orange-100 transition-colors"
-          >
-            <FileText className="w-4 h-4" />
-            Restaurant Complaint
-          </button>
-        </div>
-      )}
     </div>
   )
 }
-
-
