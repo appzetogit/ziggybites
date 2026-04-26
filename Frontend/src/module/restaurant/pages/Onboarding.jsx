@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
-import { Image as ImageIcon, Upload, Clock, Calendar as CalendarIcon, Sparkles, ArrowLeft, Camera } from "lucide-react"
+import { Image as ImageIcon, Upload, Clock, Calendar as CalendarIcon, ArrowLeft, Camera } from "lucide-react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar } from "@/components/ui/calendar"
 import {
@@ -37,34 +37,30 @@ const daysOfWeek = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 const ONBOARDING_STORAGE_KEY = "restaurant_onboarding_data"
 const RESTAURANT_APPROVAL_PENDING_KEY = "restaurant_approval_pending"
 
+const getSerializableDraftImage = (image) => {
+  if (image?.url && typeof image.url === "string") return image
+  if (typeof image === "string" && (image.startsWith("http") || image.startsWith("data:image/"))) {
+    return image
+  }
+  return null
+}
+
 // Helper functions for localStorage
 const saveOnboardingToLocalStorage = (step1, step2, step3, step4, currentStep) => {
   try {
-    // Convert File objects to a serializable format (we'll store file names/paths if available)
     const serializableStep2 = {
       ...step2,
-      menuImages: step2.menuImages.map((file) => {
-        if (file instanceof File) {
-          return { name: file.name, size: file.size, type: file.type }
-        }
-        return file
-      }),
-      profileImage: step2.profileImage instanceof File
-        ? { name: step2.profileImage.name, size: step2.profileImage.size, type: step2.profileImage.type }
-        : step2.profileImage,
+      // Keep only persisted URLs/data-URLs in draft storage so the app does not
+      // restore invalid file metadata objects and fail validation later.
+      menuImages: (step2.menuImages || []).map(getSerializableDraftImage).filter(Boolean),
+      profileImage: getSerializableDraftImage(step2.profileImage),
     }
 
     const serializableStep3 = {
       ...step3,
-      panImage: step3.panImage instanceof File
-        ? { name: step3.panImage.name, size: step3.panImage.size, type: step3.panImage.type }
-        : step3.panImage,
-      gstImage: step3.gstImage instanceof File
-        ? { name: step3.gstImage.name, size: step3.gstImage.size, type: step3.gstImage.type }
-        : step3.gstImage,
-      fssaiImage: step3.fssaiImage instanceof File
-        ? { name: step3.fssaiImage.name, size: step3.fssaiImage.size, type: step3.fssaiImage.type }
-        : step3.fssaiImage,
+      panImage: getSerializableDraftImage(step3.panImage),
+      gstImage: getSerializableDraftImage(step3.gstImage),
+      fssaiImage: getSerializableDraftImage(step3.fssaiImage),
     }
 
     const dataToSave = {
@@ -221,7 +217,7 @@ export default function RestaurantOnboarding() {
     menuImages: [],
     profileImage: null,
     cuisines: [],
-    openingTime: "",
+    openingTime: "10:00",
     closingTime: "",
     openDays: [],
   })
@@ -284,10 +280,10 @@ export default function RestaurantOnboarding() {
       }
       if (localData.step2) {
         setStep2({
-          menuImages: localData.step2.menuImages || [],
-          profileImage: localData.step2.profileImage || null,
+          menuImages: (localData.step2.menuImages || []).map(normalizeUploadedImage).filter(Boolean),
+          profileImage: normalizeUploadedImage(localData.step2.profileImage),
           cuisines: localData.step2.cuisines || [],
-          openingTime: localData.step2.openingTime || "",
+          openingTime: localData.step2.openingTime || "10:00",
           closingTime: localData.step2.closingTime || "",
           openDays: localData.step2.openDays || [],
         })
@@ -296,15 +292,15 @@ export default function RestaurantOnboarding() {
         setStep3({
           panNumber: localData.step3.panNumber || "",
           nameOnPan: localData.step3.nameOnPan || "",
-          panImage: localData.step3.panImage || null,
+          panImage: normalizeUploadedImage(localData.step3.panImage),
           gstRegistered: localData.step3.gstRegistered || false,
           gstNumber: localData.step3.gstNumber || "",
           gstLegalName: localData.step3.gstLegalName || "",
           gstAddress: localData.step3.gstAddress || "",
-          gstImage: localData.step3.gstImage || null,
+          gstImage: normalizeUploadedImage(localData.step3.gstImage),
           fssaiNumber: localData.step3.fssaiNumber || "",
           fssaiExpiry: localData.step3.fssaiExpiry || "",
-          fssaiImage: localData.step3.fssaiImage || null,
+          fssaiImage: normalizeUploadedImage(localData.step3.fssaiImage),
           accountNumber: localData.step3.accountNumber || "",
           confirmAccountNumber: localData.step3.confirmAccountNumber || "",
           ifscCode: localData.step3.ifscCode || "",
@@ -328,17 +324,24 @@ export default function RestaurantOnboarding() {
   }, [searchParams])
 
   const [verifiedOwnerPhone, setVerifiedOwnerPhone] = useState("")
-  // Prefill owner phone from verified restaurant user and keep it read-only
+  // Prefill verified contact details from auth state/local storage.
   useEffect(() => {
     try {
-      const stored = localStorage.getItem("restaurant_user")
-      if (!stored) return
-      const user = JSON.parse(stored)
-      const phone = user?.phone || user?.ownerPhone
+      const storedUser = localStorage.getItem("restaurant_user")
+      const authDraft = sessionStorage.getItem("restaurantAuthData")
+      const user = storedUser ? JSON.parse(storedUser) : null
+      const authData = authDraft ? JSON.parse(authDraft) : null
+      const phone = user?.phone || user?.ownerPhone || authData?.phone
+      const email = user?.email || user?.ownerEmail || authData?.email
+
       if (phone) {
         const normalized = typeof phone === "string" ? phone.replace(/\s/g, "").trim() : String(phone)
         setVerifiedOwnerPhone(normalized)
         setStep1((prev) => ({ ...prev, ownerPhone: prev.ownerPhone || normalized }))
+      }
+      if (email) {
+        const normalizedEmail = String(email).trim().toLowerCase()
+        setStep1((prev) => ({ ...prev, ownerEmail: prev.ownerEmail || normalizedEmail }))
       }
     } catch (_) {}
   }, [])
@@ -347,6 +350,42 @@ export default function RestaurantOnboarding() {
   useEffect(() => {
     saveOnboardingToLocalStorage(step1, step2, step3, step4, step)
   }, [step1, step2, step3, step4, step])
+
+  useEffect(() => {
+    const container = mainContentRef.current
+    if (container?.scrollTo) {
+      container.scrollTo({ top: 0, left: 0, behavior: "smooth" })
+      return
+    }
+    window.scrollTo({ top: 0, left: 0, behavior: "smooth" })
+  }, [step])
+
+  useEffect(() => {
+    window.history.pushState({ onboardingStep: 1 }, "", window.location.href)
+
+    const handlePopState = () => {
+      if (saving) {
+        window.history.pushState({ onboardingStep: step }, "", window.location.href)
+        return
+      }
+
+      if (step > 1) {
+        setStep((currentStep) => Math.max(1, currentStep - 1))
+        window.history.pushState({ onboardingStep: Math.max(1, step - 1) }, "", window.location.href)
+        return
+      }
+
+      if (window.history.length > 1) {
+        navigate(-1)
+        return
+      }
+
+      navigate("/restaurant/login", { replace: true })
+    }
+
+    window.addEventListener("popstate", handlePopState)
+    return () => window.removeEventListener("popstate", handlePopState)
+  }, [navigate, saving, step])
 
   // Keep focused input visible when keyboard opens (scroll into view)
   const scrollTimerRef = useRef(null)
@@ -401,7 +440,7 @@ export default function RestaurantOnboarding() {
               // Load profile image URL if available
               profileImage: data.step2.profileImageUrl || null,
               cuisines: data.step2.cuisines || [],
-              openingTime: data.step2.deliveryTimings?.openingTime || "",
+              openingTime: data.step2.deliveryTimings?.openingTime || "10:00",
               closingTime: data.step2.deliveryTimings?.closingTime || "",
               openDays: data.step2.openDays || [],
             })
@@ -1209,6 +1248,11 @@ export default function RestaurantOnboarding() {
       return
     }
 
+    if (window.history.length > 1) {
+      navigate(-1)
+      return
+    }
+
     try {
       clearModuleAuth("restaurant")
       clearOnboardingFromLocalStorage()
@@ -2002,9 +2046,6 @@ export default function RestaurantOnboarding() {
             >
               <ArrowLeft className="w-4 h-4" />
             </button>
-            <div className="w-8 h-8 bg-black rounded-lg flex items-center justify-center">
-              <Sparkles className="w-4 h-4 text-white" />
-            </div>
             <div className="text-sm font-bold text-black tracking-tight">ZiggyBites Onboarding</div>
           </div>
           <div className="flex items-center gap-3">
@@ -2016,7 +2057,6 @@ export default function RestaurantOnboarding() {
                 className="text-xs bg-black text-white hover:bg-gray-800 border-none rounded-full px-4 flex items-center gap-1.5 transition-all active:scale-95"
                 title="Fill with dummy data (Dev only)"
               >
-                <Sparkles className="w-3 h-3" />
                 Auto-Fill
               </Button>
             )}

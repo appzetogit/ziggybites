@@ -67,12 +67,12 @@ export default function SignIn() {
     try {
       const data = JSON.parse(stored)
       if (data.method === "phone" && data.phone) {
-        const match = data.phone.match(/^(?:\+\d+)?\s*(\d*)/)
+        const match = String(data.phone).trim().match(/^(\+\d+)\s*(.*)$/)
         if (match) {
-          const [, num] = match
+          const [, code, num] = match
           setFormData((prev) => ({
             ...prev,
-            countryCode: "+91",
+            countryCode: code || "+91",
             phone: (num || "").replace(/\D/g, ""),
           }))
         }
@@ -279,7 +279,7 @@ export default function SignIn() {
     return ""
   }
 
-  const validatePhone = (phone) => {
+  const validatePhone = (phone, countryCode = formData.countryCode) => {
     if (!phone.trim()) {
       return "Phone number is required"
     }
@@ -287,10 +287,14 @@ export default function SignIn() {
     if (!/^\d+$/.test(cleanPhone)) {
       return "Please enter a valid phone number (digits only)"
     }
-    if (cleanPhone.length !== 10) {
+    const isIndianPhone = countryCode === "+91"
+    if (isIndianPhone && cleanPhone.length !== 10) {
       return "Phone number must be 10 digits"
     }
-    if (!["6", "7", "8", "9"].includes(cleanPhone[0])) {
+    if (!isIndianPhone && (cleanPhone.length < 7 || cleanPhone.length > 15)) {
+      return "Phone number must be 7 to 15 digits"
+    }
+    if (isIndianPhone && !["6", "7", "8", "9"].includes(cleanPhone[0])) {
       return "Please enter a valid 10-digit mobile number"
     }
     return ""
@@ -306,14 +310,15 @@ export default function SignIn() {
     if (name.trim().length > 50) {
       return "Name must be less than 50 characters"
     }
-    const nameRegex = /^[a-zA-Z\s'-]+$/
+    const nameRegex = /^[a-zA-Z\s]+$/
     if (!nameRegex.test(name.trim())) {
-      return "Name can only contain letters, spaces, hyphens, and apostrophes"
+      return "Name can only contain alphabets"
     }
     return ""
   }
 
-  const maxPhoneLength = 10
+  const maxPhoneLength = formData.countryCode === "+91" ? 10 : 15
+  const isIndianNumber = formData.countryCode === "+91"
 
   const handleChange = (e) => {
     const { name, value } = e.target
@@ -321,9 +326,12 @@ export default function SignIn() {
     if (name === "phone") {
       nextValue = value.replace(/\D/g, "").slice(0, maxPhoneLength)
     }
+    if (name === "name") {
+      nextValue = value.replace(/[^a-zA-Z\s]/g, "")
+    }
     setFormData({
       ...formData,
-      [name]: name === "phone" ? nextValue : value,
+      [name]: nextValue,
     })
 
     // Real-time validation
@@ -331,8 +339,10 @@ export default function SignIn() {
       setErrors({ ...errors, email: validateEmail(value) })
     } else if (name === "phone") {
       setErrors({ ...errors, phone: validatePhone(nextValue) })
+    } else if (name === "countryCode") {
+      setErrors({ ...errors, phone: validatePhone(formData.phone, nextValue) })
     } else if (name === "name") {
-      setErrors({ ...errors, name: validateName(value) })
+      setErrors({ ...errors, name: validateName(nextValue) })
     }
   }
 
@@ -346,7 +356,7 @@ export default function SignIn() {
     const newErrors = { phone: "", email: "", name: "" }
 
     if (authMethod === "phone") {
-      const phoneError = validatePhone(formData.phone)
+      const phoneError = validatePhone(formData.phone, formData.countryCode)
       newErrors.phone = phoneError
       if (phoneError) hasErrors = true
     } else {
@@ -372,7 +382,7 @@ export default function SignIn() {
     try {
       const purpose = isSignUp ? "register" : "login"
       const phoneDigits = (formData.phone || "").replace(/\D/g, "")
-      const fullPhone = authMethod === "phone" ? `+91 ${phoneDigits}`.trim() : null
+      const fullPhone = authMethod === "phone" ? `${formData.countryCode} ${phoneDigits}`.trim() : null
       const email = authMethod === "email" ? formData.email.trim() : null
 
       // Call backend to send OTP
@@ -444,8 +454,13 @@ export default function SignIn() {
         message = "This sign-in method is disabled. Please enable it in the Firebase Console."
       } else if (errorCode === "auth/popup-blocked") {
         message = "Popup was blocked. Please allow popups and try again."
-      } else if (errorCode === "auth/popup-closed-by-user") {
-        message = "Sign-in was cancelled. Please try again."
+      } else if (
+        errorCode === "auth/popup-closed-by-user" ||
+        errorCode === "auth/cancelled-popup-request" ||
+        errorMessage.toLowerCase().includes("cancel") ||
+        errorMessage.toLowerCase().includes("closed by user")
+      ) {
+        return
       } else if (errorCode === "auth/network-request-failed") {
         message = "Network error. Please check your connection and try again."
       } else if (errorMessage) {
@@ -473,7 +488,7 @@ export default function SignIn() {
   }
 
   return (
-    <AnimatedPage className="h-[100dvh] flex flex-col bg-white dark:bg-[#0a0a0a] overflow-hidden !pb-0 md:flex-row md:overflow-hidden">
+    <AnimatedPage className="h-[100dvh] max-h-[100dvh] flex flex-col bg-white dark:bg-[#0a0a0a] overflow-hidden !pb-0 md:flex-row md:overflow-hidden">
 
        {/* Mobile: Top Section - Banner Image */}
        {/* Desktop: Left Section - Banner Image */}
@@ -502,7 +517,7 @@ export default function SignIn() {
        </div>
 
       {/* Mobile: Bottom Section - White Login Form (scrollable); Desktop: Right Section - Login Form */}
-      <div className="flex-1 min-h-0 flex flex-col md:w-1/2 md:h-full md:overflow-hidden">
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden md:w-1/2 md:h-full md:overflow-hidden">
         <div className="flex-1 min-h-0 overflow-hidden p-3 sm:p-4 md:p-6 lg:p-8 xl:p-10 md:flex md:items-center md:justify-center bg-white dark:bg-[#1a1a1a]">
         <div className="max-w-md lg:max-w-lg xl:max-w-xl mx-auto flex h-full w-full flex-col justify-between gap-4 md:h-auto md:justify-center md:space-y-8 lg:space-y-10">
           {/* Heading - ZigZagLite: subscription food delivery (no dine-in) */}
@@ -542,13 +557,29 @@ export default function SignIn() {
             {authMethod === "phone" && (
               <div className="space-y-2">
                 <div className="flex items-stretch">
+                  <div className="mr-2 flex h-12 md:h-14 items-center rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 dark:border-gray-700 dark:bg-[#1a1a1a] dark:text-white">
+                    <select
+                      id="countryCode"
+                      name="countryCode"
+                      value={formData.countryCode}
+                      onChange={handleChange}
+                      className="bg-transparent pr-1 outline-none"
+                      aria-label="Select country code"
+                    >
+                      {countryCodes.map((country) => (
+                        <option key={country.code} value={country.code}>
+                          {country.flag} {country.code}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                   <Input
                     id="phone"
                     name="phone"
                     type="tel"
                     inputMode="numeric"
                     autoComplete="tel-national"
-                    placeholder="Enter Phone Number"
+                    placeholder={isIndianNumber ? "Enter 10-digit mobile number" : "Enter phone number"}
                     value={formData.phone}
                     onChange={handleChange}
                     className={`flex-1 h-12 md:h-14 text-base md:text-lg bg-white dark:bg-[#1a1a1a] text-black dark:text-white border-gray-300 dark:border-gray-700 rounded-lg ${errors.phone ? "border-red-500" : ""} transition-colors`}

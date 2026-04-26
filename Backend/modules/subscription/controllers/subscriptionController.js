@@ -33,6 +33,8 @@ import SubscriptionMealAddIntent from "../models/SubscriptionMealAddIntent.js";
 import UserWallet from "../../user/models/UserWallet.js";
 
 const MEAL_CATEGORY_KEYS = ["breakfast", "lunch", "snacks", "dinner"];
+const MEAL_EDIT_LOCK_MESSAGE =
+  "This meal is locked within 24 hours of delivery, but future meals can still be edited.";
 
 function mealItemsHaveRequiredCategories(items) {
   return Array.isArray(items) && items.some((i) => i && (i.itemId || i.id));
@@ -92,6 +94,15 @@ function normalizeSubscriptionItemFromBody(item) {
     image: item.image,
     isVeg: item.isVeg !== false,
     mealCategory: item.mealCategory || null,
+  };
+}
+
+function mealEditLockPayload(sub) {
+  return {
+    canEditMeals: true,
+    mealEditLockMessage: null,
+    nextDeliveryAt: sub?.nextDeliveryAt || null,
+    mealEditLockedUntil: null,
   };
 }
 
@@ -516,6 +527,7 @@ export const getActiveSubscriptions = async (req, res) => {
         ...sub,
         endDate: subForRemain.endDate,
         nextDeliveryAt,
+        ...mealEditLockPayload({ ...sub, nextDeliveryAt }),
         planName: getPlanName(sub.planDays),
         planTierDays: sub.planDays,
         remainingDays: getRemainingDays(subForRemain),
@@ -635,7 +647,6 @@ export const updateSubscriptionItems = async (req, res) => {
     if (!sub) {
       return res.status(404).json({ success: false, message: "Subscription not found" });
     }
-
     if (action === "add" && item) {
       const newItem = normalizeSubscriptionItemFromBody(item);
       const duePaise = computeMealAddAmountDuePaise(sub.items, newItem);
@@ -727,7 +738,6 @@ export const initSubscriptionMealAddPayment = async (req, res) => {
     if (!sub) {
       return res.status(404).json({ success: false, message: "Subscription not found" });
     }
-
     const newItem = normalizeSubscriptionItemFromBody(rawItem);
     if (!newItem.mealCategory || !MEAL_CATEGORY_KEYS.includes(newItem.mealCategory)) {
       return res.status(400).json({ success: false, message: "Valid mealCategory is required" });
@@ -917,7 +927,6 @@ export const confirmSubscriptionMealAddPayment = async (req, res) => {
     if (!sub) {
       return res.status(404).json({ success: false, message: "Subscription not found" });
     }
-
     const hasSplitRz = Number(intent.razorpayAmountPaise) > 0 && intent.razorpayOrderId;
     const hasOnlineOnly =
       Number(intent.onlineOnlyAmountPaise) > 0 && intent.onlineOnlyRazorpayOrderId;

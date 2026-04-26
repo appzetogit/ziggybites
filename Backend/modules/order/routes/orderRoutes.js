@@ -47,6 +47,9 @@ router.get("/:id", getOrderDetails);
 // Cancel order
 router.patch("/:id/cancel", cancelOrder);
 
+// Update delivery details
+router.put("/:id/update-delivery-details", updateOrderDeliveryDetails);
+
 // Submit order review
 router.patch("/:id/review", submitOrderReview);
 

@@ -149,7 +149,22 @@ export async function signInWithGoogleBridge() {
     }
 
     const nativeMessage = nativeResult?.error || nativeResult?.message || "";
+    const normalizedNativeMessage = String(nativeMessage || "").toLowerCase();
     if (!nativeMessage) {
+      return {
+        result: null,
+        source: "flutter-native-google",
+        cancelled: true,
+      };
+    }
+
+    if (
+      normalizedNativeMessage.includes("cancel") ||
+      normalizedNativeMessage.includes("canceled") ||
+      normalizedNativeMessage.includes("cancelled") ||
+      normalizedNativeMessage.includes("sign_in_canceled") ||
+      normalizedNativeMessage.includes("sign in canceled")
+    ) {
       return {
         result: null,
         source: "flutter-native-google",

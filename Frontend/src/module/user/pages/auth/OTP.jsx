@@ -25,6 +25,16 @@ export default function OTP() {
   const [contactType, setContactType] = useState("phone")
   const inputRefs = useRef([])
 
+  const validateFullName = (value) => {
+    const trimmedValue = value.trim()
+    if (!trimmedValue) return "Name is required"
+    if (trimmedValue.length < 2) return "Name must be at least 2 characters"
+    if (!/^[A-Za-z\s]+$/.test(trimmedValue)) {
+      return "Name can only contain alphabets"
+    }
+    return ""
+  }
+
   useEffect(() => {
     // Redirect to home if already authenticated
     // Redirect to home if already authenticated
@@ -180,8 +190,9 @@ export default function OTP() {
 
   const handleSubmitName = async () => {
     const trimmedName = name.trim()
-    if (!trimmedName) {
-      setNameError("Name is required")
+    const validationError = validateFullName(trimmedName)
+    if (validationError) {
+      setNameError(validationError)
       return
     }
 
@@ -336,8 +347,11 @@ export default function OTP() {
                   type="text"
                   value={name}
                   onChange={(e) => {
-                    setName(e.target.value)
-                    if (nameError) setNameError("")
+                    const sanitizedName = e.target.value.replace(/[^A-Za-z\s]/g, "")
+                    setName(sanitizedName)
+                    if (nameError) {
+                      setNameError(validateFullName(sanitizedName))
+                    }
                   }}
                   disabled={isLoading}
                   placeholder="Enter your name"

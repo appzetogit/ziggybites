@@ -4,6 +4,7 @@ import { motion } from "framer-motion"
 import { ArrowLeft, Headphones, ArrowRight, CheckCircle, Contact } from "lucide-react"
 import BottomPopup from "../components/BottomPopup"
 import { getCompanyNameAsync } from "@/lib/utils/businessSettings"
+import { toast } from "sonner"
 
 const STORAGE_KEY = "appzeto_food_referrals"
 
@@ -28,6 +29,28 @@ export default function ReferAndEarn() {
     }
   }, [])
 
+  const handlePickContact = async () => {
+    try {
+      if (!navigator.contacts?.select) {
+        toast.error("Contact picker is not available on this device")
+        return
+      }
+
+      const [contact] = await navigator.contacts.select(["name", "tel"], { multiple: false })
+      if (!contact) return
+
+      const pickedName = Array.isArray(contact.name) ? contact.name[0] : contact.name
+      const pickedPhone = Array.isArray(contact.tel) ? contact.tel[0] : contact.tel
+
+      if (pickedName) setFriendName(String(pickedName).trim())
+      if (pickedPhone) setMobileNumber(String(pickedPhone).replace(/\D/g, "").slice(-10))
+    } catch (error) {
+      if (error?.name !== "AbortError") {
+        toast.error("Could not read contacts")
+      }
+    }
+  }
+
   // Validate mobile number (10 digits)
   const isValidMobile = /^\d{10}$/.test(mobileNumber)
   const isFormValid = friendName.trim().length > 0 && isValidMobile
@@ -50,10 +73,17 @@ export default function ReferAndEarn() {
         }
       }
 
+      const normalizedMobile = mobileNumber.replace(/\D/g, "").slice(-10)
+      const alreadyExists = referrals.some((ref) => String(ref.mobile || "").replace(/\D/g, "").slice(-10) === normalizedMobile)
+      if (alreadyExists) {
+        toast.error("This mobile number has already been referred")
+        return
+      }
+
       // Add new referral
       const newReferral = {
         name: friendName.trim(),
-        mobile: mobileNumber,
+        mobile: normalizedMobile,
         timestamp: new Date().toISOString()
       }
       
@@ -88,10 +118,14 @@ export default function ReferAndEarn() {
           <ArrowLeft className="w-5 h-5" />
         </button>
         <h1 className="text-lg font-bold">Refer and earn</h1>
-        <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => navigate("/delivery/help/tickets")}
+          className="flex items-center gap-2 rounded-full px-2 py-1 hover:bg-gray-800 transition-colors"
+        >
           <Headphones className="w-5 h-5" />
           <span className="text-sm">Help</span>
-        </div>
+        </button>
       </div>
 
       {/* Black Background Section - Till below Active Referrals Card */}
@@ -135,7 +169,12 @@ export default function ReferAndEarn() {
                 placeholder="Name"
                 className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-[#ff8100] focus:border-transparent"
               />
-              <button className="absolute right-3 top-1/2 -translate-y-1/2 p-2 hover:bg-gray-100 rounded-lg transition-colors">
+              <button
+                type="button"
+                onClick={handlePickContact}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                aria-label="Pick from contacts"
+              >
                 <Contact className="w-5 h-5 text-gray-600" />
               </button>
             </div>
@@ -260,4 +299,3 @@ export default function ReferAndEarn() {
     </div>
   )
 }
-

@@ -51,6 +51,38 @@ const saveProfileToStorage = (data) => {
   }
 }
 
+const openNativeGallery = async (fallbackInputRef) => {
+  const flutterBridge = window?.flutter_inappwebview
+  if (!flutterBridge?.callHandler) {
+    fallbackInputRef?.current?.click()
+    return
+  }
+
+  try {
+    const response = await flutterBridge.callHandler("nativeGallery", { multiple: false })
+    if (!response?.success) {
+      if (response?.cancelled) return
+      throw new Error(response?.error || "Gallery selection failed")
+    }
+
+    const nativeFile = response.files?.[0]
+    if (!nativeFile?.base64) return
+
+    const mimeType = nativeFile.mimeType || "image/jpeg"
+    const binary = atob(nativeFile.base64)
+    const bytes = new Uint8Array(binary.length)
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index)
+    }
+
+    const file = new File([bytes], nativeFile.name || "profile-image.jpg", { type: mimeType })
+    return file
+  } catch (error) {
+    console.warn("Native gallery unavailable, using file input fallback:", error)
+    fallbackInputRef?.current?.click()
+  }
+}
+
 export default function EditProfile() {
   const navigate = useNavigate()
   const { userProfile, updateUserProfile } = useProfile()
@@ -126,6 +158,13 @@ export default function EditProfile() {
   }, [formData, initialData])
 
   const handleChange = (field, value) => {
+    if (field === "name") {
+      setFormData(prev => ({
+        ...prev,
+        [field]: String(value || "").replace(/[^A-Za-z\s'.-]/g, "")
+      }))
+      return
+    }
     if (field === "mobile") {
       const digitsOnly = value.replace(/\D/g, "")
       const valid = digitsOnly.length <= 15 ? digitsOnly : digitsOnly.slice(0, 15)
@@ -145,8 +184,7 @@ export default function EditProfile() {
     }))
   }
 
-  const handleImageSelect = async (e) => {
-    const file = e.target.files?.[0]
+  const uploadSelectedImage = async (file) => {
     if (!file) return
 
     // Validate file type
@@ -195,6 +233,29 @@ export default function EditProfile() {
     }
   }
 
+  const handleImageSelect = async (e) => {
+    const file = e.target.files?.[0]
+    await uploadSelectedImage(file)
+    if (e.target) {
+      e.target.value = ""
+    }
+  }
+
+  const handleOpenGallery = async () => {
+    if (isUploadingImage) return
+    const file = await openNativeGallery(fileInputRef)
+    if (file) {
+      await uploadSelectedImage(file)
+    }
+  }
+
+  const handleRemovePhoto = () => {
+    setProfileImage("")
+    setImagePreview("")
+    updateUserProfile({ profileImage: "" })
+    setHasChanges(true)
+  }
+
   const handleUpdate = async () => {
     if (isSaving) return
 
@@ -208,6 +269,21 @@ export default function EditProfile() {
         toast.error("Please enter a valid 10-digit mobile number")
         return
       }
+    }
+
+    if (formData.name?.trim() && !/^[A-Za-z][A-Za-z\s'.-]*$/.test(formData.name.trim())) {
+      toast.error("Name should contain only alphabets")
+      return
+    }
+
+    if (formData.dateOfBirth && formData.dateOfBirth.isAfter(dayjs(), "day")) {
+      toast.error("Date of birth cannot be in the future")
+      return
+    }
+
+    if (formData.anniversary && formData.anniversary.isAfter(dayjs(), "day")) {
+      toast.error("Anniversary cannot be in the future")
+      return
     }
 
     try {
@@ -325,7 +401,7 @@ export default function EditProfile() {
               </button>
               <button
                 type="button"
-                onClick={() => fileInputRef.current?.click()}
+                onClick={handleOpenGallery}
                 disabled={isUploadingImage}
                 className="w-8 h-8 bg-green-600 rounded-full flex items-center justify-center shadow-lg border-2 border-white hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Choose from gallery"
@@ -333,6 +409,18 @@ export default function EditProfile() {
               >
                 <ImagePlus className="h-4 w-4 text-white" />
               </button>
+              {imagePreview && (
+                <button
+                  type="button"
+                  onClick={handleRemovePhoto}
+                  disabled={isUploadingImage}
+                  className="w-8 h-8 bg-white rounded-full flex items-center justify-center shadow-lg border-2 border-white text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Remove photo"
+                  aria-label="Remove profile photo"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
             </div>
             <input
               ref={fileInputRef}
@@ -430,6 +518,7 @@ export default function EditProfile() {
                 <DatePicker
                   value={formData.dateOfBirth}
                   onChange={(newValue) => handleChange('dateOfBirth', newValue)}
+                  disableFuture
                   slotProps={{
                     textField: {
                       className: "w-full",
@@ -468,6 +557,7 @@ export default function EditProfile() {
                 <DatePicker
                   value={formData.anniversary}
                   onChange={(newValue) => handleChange('anniversary', newValue)}
+                  disableFuture
                   slotProps={{
                     textField: {
                       className: "w-full",

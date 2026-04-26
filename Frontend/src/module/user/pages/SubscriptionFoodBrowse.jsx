@@ -50,6 +50,44 @@ const MEAL_CATEGORIES = [
   { id: "dinner", label: "Dinner", Icon: DinnerIcon, heading: "The Evening\nSelection" },
 ]
 
+const MEAL_EDIT_CUTOFF_MS = 24 * 60 * 60 * 1000
+const FUTURE_EDIT_DAY_COUNT = 5
+
+function mealCategoryFromDate(dateLike) {
+  if (!dateLike) return "dinner"
+  const d = new Date(dateLike)
+  const h = d.getHours()
+  if (h >= 5 && h <= 10) return "breakfast"
+  if (h >= 11 && h <= 15) return "lunch"
+  if (h >= 16 && h <= 18) return "snacks"
+  return "dinner"
+}
+
+function formatTargetLabel(order) {
+  if (!order?.scheduledMealAt) return "Upcoming delivery"
+  const scheduledAt = new Date(order.scheduledMealAt)
+  const now = new Date()
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const startOfDate = new Date(scheduledAt.getFullYear(), scheduledAt.getMonth(), scheduledAt.getDate())
+  const diffDays = Math.round((startOfDate.getTime() - startOfToday.getTime()) / MEAL_EDIT_CUTOFF_MS)
+  const dayLabel =
+    diffDays === 0
+      ? "Today"
+      : diffDays === 1
+        ? "Tomorrow"
+        : scheduledAt.toLocaleDateString("en-IN", {
+            weekday: "short",
+            day: "numeric",
+            month: "short",
+          })
+  const timeLabel = scheduledAt.toLocaleTimeString("en-IN", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  })
+  return `${dayLabel} • ${timeLabel}`
+}
+
 export default function SubscriptionFoodBrowse() {
   const { category } = useParams()
   const navigate = useNavigate()
@@ -62,14 +100,15 @@ export default function SubscriptionFoodBrowse() {
   const [adding, setAdding] = useState(null)
   const [removing, setRemoving] = useState(null)
   const [activeSubscriptions, setActiveSubscriptions] = useState([])
+  const [upcomingOrders, setUpcomingOrders] = useState([])
   const [draftItems, setDraftItems] = useState(() => readSubscriptionDraftFromStorage())
   const [selectedQuantities, setSelectedQuantities] = useState({})
   const [pendingPayment, setPendingPayment] = useState(null)
   const [payingCheckout, setPayingCheckout] = useState(false)
+  const [selectedTarget, setSelectedTarget] = useState("default")
 
   const categoryMeta = MEAL_CATEGORIES.find((c) => c.id === category)
   const primarySub = activeSubscriptions.find((s) => s.status === "active") || activeSubscriptions[0] || null
-  const displayItems = primarySub?.items ? primarySub.items : draftItems
   const foods = useMemo(
     () =>
       restaurants.flatMap((restaurant) =>
@@ -84,6 +123,44 @@ export default function SubscriptionFoodBrowse() {
       ),
     [restaurants],
   )
+  const editableUpcomingOrders = useMemo(
+    () =>
+      (upcomingOrders || [])
+        .filter((order) => order?.source?.type === "subscription" && order?.scheduledMealAt)
+        .filter((order) => mealCategoryFromDate(order.scheduledMealAt) === category)
+        .filter((order) => {
+          const scheduledMs = new Date(order.scheduledMealAt).getTime()
+          return Number.isFinite(scheduledMs) && scheduledMs > Date.now()
+        })
+        .sort((a, b) => new Date(a.scheduledMealAt).getTime() - new Date(b.scheduledMealAt).getTime())
+        .slice(0, FUTURE_EDIT_DAY_COUNT),
+    [upcomingOrders, category],
+  )
+  const selectedOrder = useMemo(() => {
+    if (!selectedTarget || selectedTarget === "default") return null
+    return editableUpcomingOrders.find((order) => String(order._id) === String(selectedTarget)) || null
+  }, [editableUpcomingOrders, selectedTarget])
+  const isSelectedOrderLocked = useMemo(() => {
+    if (!selectedOrder?.scheduledMealAt) return false
+    const scheduledMs = new Date(selectedOrder.scheduledMealAt).getTime()
+    if (!Number.isFinite(scheduledMs)) return false
+    return scheduledMs - Date.now() <= MEAL_EDIT_CUTOFF_MS
+  }, [selectedOrder])
+  const displayItems = selectedOrder?.items || (primarySub?.items ? primarySub.items : draftItems)
+  const topDropdownOptions = useMemo(() => {
+    const futureOption = {
+      value: "default",
+      label: `Future ${categoryMeta?.label || "meal"} plan`,
+    }
+    const orderOptions = editableUpcomingOrders.map((order) => {
+      const locked = new Date(order.scheduledMealAt).getTime() - Date.now() <= MEAL_EDIT_CUTOFF_MS
+      return {
+        value: String(order._id),
+        label: `${formatTargetLabel(order)}${locked ? " (Locked)" : ""}`,
+      }
+    })
+    return [futureOption, ...orderOptions]
+  }, [editableUpcomingOrders, categoryMeta])
 
   const handleBack = () => {
     if (fromManage) {
@@ -103,13 +180,6 @@ export default function SubscriptionFoodBrowse() {
 
   const clampQty = (value) => Math.max(1, Math.min(10, Number(value) || 1))
   const getFoodQty = (foodId, fallback = 1) => clampQty(selectedQuantities[String(foodId)] ?? fallback)
-  const changeFoodQty = (foodId, delta, fallback = 1) => {
-    const key = String(foodId)
-    setSelectedQuantities((prev) => ({
-      ...prev,
-      [key]: clampQty((prev[key] ?? fallback) + delta),
-    }))
-  }
   const handleDecreaseOrRemove = async (foodId, currentQty) => {
     if (currentQty <= 1) {
       await handleRemoveFood(foodId)
@@ -129,12 +199,13 @@ export default function SubscriptionFoodBrowse() {
     const fetchData = async () => {
       setLoading(true)
       try {
-        const [foodsRes, activeRes] = await Promise.all([
+        const [foodsRes, activeRes, ordersRes] = await Promise.all([
           api.get("/restaurant/foods", { params: { category } }).catch((e) => {
             console.warn("Foods API error:", e?.response?.status, e?.message)
             return { data: { success: false } }
           }),
           api.get("/subscription/active").catch(() => ({ data: { success: false, data: [] } })),
+          api.get("/order", { params: { limit: 100, page: 1 } }).catch(() => ({ data: { success: false, data: { orders: [] } } })),
         ])
         const restaurantsData = foodsRes?.data?.data?.restaurants ?? foodsRes?.data?.restaurants ?? []
         setRestaurants(Array.isArray(restaurantsData) ? restaurantsData : [])
@@ -143,10 +214,13 @@ export default function SubscriptionFoodBrowse() {
         } else {
           setActiveSubscriptions([])
         }
+        const ordersData = ordersRes?.data?.data?.orders || []
+        setUpcomingOrders(Array.isArray(ordersData) ? ordersData : [])
         setDraftItems(readSubscriptionDraftFromStorage())
       } catch (e) {
         toast.error("Failed to load foods")
         setRestaurants([])
+        setUpcomingOrders([])
       } finally {
         setLoading(false)
       }
@@ -166,6 +240,14 @@ export default function SubscriptionFoodBrowse() {
       window.removeEventListener("userAuthChanged", handler)
     }
   }, [])
+
+  useEffect(() => {
+    if (selectedTarget === "default") return
+    const exists = editableUpcomingOrders.some((order) => String(order._id) === String(selectedTarget))
+    if (!exists) {
+      setSelectedTarget("default")
+    }
+  }, [editableUpcomingOrders, selectedTarget])
 
   const mergeServerSubscription = (prev, serverSub) => {
     if (!serverSub?._id) return prev
@@ -255,6 +337,44 @@ export default function SubscriptionFoodBrowse() {
     })
   }
 
+  const saveSelectedOrderItems = useCallback(async (nextItems, successMessage) => {
+    if (!selectedOrder?._id) return false
+    if (isSelectedOrderLocked) {
+      toast.error("This delivery is locked within 24 hours and cannot be modified.")
+      return false
+    }
+    if (!Array.isArray(nextItems) || nextItems.length === 0) {
+      toast.error("Choose another meal before removing the last item for this delivery.")
+      return false
+    }
+
+    const payloadItems = nextItems.map((item) => ({
+      itemId: item.itemId || item.id,
+      name: item.name,
+      price: Number(item.price) || 0,
+      quantity: Number(item.quantity) || 1,
+      image: item.image,
+      description: item.description,
+      isVeg: item.isVeg !== false,
+      selectedVariation: item.selectedVariation,
+      subCategory: item.subCategory || "",
+    }))
+
+    const res = await api.post(`/order/change-meal/${selectedOrder._id}`, {
+      items: payloadItems,
+    })
+    const updatedOrder = res?.data?.data?.order
+    if (updatedOrder?._id) {
+      setUpcomingOrders((prev) =>
+        prev.map((order) => (String(order._id) === String(updatedOrder._id) ? { ...order, ...updatedOrder } : order)),
+      )
+    }
+    if (successMessage) {
+      toast.success(successMessage)
+    }
+    return true
+  }, [isSelectedOrderLocked, selectedOrder])
+
   const handleAddFood = async (food, quantityOverride) => {
     const quantity = clampQty(quantityOverride ?? selectedQuantities[String(food.id)] ?? 1)
     const newItem = {
@@ -267,6 +387,28 @@ export default function SubscriptionFoodBrowse() {
       mealCategory: category,
       restaurantId: food.restaurantId || "",
       restaurantName: food.restaurantName || "",
+    }
+    if (selectedOrder) {
+      setAdding(food.id)
+      try {
+        const existingItems = Array.isArray(selectedOrder.items) ? selectedOrder.items : []
+        const updatedItems = existingItems.some((item) => String(item.itemId) === String(newItem.itemId))
+          ? existingItems.map((item) =>
+              String(item.itemId) === String(newItem.itemId)
+                ? { ...item, ...newItem, itemId: newItem.itemId, quantity }
+                : item,
+            )
+          : [...existingItems, newItem]
+        const saved = await saveSelectedOrderItems(updatedItems, `Saved ${food.name} for ${formatTargetLabel(selectedOrder)}`)
+        if (saved) {
+          setSelectedQuantities((prev) => ({ ...prev, [String(food.id)]: quantity }))
+        }
+      } catch (e) {
+        toast.error(e?.response?.data?.message || "Failed to update this delivery")
+      } finally {
+        setAdding(null)
+      }
+      return
     }
     if (primarySub) {
       setAdding(food.id)
@@ -325,6 +467,27 @@ export default function SubscriptionFoodBrowse() {
   const handleChangeAddedFoodQty = async (food, nextQty) => {
     const quantity = clampQty(nextQty)
 
+    if (selectedOrder) {
+      setAdding(food.id)
+      try {
+        const existingItems = Array.isArray(selectedOrder.items) ? selectedOrder.items : []
+        const updatedItems = existingItems.map((item) =>
+          String(item.itemId) === String(food.id)
+            ? { ...item, quantity }
+            : item,
+        )
+        const saved = await saveSelectedOrderItems(updatedItems, `Updated ${food.name} for ${formatTargetLabel(selectedOrder)}`)
+        if (saved) {
+          setSelectedQuantities((prev) => ({ ...prev, [String(food.id)]: quantity }))
+        }
+      } catch (e) {
+        toast.error(e?.response?.data?.message || "Failed to update quantity")
+      } finally {
+        setAdding(null)
+      }
+      return
+    }
+
     if (primarySub) {
       await handleAddFood(food, quantity)
       return
@@ -346,6 +509,19 @@ export default function SubscriptionFoodBrowse() {
   }
 
   const handleRemoveFood = async (foodId) => {
+    if (selectedOrder) {
+      setRemoving(foodId)
+      try {
+        const existingItems = Array.isArray(selectedOrder.items) ? selectedOrder.items : []
+        const updatedItems = existingItems.filter((item) => String(item.itemId) !== String(foodId))
+        await saveSelectedOrderItems(updatedItems, `Updated ${formatTargetLabel(selectedOrder)}`)
+      } catch (e) {
+        toast.error(e?.response?.data?.message || "Failed to remove")
+      } finally {
+        setRemoving(null)
+      }
+      return
+    }
     if (primarySub) {
       setRemoving(foodId)
       try {
@@ -393,6 +569,35 @@ export default function SubscriptionFoodBrowse() {
           <div className="h-1 w-10 bg-[#DC2626] mt-5 rounded-full" />
         </div>
 
+        {(fromManage || primarySub) && (
+          <div className="px-5 mb-6">
+            <div className="bg-white dark:bg-gray-900 rounded-[1.65rem] border border-gray-100 dark:border-gray-800 shadow-[0_6px_24px_-12px_rgba(0,0,0,0.08)] p-4">
+              <label htmlFor="subscription-edit-target" className="block text-[10px] font-black text-gray-500 uppercase tracking-[0.18em] mb-2">
+                Edit Target
+              </label>
+              <select
+                id="subscription-edit-target"
+                value={selectedTarget}
+                onChange={(e) => setSelectedTarget(e.target.value)}
+                className="w-full h-12 rounded-2xl border border-gray-200 dark:border-gray-700 bg-[#F8F9FA] dark:bg-gray-800 px-4 text-sm font-semibold text-gray-900 dark:text-white outline-none"
+              >
+                {topDropdownOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+                {selectedOrder
+                  ? isSelectedOrderLocked
+                    ? "This delivery is locked because it is within 24 hours of the scheduled time."
+                    : `Changes now apply only to ${formatTargetLabel(selectedOrder)}.`
+                  : `Changes apply to future ${categoryMeta.label.toLowerCase()} deliveries in your subscription plan.`}
+              </p>
+            </div>
+          </div>
+        )}
+
         <div className="px-5">
           {loading ? (
             <div className="flex justify-center py-16">
@@ -408,12 +613,13 @@ export default function SubscriptionFoodBrowse() {
               ) : (
                 foods.map((food) => {
                   const selectedItem = (displayItems || []).find(
-                    (i) => String(i.itemId) === String(food.id) && i.mealCategory === category,
+                    (i) => String(i.itemId) === String(food.id) && (selectedOrder || i.mealCategory === category),
                   )
                   const added = Boolean(selectedItem)
                   const isAdding = adding === food.id
                   const isRemoving = removing === food.id
                   const qty = getFoodQty(food.id, Number(selectedItem?.quantity) || 1)
+                  const orderLocked = Boolean(selectedOrder && isSelectedOrderLocked)
 
                   return (
                     <div key={`${food.restaurantId || "restaurant"}-${food.id}`} className="flex items-center gap-4 p-4 bg-white dark:bg-gray-900 rounded-[1.65rem] border border-gray-100 dark:border-gray-800 shadow-[0_6px_24px_-12px_rgba(0,0,0,0.08)]">
@@ -432,7 +638,7 @@ export default function SubscriptionFoodBrowse() {
                         <div className="flex flex-col items-end gap-2">
                           <button
                             onClick={() => handleAddFood(food, qty)}
-                            disabled={isAdding || pendingPayment}
+                            disabled={isAdding || pendingPayment || orderLocked}
                             className="h-9 min-w-[4.75rem] px-4 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold uppercase tracking-[0.12em] disabled:opacity-50 transition-colors"
                           >
                             {isAdding ? <Loader2 className="w-4 h-4 animate-spin" /> : "Add"}
@@ -444,7 +650,7 @@ export default function SubscriptionFoodBrowse() {
                           <div className="inline-flex items-center rounded-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/70">
                             <button
                               onClick={() => handleDecreaseOrRemove(food.id, qty)}
-                              disabled={isAdding || pendingPayment || isRemoving}
+                              disabled={isAdding || pendingPayment || isRemoving || orderLocked}
                               className="h-9 w-9 flex items-center justify-center text-gray-600 disabled:opacity-40"
                               aria-label="Decrease quantity"
                             >
@@ -453,7 +659,7 @@ export default function SubscriptionFoodBrowse() {
                             <span className="min-w-8 text-center text-sm font-medium text-gray-900 dark:text-white">{qty}</span>
                             <button
                               onClick={() => handleChangeAddedFoodQty(food, qty + 1)}
-                              disabled={isAdding || pendingPayment || qty >= 10}
+                              disabled={isAdding || pendingPayment || qty >= 10 || orderLocked}
                               className="h-9 w-9 flex items-center justify-center text-gray-600 disabled:opacity-40"
                               aria-label="Increase quantity"
                             >

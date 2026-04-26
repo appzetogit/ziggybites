@@ -122,9 +122,38 @@ try {
 const app = express();
 const httpServer = createServer(app);
 
+function collectConfiguredOrigins(...values) {
+  const origins = new Set();
+
+  values.forEach((value) => {
+    if (!value || typeof value !== "string") return;
+
+    value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .forEach((item) => {
+        try {
+          const normalizedOrigin = new URL(item).origin;
+          origins.add(normalizedOrigin);
+        } catch {
+          origins.add(item.replace(/\/+$/, ""));
+        }
+      });
+  });
+
+  return Array.from(origins);
+}
+
 // Initialize Socket.IO with proper CORS configuration
 const allowedSocketOrigins = [
-  process.env.CORS_ORIGIN,
+  ...collectConfiguredOrigins(
+    process.env.CORS_ORIGIN,
+    process.env.FRONTEND_URL,
+  ),
+  "https://tastizo.com",
+  "https://www.tastizo.com",
+  "https://api.tastizo.com",
   "https://ziggybites.com",
   "http://ziggybites.com",
   "https://www.ziggybites.com",
@@ -367,7 +396,13 @@ connectRedis().catch(() => {
 app.use(helmet());
 // CORS configuration - allow multiple origins
 const allowedOrigins = [
-  process.env.CORS_ORIGIN,
+  ...collectConfiguredOrigins(
+    process.env.CORS_ORIGIN,
+    process.env.FRONTEND_URL,
+  ),
+  "https://tastizo.com",
+  "https://www.tastizo.com",
+  "https://api.tastizo.com",
   "https://ziggybites.com",
   "http://ziggybites.com",
   "https://www.ziggybites.com",
@@ -800,17 +835,22 @@ function initializeScheduledTasks() {
       console.error("❌ Failed to initialize subscription 2hr service:", error);
     });
 
-  // Subscription meal: 24h-before edit window + post-window lock (every 5 minutes)
-  import("./modules/order/services/subscriptionMealCronService.js")
-    .then(({ runSubscriptionMealCronTick }) => {
+  // Subscription meal: create upcoming orders, open 30m edit window, then lock after window (every 5 minutes)
+  Promise.all([
+    import("./modules/order/services/subscriptionMealCronService.js"),
+    import("./modules/order/services/subscriptionOrderGenerationService.js"),
+  ])
+    .then(([{ runSubscriptionMealCronTick }, { ensureUpcomingSubscriptionOrders }]) => {
       cron.schedule("*/5 * * * *", async () => {
         try {
+          const ensured = await ensureUpcomingSubscriptionOrders();
           const result = await runSubscriptionMealCronTick();
+          const created = ensured?.created || 0;
           const n = result.notifications?.notified || 0;
           const l = result.locks?.locked || 0;
-          if (n > 0 || l > 0) {
+          if (created > 0 || n > 0 || l > 0) {
             console.log(
-              `[Subscription meal cron] notified=${n}, locked=${l}`,
+              `[Subscription meal cron] created=${created}, notified=${n}, locked=${l}`,
             );
           }
         } catch (error) {

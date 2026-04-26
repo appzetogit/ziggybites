@@ -4,9 +4,11 @@ import Restaurant from "../../restaurant/models/Restaurant.js";
 import { getActiveAssignedOrderCount } from "../../delivery/services/batchAssignmentService.js";
 import mongoose from "mongoose";
 import { sendEntityPushNotification } from "./pushNotificationService.js";
+import googleMapsService from "./googleMapsService.js";
 
 // Dynamic import to avoid circular dependency
 let getIO = null;
+const LOCATION_UNAVAILABLE = "Location unavailable";
 
 async function getIOInstance() {
   if (!getIO) {
@@ -91,6 +93,302 @@ function redactPII(data) {
   delete redacted.fullOrder;
 
   return redacted;
+}
+
+function isValidCoordinate(value) {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue);
+}
+
+function normalizePoint(point) {
+  if (!point) return null;
+
+  const latitude = point.latitude ?? point.lat;
+  const longitude = point.longitude ?? point.lng;
+
+  if (!isValidCoordinate(latitude) || !isValidCoordinate(longitude)) {
+    return null;
+  }
+
+  return {
+    latitude: Number(latitude),
+    longitude: Number(longitude),
+  };
+}
+
+function getRestaurantAddress(restaurant) {
+  return (
+    restaurant?.location?.formattedAddress ||
+    restaurant?.location?.address ||
+    restaurant?.address ||
+    LOCATION_UNAVAILABLE
+  );
+}
+
+function getCustomerAddress(order) {
+  return (
+    order?.address?.formattedAddress ||
+    order?.deliveryAddress ||
+    [order?.address?.street, order?.address?.city, order?.address?.state]
+      .filter(Boolean)
+      .join(", ") ||
+    LOCATION_UNAVAILABLE
+  );
+}
+
+function getRestaurantPoint(restaurant) {
+  const coordinates = restaurant?.location?.coordinates;
+  if (Array.isArray(coordinates) && coordinates.length >= 2) {
+    return normalizePoint({
+      latitude: coordinates[1],
+      longitude: coordinates[0],
+    });
+  }
+
+  return normalizePoint(restaurant?.location);
+}
+
+function getCustomerPoint(order) {
+  const coordinates = order?.address?.location?.coordinates;
+  if (Array.isArray(coordinates) && coordinates.length >= 2) {
+    return normalizePoint({
+      latitude: coordinates[1],
+      longitude: coordinates[0],
+    });
+  }
+
+  return normalizePoint(order?.address?.location);
+}
+
+function getDeliveryPartnerPoint(deliveryPartner) {
+  const coordinates = deliveryPartner?.availability?.currentLocation?.coordinates;
+  if (Array.isArray(coordinates) && coordinates.length >= 2) {
+    return normalizePoint({
+      latitude: coordinates[1],
+      longitude: coordinates[0],
+    });
+  }
+
+  return normalizePoint(deliveryPartner?.availability?.currentLocation);
+}
+
+function logMissingCoordinates(label, point) {
+  const missingFields = [];
+  if (!point || !isValidCoordinate(point.latitude)) missingFields.push("latitude");
+  if (!point || !isValidCoordinate(point.longitude)) missingFields.push("longitude");
+
+  if (missingFields.length > 0) {
+    console.warn(
+      `⚠️ Missing coordinates for ${label}: ${missingFields.join(", ")}`,
+      point,
+    );
+    return true;
+  }
+
+  return false;
+}
+
+function formatDistance(distanceKm) {
+  const numericValue = Number(distanceKm);
+  return Number.isFinite(numericValue) && numericValue >= 0
+    ? `${numericValue.toFixed(2)} km`
+    : LOCATION_UNAVAILABLE;
+}
+
+function formatDuration(durationMinutes) {
+  const numericValue = Number(durationMinutes);
+  return Number.isFinite(numericValue) && numericValue >= 0
+    ? `${Math.max(1, Math.ceil(numericValue))} mins`
+    : LOCATION_UNAVAILABLE;
+}
+
+function countOrderItems(items = []) {
+  return items.reduce(
+    (total, item) => total + (Number(item?.quantity) > 0 ? Number(item.quantity) : 0),
+    0,
+  );
+}
+
+async function resolveRestaurant(order) {
+  const restaurantRef = order?.restaurantId;
+
+  if (!restaurantRef) {
+    return null;
+  }
+
+  if (typeof restaurantRef === "object" && restaurantRef.location) {
+    return restaurantRef;
+  }
+
+  if (mongoose.Types.ObjectId.isValid(restaurantRef)) {
+    const byMongoId = await Restaurant.findById(restaurantRef).lean();
+    if (byMongoId) return byMongoId;
+  }
+
+  return Restaurant.findOne({
+    $or: [{ restaurantId: restaurantRef }, { _id: restaurantRef }],
+  }).lean();
+}
+
+async function calculateTravelMetrics(origin, destination, label) {
+  const missingOrigin = logMissingCoordinates(`${label} origin`, origin);
+  const missingDestination = logMissingCoordinates(`${label} destination`, destination);
+
+  if (missingOrigin || missingDestination) {
+    return null;
+  }
+
+  try {
+    const metrics = await googleMapsService.getTravelTime(origin, destination, "driving");
+    return {
+      distanceKm: Number(metrics?.distance) || 0,
+      durationMinutes: Number(metrics?.duration) || 0,
+      trafficLevel: metrics?.trafficLevel || "low",
+    };
+  } catch (error) {
+    console.error(`❌ Distance API failed for ${label}, using fallback`, error.message);
+    try {
+      const fallback = googleMapsService.calculateHaversineDistance(origin, destination);
+      return {
+        distanceKm: Number(fallback?.distance) || 0,
+        durationMinutes: Number(fallback?.duration) || 0,
+        trafficLevel: fallback?.trafficLevel || "low",
+      };
+    } catch (fallbackError) {
+      console.error(`❌ Distance fallback failed for ${label}`, fallbackError.message);
+      return null;
+    }
+  }
+}
+
+async function buildAssignmentPayload({
+  order,
+  deliveryPartner,
+  phase = null,
+  activeAssignedOrderCount = 0,
+  nextDeliveryLocation = null,
+}) {
+  if (!order?._id || !order?.orderId) {
+    console.warn("⚠️ Assignment payload build skipped: orderId or _id missing", {
+      mongoId: order?._id,
+      orderId: order?.orderId,
+    });
+    return null;
+  }
+
+  if (!order?.userId) {
+    console.warn(`⚠️ User not found for order ${order.orderId}. Skipping emit.`);
+    return null;
+  }
+
+  const restaurant = await resolveRestaurant(order);
+  if (!restaurant) {
+    console.warn(`⚠️ Restaurant not found for order ${order.orderId}. Skipping emit.`);
+    return null;
+  }
+
+  const riderPoint = getDeliveryPartnerPoint(deliveryPartner);
+  const restaurantPoint = getRestaurantPoint(restaurant);
+  const customerPoint = getCustomerPoint(order);
+
+  const pickupTravel = await calculateTravelMetrics(
+    riderPoint,
+    restaurantPoint,
+    `pickup for order ${order.orderId}`,
+  );
+  const dropTravel = await calculateTravelMetrics(
+    restaurantPoint,
+    customerPoint,
+    `drop for order ${order.orderId}`,
+  );
+
+  const totalDistanceKm =
+    (pickupTravel?.distanceKm || 0) + (dropTravel?.distanceKm || 0);
+  const totalDurationMinutes =
+    (pickupTravel?.durationMinutes || 0) + (dropTravel?.durationMinutes || 0);
+
+  const deliveryFeeFromOrder = order.pricing?.deliveryFee ?? 0;
+  let estimatedEarnings = await calculateEstimatedEarnings(dropTravel?.distanceKm || 0);
+  const earnedValue =
+    typeof estimatedEarnings === "object"
+      ? Number(estimatedEarnings.totalEarning) || 0
+      : Number(estimatedEarnings) || 0;
+
+  if (earnedValue <= 0 && deliveryFeeFromOrder > 0) {
+    estimatedEarnings =
+      typeof estimatedEarnings === "object"
+        ? { ...estimatedEarnings, totalEarning: deliveryFeeFromOrder }
+        : deliveryFeeFromOrder;
+  }
+
+  const customerName =
+    typeof order.userId === "object" ? order.userId?.name || "Customer" : "Customer";
+  const customerPhone =
+    typeof order.userId === "object" ? order.userId?.phone || "" : "";
+
+  return {
+    orderId: order.orderId,
+    orderMongoId: order._id.toString(),
+    orderMongoDbId: order._id.toString(),
+    restaurantId:
+      restaurant?._id?.toString?.() || restaurant?.restaurantId || String(order.restaurantId),
+    restaurantName: restaurant?.name || order.restaurantName || "Restaurant",
+    restaurantAddress: getRestaurantAddress(restaurant),
+    restaurantLocation: {
+      latitude: restaurantPoint?.latitude ?? null,
+      longitude: restaurantPoint?.longitude ?? null,
+      address: getRestaurantAddress(restaurant),
+      formattedAddress: getRestaurantAddress(restaurant),
+    },
+    customerName,
+    customerPhone,
+    customerAddress: getCustomerAddress(order),
+    deliveryAddress: getCustomerAddress(order),
+    customerLocation: {
+      latitude: customerPoint?.latitude ?? null,
+      longitude: customerPoint?.longitude ?? null,
+      address: getCustomerAddress(order),
+    },
+    deliveryBoyLocation: {
+      latitude: riderPoint?.latitude ?? null,
+      longitude: riderPoint?.longitude ?? null,
+    },
+    pickupDistance: formatDistance(pickupTravel?.distanceKm),
+    pickupDistanceKm: pickupTravel?.distanceKm ?? null,
+    dropDistance: formatDistance(dropTravel?.distanceKm),
+    deliveryDistance: formatDistance(dropTravel?.distanceKm),
+    deliveryDistanceKm: dropTravel?.distanceKm ?? null,
+    totalDistance: formatDistance(totalDistanceKm),
+    totalDistanceKm: Number.isFinite(totalDistanceKm) ? Number(totalDistanceKm.toFixed(2)) : null,
+    estimatedPickupTime: formatDuration(pickupTravel?.durationMinutes),
+    estimatedPickupTimeMinutes: pickupTravel?.durationMinutes ?? null,
+    estimatedDropTime: formatDuration(dropTravel?.durationMinutes),
+    estimatedDropTimeMinutes: dropTravel?.durationMinutes ?? null,
+    estimatedTotalTime: formatDuration(totalDurationMinutes),
+    estimatedTotalTimeMinutes: Number.isFinite(totalDurationMinutes)
+      ? Math.max(1, Math.ceil(totalDurationMinutes))
+      : null,
+    estimatedEarnings,
+    paymentMode: order.payment?.method || "cash",
+    paymentMethod: order.payment?.method || "cash",
+    orderItemsCount: countOrderItems(order.items || []),
+    items: (order.items || []).map((item) => ({
+      itemId: item.itemId,
+      name: item.name,
+      quantity: item.quantity,
+      price: item.price,
+    })),
+    total: order.pricing?.total || 0,
+    totalAmount: order.pricing?.total || 0,
+    deliveryFee: deliveryFeeFromOrder,
+    note: order.note || "",
+    status: order.status,
+    preparationStatus: order.preparationStatus,
+    createdAt: order.createdAt,
+    phase,
+    activeAssignedOrderCount,
+    nextDeliveryLocation,
+  };
 }
 
 /**
@@ -184,128 +482,26 @@ export async function notifyDeliveryBoyNewOrder(order, deliveryPartnerId) {
     const connectionStatus =
       await checkDeliveryPartnerConnection(deliveryPartnerId);
     console.log(
-      `🔌 Delivery partner socket connection status:`,
+      `Delivery partner socket connection status:`,
       connectionStatus,
     );
 
     if (!connectionStatus.connected) {
       console.warn(
-        `⚠️ Delivery partner ${deliveryPartnerId} (${deliveryPartner.name}) is NOT connected to socket!`,
+        `Delivery partner ${deliveryPartnerId} (${deliveryPartner.name}) is NOT connected to socket!`,
       );
       console.warn(
-        `⚠️ Notification will be sent but may not be received until they reconnect.`,
+        `Notification will be sent but may not be received until they reconnect.`,
       );
     } else {
       console.log(
-        `✅ Delivery partner ${deliveryPartnerId} is connected via socket in room: ${connectionStatus.room}`,
+        `Delivery partner ${deliveryPartnerId} is connected via socket in room: ${connectionStatus.room}`,
       );
     }
 
-    // Get restaurant details for pickup location
-    let restaurant = null;
-    if (mongoose.Types.ObjectId.isValid(order.restaurantId)) {
-      restaurant = await Restaurant.findById(order.restaurantId).lean();
-    }
-    if (!restaurant) {
-      restaurant = await Restaurant.findOne({
-        $or: [
-          { restaurantId: order.restaurantId },
-          { _id: order.restaurantId },
-        ],
-      }).lean();
-    }
-
-    // Calculate distances
-    let pickupDistance = null;
-    let deliveryDistance = null;
-
-    if (
-      deliveryPartner.availability?.currentLocation?.coordinates &&
-      restaurant?.location?.coordinates
-    ) {
-      const [deliveryLng, deliveryLat] =
-        deliveryPartner.availability.currentLocation.coordinates;
-      const [restaurantLng, restaurantLat] = restaurant.location.coordinates;
-      const [customerLng, customerLat] = order.address.location.coordinates;
-
-      // Calculate pickup distance (delivery boy to restaurant)
-      pickupDistance = calculateDistance(
-        deliveryLat,
-        deliveryLng,
-        restaurantLat,
-        restaurantLng,
-      );
-
-      // Calculate delivery distance (restaurant to customer)
-      deliveryDistance = calculateDistance(
-        restaurantLat,
-        restaurantLng,
-        customerLat,
-        customerLng,
-      );
-    }
-
-    // Calculate estimated earnings; use order's delivery fee as fallback when 0 or distance missing
-    const deliveryFeeFromOrder = order.pricing?.deliveryFee ?? 0;
-    let estimatedEarnings = await calculateEstimatedEarnings(
-      deliveryDistance || 0,
-    );
-    const earnedValue =
-      typeof estimatedEarnings === "object"
-        ? (estimatedEarnings.totalEarning ?? 0)
-        : Number(estimatedEarnings) || 0;
-    if (earnedValue <= 0 && deliveryFeeFromOrder > 0) {
-      estimatedEarnings =
-        typeof estimatedEarnings === "object"
-          ? { ...estimatedEarnings, totalEarning: deliveryFeeFromOrder }
-          : deliveryFeeFromOrder;
-    }
-
-    // Prepare order notification data
-    const orderNotification = {
-      orderId: order.orderId,
-      orderMongoId: order._id.toString(),
-      restaurantId: order.restaurantId,
-      restaurantName: order.restaurantName,
-      restaurantLocation: restaurant?.location
-        ? {
-            latitude: restaurant.location.coordinates[1],
-            longitude: restaurant.location.coordinates[0],
-            address:
-              restaurant.location.formattedAddress ||
-              restaurant.address ||
-              "Restaurant address",
-          }
-        : null,
-      customerLocation: {
-        latitude: order.address.location.coordinates[1],
-        longitude: order.address.location.coordinates[0],
-        address:
-          order.address.formattedAddress ||
-          `${order.address.street}, ${order.address.city}` ||
-          "Customer address",
-      },
-      items: order.items.map((item) => ({
-        name: item.name,
-        quantity: item.quantity,
-        price: item.price,
-      })),
-      total: order.pricing.total,
-      deliveryFee: deliveryFeeFromOrder,
-      customerName: orderWithUser.userId?.name || "Customer",
-      customerPhone: orderWithUser.userId?.phone || "",
-      status: order.status,
-      createdAt: order.createdAt,
-      estimatedDeliveryTime: order.estimatedDeliveryTime || 30,
-      note: order.note || "",
-      pickupDistance: pickupDistance
-        ? `${pickupDistance.toFixed(2)} km`
-        : "Distance not available",
-      deliveryDistance: deliveryDistance
-        ? `${deliveryDistance.toFixed(2)} km`
-        : "Calculating...",
-      deliveryDistanceRaw: deliveryDistance || 0, // Raw distance number for calculations
-      estimatedEarnings,
+    const orderNotification = await buildAssignmentPayload({
+      order: orderWithUser,
+      deliveryPartner,
       activeAssignedOrderCount: getActiveAssignedOrderCount(deliveryPartner),
       nextDeliveryLocation: deliveryPartner?.route?.[0]
         ? {
@@ -319,16 +515,15 @@ export async function notifyDeliveryBoyNewOrder(order, deliveryPartnerId) {
             sequence: deliveryPartner.route[0].sequence,
           }
         : null,
-    };
+    });
 
-    // Get delivery namespace
+    if (!orderNotification) {
+      return { success: false, reason: "Assignment payload incomplete" };
+    }
+
     const deliveryNamespace = io.of("/delivery");
-
-    // Normalize deliveryPartnerId to string
     const normalizedDeliveryPartnerId =
       deliveryPartnerId?.toString() || deliveryPartnerId;
-
-    // Try multiple room formats to ensure we find the delivery partner
     const roomVariations = [
       `delivery:${normalizedDeliveryPartnerId}`,
       `delivery:${deliveryPartnerId}`,
@@ -339,36 +534,29 @@ export async function notifyDeliveryBoyNewOrder(order, deliveryPartnerId) {
         : []),
     ];
 
-    // Get all connected sockets in the delivery partner room
     let socketsInRoom = [];
     let foundRoom = null;
-
-    // First, get all connected sockets in delivery namespace for debugging
     const allSockets = await deliveryNamespace.fetchSockets();
-    console.log(`📊 Total connected delivery sockets: ${allSockets.length}`);
+    console.log(`Total connected delivery sockets: ${allSockets.length}`);
 
-    // Check each room variation
     for (const room of roomVariations) {
       const sockets = await deliveryNamespace.in(room).fetchSockets();
       if (sockets.length > 0) {
         socketsInRoom = sockets;
         foundRoom = room;
-        console.log(`� Found ${sockets.length} socket(s) in room: ${room}`);
+        console.log(`Found ${sockets.length} socket(s) in room: ${room}`);
         console.log(
-          `📢 Socket IDs in room:`,
+          `Socket IDs in room:`,
           sockets.map((s) => s.id),
         );
         break;
       }
     }
 
-    const primaryRoom = roomVariations[0];
-
     console.log(
-      `� Attempting to notify delivery partner ${normalizedDeliveryPartnerId} about order ${order.orderId}`,
+      `Attempting to notify delivery partner ${normalizedDeliveryPartnerId} about order ${order.orderId}`,
     );
 
-    // Emit new order notification to specific rooms (Keep PII here as it's targeted)
     let notificationSent = false;
     roomVariations.forEach((room) => {
       deliveryNamespace.to(room).emit("new_order", orderNotification);
@@ -378,38 +566,26 @@ export async function notifyDeliveryBoyNewOrder(order, deliveryPartnerId) {
         message: `New order assigned: ${order.orderId}`,
       });
       notificationSent = true;
-      console.log(`📤 Emitted targeted notification to room: ${room}`);
+      console.log(`Emitted targeted notification to room: ${room}`);
     });
 
-    // Also emit to all sockets in the delivery namespace (FALLBACK MUST BE REDACTED)
     if (socketsInRoom.length === 0) {
       console.warn(
-        `⚠️ No sockets connected for partner ${normalizedDeliveryPartnerId}. Broadcasting REDACTED payload.`,
+        `No sockets connected for partner ${normalizedDeliveryPartnerId}. Targeted socket emit completed without broadcast fallback.`,
       );
-
-      const redactedNotification = redactPII(orderNotification);
-
-      // Broadcast redacted payload as fallback
-      deliveryNamespace.emit("new_order", redactedNotification);
-      deliveryNamespace.emit("play_notification_sound", {
-        type: "new_order",
-        orderId: order.orderId,
-        message: `New order assigned: ${order.orderId}`,
-      });
-      notificationSent = true;
     } else {
       console.log(
-        `✅ Successfully found connected socket(s) for delivery partner ${normalizedDeliveryPartnerId}`,
+        `Successfully found connected socket(s) for delivery partner ${normalizedDeliveryPartnerId}`,
       );
-      console.log(`✅ Targeted notification sent to room: ${foundRoom}`);
+      console.log(`Targeted notification sent to room: ${foundRoom}`);
     }
 
     if (notificationSent) {
       console.log(
-        `✅ Notification emitted for order ${order.orderId} to delivery partner ${normalizedDeliveryPartnerId}`,
+        `Notification emitted for order ${order.orderId} to delivery partner ${normalizedDeliveryPartnerId}`,
       );
     } else {
-      console.error(`❌ Failed to send notification`);
+      console.error(`Failed to send notification`);
     }
 
     await sendEntityPushNotification(normalizedDeliveryPartnerId, "delivery", {
@@ -473,7 +649,9 @@ export async function notifyMultipleDeliveryBoys(
     const deliveryPartners = await Delivery.find({
       _id: { $in: deliveryPartnerIds },
     })
-      .select("assignedOrders route")
+      .select(
+        "name phone availability.currentLocation availability.isOnline status isActive assignedOrders route",
+      )
       .lean();
     const deliveryPartnerMap = new Map(
       deliveryPartners.map((partner) => [partner._id.toString(), partner]),
@@ -719,8 +897,10 @@ export async function notifyMultipleDeliveryBoys(
         const deliveryPartner =
           deliveryPartnerMap.get(normalizedId) ||
           deliveryPartnerMap.get(deliveryPartnerId?.toString?.());
-        const personalizedNotification = {
-          ...orderNotification,
+        const personalizedNotification = await buildAssignmentPayload({
+          order: orderWithUser,
+          deliveryPartner,
+          phase,
           activeAssignedOrderCount: getActiveAssignedOrderCount(deliveryPartner),
           nextDeliveryLocation: deliveryPartner?.route?.[0]
             ? {
@@ -734,7 +914,14 @@ export async function notifyMultipleDeliveryBoys(
                 sequence: deliveryPartner.route[0].sequence,
               }
             : null,
-        };
+        });
+
+        if (!personalizedNotification) {
+          console.warn(
+            `⚠️ Skipping notification for delivery partner ${normalizedId}: payload incomplete.`,
+          );
+          continue;
+        }
         const roomVariations = [
           `delivery:${normalizedId}`,
           `delivery:${deliveryPartnerId}`,

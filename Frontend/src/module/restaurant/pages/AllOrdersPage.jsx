@@ -538,7 +538,16 @@ export default function AllOrdersPage() {
       if (searchLower) {
         const orderIdStr = String(order.id ?? order.orderId ?? "").toLowerCase()
         const numericPart = orderIdStr.replace(/\D/g, "")
-        if (!orderIdStr.includes(searchLower) && !numericPart.includes(searchLower)) return false
+        const customerStr = String(order.customer ?? "").toLowerCase().replace(/\s/g, "")
+        const restaurantStr = String(order.restaurant ?? "").toLowerCase().replace(/\s/g, "")
+        const addressStr = String(order.address ?? "").toLowerCase().replace(/\s/g, "")
+        if (
+          !orderIdStr.includes(searchLower) &&
+          !numericPart.includes(searchLower) &&
+          !customerStr.includes(searchLower) &&
+          !restaurantStr.includes(searchLower) &&
+          !addressStr.includes(searchLower)
+        ) return false
       }
     }
 

@@ -343,6 +343,10 @@ export default function Orders() {
 
   // Filter orders based on search query
   const filteredOrders = orders.filter(order => {
+    if (shouldHideAbandonedOnlineOrder(order)) {
+      return false
+    }
+
     if (!searchQuery.trim()) return true
     
     const query = searchQuery.toLowerCase()
@@ -1000,3 +1004,16 @@ Order again from this restaurant in the ${companyName} app.`
     </div>
   )
 }
+  const shouldHideAbandonedOnlineOrder = (order) => {
+    const paymentMethod = String(order.payment?.method || order.paymentMethod || "").toLowerCase()
+    const paymentStatus = String(order.payment?.status || order.paymentStatus || "").toLowerCase()
+    const orderStatus = String(order.originalStatus || order.status || "").toLowerCase()
+    const isOnlinePayment = paymentMethod === "razorpay" || paymentMethod === "online"
+
+    return isOnlinePayment && (
+      paymentStatus === "failed" ||
+      paymentStatus === "cancelled" ||
+      paymentStatus === "canceled" ||
+      (paymentStatus === "pending" && (orderStatus === "pending" || orderStatus === "payment_pending"))
+    )
+  }

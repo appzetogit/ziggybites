@@ -5,15 +5,22 @@ import { getIO } from "../../../server.js";
 import Restaurant from "../../restaurant/models/Restaurant.js";
 import { assignOrderToDeliveryBoy, findNearestDeliveryBoy, findNearestDeliveryBoys } from "./deliveryAssignmentService.js";
 
-const SUBSCRIPTION_READY_WINDOW_MINUTES = 45;
+const SUBSCRIPTION_READY_BEFORE_MINUTES = 45;
+const SUBSCRIPTION_READY_AFTER_MINUTES = 25;
+const MEAL_EDIT_CUTOFF_MS = 24 * 60 * 60 * 1000;
+const MEAL_EDIT_LOCK_MESSAGE =
+  "Meal changes are locked within 24 hours of the scheduled meal.";
 
 function getSubscriptionReadyWindow(scheduledMealAt) {
   const scheduledAt = new Date(scheduledMealAt);
   if (Number.isNaN(scheduledAt.getTime())) return null;
-  const windowMs = SUBSCRIPTION_READY_WINDOW_MINUTES * 60 * 1000;
   return {
-    startsAt: new Date(scheduledAt.getTime() - windowMs),
-    endsAt: new Date(scheduledAt.getTime() + windowMs),
+    startsAt: new Date(
+      scheduledAt.getTime() - SUBSCRIPTION_READY_BEFORE_MINUTES * 60 * 1000,
+    ),
+    endsAt: new Date(
+      scheduledAt.getTime() + SUBSCRIPTION_READY_AFTER_MINUTES * 60 * 1000,
+    ),
   };
 }
 
@@ -35,7 +42,7 @@ function assertSubscriptionReadyWindow(order) {
   const nowMs = Date.now();
   if (nowMs < window.startsAt.getTime() || nowMs > window.endsAt.getTime()) {
     const err = new Error(
-      `Meal can be marked ready only within ${SUBSCRIPTION_READY_WINDOW_MINUTES} minutes before or after the scheduled time (${window.startsAt.toLocaleString("en-IN")} - ${window.endsAt.toLocaleString("en-IN")}).`,
+      `Meal can be marked ready only from ${SUBSCRIPTION_READY_BEFORE_MINUTES} minutes before to ${SUBSCRIPTION_READY_AFTER_MINUTES} minutes after the scheduled time (${window.startsAt.toLocaleString("en-IN")} - ${window.endsAt.toLocaleString("en-IN")}).`,
     );
     err.statusCode = 400;
     err.readyWindow = window;
@@ -192,6 +199,16 @@ function nowInEditWindow(order) {
   return t >= s && t <= e;
 }
 
+function assertMealEditCutoff(order) {
+  const scheduledMs = order.scheduledMealAt ? new Date(order.scheduledMealAt).getTime() : null;
+  if (!Number.isFinite(scheduledMs)) return;
+  if (scheduledMs - Date.now() <= MEAL_EDIT_CUTOFF_MS) {
+    const err = new Error(MEAL_EDIT_LOCK_MESSAGE);
+    err.statusCode = 400;
+    throw err;
+  }
+}
+
 function computeItemsSubtotal(items) {
   if (!items?.length) return 0;
   return items.reduce((sum, i) => {
@@ -240,6 +257,7 @@ export async function changeMealForUser(orderId, userId, { items }) {
     err.statusCode = 400;
     throw err;
   }
+  assertMealEditCutoff(order);
   if (!nowInEditWindow(order)) {
     const err = new Error("Edit window closed");
     err.statusCode = 400;

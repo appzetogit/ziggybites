@@ -831,11 +831,11 @@ export default function LocationSelectorOverlay({ isOpen, onClose }) {
         googleMapRef.current = map
 
         // Create Green Marker (draggable for address selection)
-        const greenMarker = new google.maps.Marker({
+          const greenMarker = new google.maps.Marker({
           position: initialLocation,
           map: map,
           icon: {
-            url: "http://maps.google.com/mapfiles/ms/icons/green-dot.png",
+            url: "https://maps.google.com/mapfiles/ms/icons/green-dot.png",
             scaledSize: new google.maps.Size(40, 40),
             anchor: new google.maps.Point(20, 40)
           },
@@ -3094,7 +3094,17 @@ export default function LocationSelectorOverlay({ isOpen, onClose }) {
                       name="receiverName"
                       placeholder="Enter receiver name"
                       value={addressFormData.receiverName}
-                      onChange={handleAddressFormChange}
+                      onChange={(event) => {
+                        const sanitizedValue = event.target.value.replace(/[^A-Za-z\s'.-]/g, "")
+                        handleAddressFormChange({
+                          ...event,
+                          target: {
+                            ...event.target,
+                            name: "receiverName",
+                            value: sanitizedValue,
+                          },
+                        })
+                      }}
                       className="bg-white dark:bg-[#0f0f0f] border-gray-200 dark:border-gray-700"
                     />
                   </div>

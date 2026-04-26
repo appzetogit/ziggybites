@@ -26,6 +26,27 @@ const logger = winston.createLogger({
   ],
 });
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_REGEX = /^\d{10}$/;
+const CITY_REGEX = /^[A-Za-z][A-Za-z\s.-]{1,49}$/;
+const PINCODE_REGEX = /^\d{6}$/;
+const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
+const GST_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
+const FSSAI_REGEX = /^\d{14}$/;
+const ACCOUNT_NUMBER_REGEX = /^\d{9,18}$/;
+const IFSC_REGEX = /^[A-Z]{4}0[A-Z0-9]{6}$/;
+const PERSON_NAME_REGEX = /^[A-Za-z][A-Za-z\s.'-]{1,79}$/;
+
+const digitsOnly = (value) => String(value || "").replace(/\D/g, "");
+const upperTrim = (value) => String(value || "").trim().toUpperCase();
+const hasFutureOrTodayDate = (value) => {
+  if (!value) return false;
+  const expiryDate = new Date(value);
+  if (Number.isNaN(expiryDate.getTime())) return false;
+  expiryDate.setHours(23, 59, 59, 999);
+  return expiryDate >= new Date();
+};
+
 /**
  * Get Admin Dashboard Statistics
  * GET /api/admin/dashboard/stats
@@ -1903,10 +1924,61 @@ export const createRestaurant = asyncHandler(async (req, res) => {
       return errorResponse(res, 400, "Either email or phone is required");
     }
 
+    if (!EMAIL_REGEX.test(String(ownerEmail || "").trim())) {
+      return errorResponse(res, 400, "Owner email should be in format");
+    }
+    if (ownerPhone && !PHONE_REGEX.test(digitsOnly(ownerPhone))) {
+      return errorResponse(res, 400, "Owner phone number should be in format");
+    }
+    if (primaryContactNumber && !PHONE_REGEX.test(digitsOnly(primaryContactNumber))) {
+      return errorResponse(res, 400, "Restaurant phone number should be in format");
+    }
+    if (location?.city && !CITY_REGEX.test(String(location.city).trim())) {
+      return errorResponse(res, 400, "City field should be in format");
+    }
+    if (location?.pincode && !PINCODE_REGEX.test(digitsOnly(location.pincode))) {
+      return errorResponse(res, 400, "Pin Code field should be in format");
+    }
+    if (panNumber && !PAN_REGEX.test(upperTrim(panNumber))) {
+      return errorResponse(res, 400, "Pan no. should be in format");
+    }
+    if (nameOnPan && !PERSON_NAME_REGEX.test(String(nameOnPan).trim())) {
+      return errorResponse(res, 400, "Pan holder name should be in format");
+    }
+    if (gstRegistered) {
+      if (gstNumber && !GST_REGEX.test(upperTrim(gstNumber))) {
+        return errorResponse(res, 400, "GST no. should be in format");
+      }
+      if (gstLegalName && !PERSON_NAME_REGEX.test(String(gstLegalName).trim())) {
+        return errorResponse(res, 400, "GST legal name should be in format");
+      }
+    }
+    if (fssaiNumber && !FSSAI_REGEX.test(digitsOnly(fssaiNumber))) {
+      return errorResponse(res, 400, "FSSAI no. should be in format");
+    }
+    if (fssaiExpiry && !hasFutureOrTodayDate(fssaiExpiry)) {
+      return errorResponse(res, 400, "Expiry date should not take past date");
+    }
+    if (accountNumber && !ACCOUNT_NUMBER_REGEX.test(digitsOnly(accountNumber))) {
+      return errorResponse(res, 400, "Account no. should be in format");
+    }
+    if (ifscCode && !IFSC_REGEX.test(upperTrim(ifscCode))) {
+      return errorResponse(res, 400, "IFSC code should be in format");
+    }
+    if (accountHolderName && !PERSON_NAME_REGEX.test(String(accountHolderName).trim())) {
+      return errorResponse(res, 400, "Account Holder name should be in format");
+    }
+    if (accountType && !["savings", "current"].includes(String(accountType).trim().toLowerCase())) {
+      return errorResponse(res, 400, "Account type should give dropdown for saving & current");
+    }
+    if (email && !EMAIL_REGEX.test(String(email || "").trim())) {
+      return errorResponse(res, 400, "Authentication email should be in format");
+    }
+
     // Normalize phone number if provided
     const normalizedPhone = phone ? normalizePhoneNumber(phone) : null;
     if (phone && !normalizedPhone) {
-      return errorResponse(res, 400, "Invalid phone number format");
+      return errorResponse(res, 400, "Authentication phone number should be in format");
     }
 
     // Generate random password if email is provided but password is not

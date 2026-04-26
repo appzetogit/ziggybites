@@ -126,8 +126,9 @@ export const submitSignupDetails = asyncHandler(async (req, res) => {
     const updateData = {
       name: name.trim(),
       email: email ? email.trim().toLowerCase() : null,
-      phone: phone ? phone.trim() : null,
-      primaryContact: primaryContact ? primaryContact.trim() : null,
+      // Preserve the verified auth phone if the form doesn't send one.
+      phone: phone ? phone.trim() : delivery.phone,
+      primaryContact: primaryContact ? primaryContact.trim() : delivery.primaryContact || null,
       location: {
         addressLine1: address.trim(),
         city: city.trim(),
@@ -168,6 +169,15 @@ export const submitSignupDetails = asyncHandler(async (req, res) => {
     });
   } catch (error) {
     logger.error(`Error saving signup details: ${error.message}`);
+
+    if (error.name === 'ValidationError') {
+      const firstValidationError = Object.values(error.errors || {})[0];
+      return errorResponse(
+        res,
+        400,
+        firstValidationError?.message || 'Please check the submitted signup details'
+      );
+    }
     
     // Handle duplicate email error
     if (error.code === 11000) {
@@ -294,4 +304,3 @@ export const submitSignupDocuments = asyncHandler(async (req, res) => {
     return errorResponse(res, 500, 'Failed to upload documents');
   }
 });
-

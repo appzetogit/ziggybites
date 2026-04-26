@@ -4,6 +4,7 @@ import { ArrowLeft, Upload, X, Check, Camera } from "lucide-react"
 import { deliveryAPI } from "@/lib/api"
 import apiClient from "@/lib/api/axios"
 import { toast } from "sonner"
+import { requestCameraCapture, isLikelyFlutterWebView } from "@/lib/mobileBridge"
 
 const DELIVERY_SIGNUP_DOCUMENTS_STORAGE_KEY = "delivery_signup_documents_draft"
 
@@ -116,6 +117,27 @@ export default function SignupStep2() {
     }))
   }
 
+  const handleCameraCapture = async (docType) => {
+    if (!isLikelyFlutterWebView()) {
+      document.getElementById(`${docType}CameraInput`)?.click()
+      return
+    }
+
+    try {
+      const capturedFile = await requestCameraCapture()
+      if (capturedFile) {
+        await handleFileSelect(docType, capturedFile)
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Camera capture failed"
+      if (message.toLowerCase().includes("cancel")) {
+        return
+      }
+      console.error(`Error capturing ${docType} from camera:`, error)
+      toast.error("Unable to open camera. Please try again.")
+    }
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
 
@@ -154,7 +176,6 @@ export default function SignupStep2() {
   }
 
   const DocumentUpload = ({ docType, label, required = true }) => {
-    const file = documents[docType]
     const uploaded = uploadedDocs[docType]
     const isUploading = uploading[docType]
     const galleryInputId = `${docType}GalleryInput`
@@ -187,7 +208,7 @@ export default function SignupStep2() {
             </div>
           </div>
         ) : (
-          <label className="flex flex-col items-center justify-center w-full h-48 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-green-500 transition-colors">
+          <div className="flex flex-col items-center justify-center w-full h-48 border-2 border-dashed border-gray-300 rounded-lg hover:border-green-500 transition-colors">
             <div className="flex flex-col items-center justify-center pt-5 pb-6">
               {isUploading ? (
                 <>
@@ -211,13 +232,14 @@ export default function SignupStep2() {
                   <Upload className="w-4 h-4" />
                   <span>Gallery</span>
                 </label>
-                <label
-                  htmlFor={cameraInputId}
+                <button
+                  type="button"
+                  onClick={() => handleCameraCapture(docType)}
                   className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700"
                 >
                   <Camera className="w-4 h-4" />
                   <span>Camera</span>
-                </label>
+                </button>
               </div>
             )}
             <input
@@ -250,7 +272,7 @@ export default function SignupStep2() {
               }}
               disabled={isUploading}
             />
-          </label>
+          </div>
         )}
       </div>
     )

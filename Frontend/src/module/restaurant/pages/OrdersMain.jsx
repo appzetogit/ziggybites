@@ -7,7 +7,6 @@ import { Printer, Volume2, VolumeX, ChevronDown, ChevronUp, Minus, Plus, X, Aler
 import { toast } from "sonner"
 import BottomNavOrders from "../components/BottomNavOrders"
 import RestaurantNavbar from "../components/RestaurantNavbar"
-import ApprovalPendingPopup from "@/components/account/ApprovalPendingPopup"
 import notificationSound from "@/assets/audio/alert.mp3"
 import { restaurantAPI, diningAPI } from "@/lib/api"
 import { useRestaurantNotifications } from "../hooks/useRestaurantNotifications"
@@ -15,8 +14,6 @@ import { jsPDF } from "jspdf"
 import autoTable from "jspdf-autotable"
 
 const STORAGE_KEY = "restaurant_online_status"
-const RESTAURANT_APPROVAL_PENDING_KEY = "restaurant_approval_pending"
-
 // Top filter tabs
 const filterTabs = [
   { id: "preparing", label: "Preparing" },
@@ -589,19 +586,6 @@ export default function OrdersMain() {
     isLoading: true
   })
   const [isReverifying, setIsReverifying] = useState(false)
-  const [hasPendingApprovalHint, setHasPendingApprovalHint] = useState(() => {
-    try {
-      return localStorage.getItem(RESTAURANT_APPROVAL_PENDING_KEY) === "true"
-    } catch {
-      return false
-    }
-  })
-  const showApprovalPendingPopup =
-    hasPendingApprovalHint ||
-    (!restaurantStatus.isLoading &&
-      restaurantStatus.isActive === false &&
-      !restaurantStatus.rejectionReason)
-
   // Zone setup prompt state (shown after registration/onboarding completes)
   const [showZoneSetupPrompt, setShowZoneSetupPrompt] = useState(false)
 
@@ -645,18 +629,6 @@ export default function OrdersMain() {
         const response = await restaurantAPI.getCurrentRestaurant()
         const restaurant = response?.data?.data?.restaurant || response?.data?.restaurant
         if (restaurant) {
-          try {
-            if (restaurant.isActive) {
-              localStorage.removeItem(RESTAURANT_APPROVAL_PENDING_KEY)
-              setHasPendingApprovalHint(false)
-            } else if (!restaurant.rejectionReason) {
-              localStorage.setItem(RESTAURANT_APPROVAL_PENDING_KEY, "true")
-              setHasPendingApprovalHint(true)
-            }
-          } catch {
-            // ignore localStorage errors
-          }
-
           setRestaurantStatus({
             isActive: restaurant.isActive,
             rejectionReason: restaurant.rejectionReason || null,
@@ -1330,13 +1302,6 @@ export default function OrdersMain() {
       <div className="sticky top-0 z-50 bg-white">
         <RestaurantNavbar showNotifications={false} />
       </div>
-
-      {showApprovalPendingPopup && (
-        <ApprovalPendingPopup
-          title="Waiting for admin approval"
-          message="Your restaurant account is under admin review. This popup will stay visible until admin approval is completed."
-        />
-      )}
 
       {/* Zone Setup Prompt - shown once after registration/onboarding when no zone is configured */}
       {showZoneSetupPrompt && (
